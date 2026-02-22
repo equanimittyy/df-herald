@@ -3,7 +3,7 @@
 -- Loaded automatically via scripts_modactive/onLoad.init.
 
 local GLOBAL_KEY    = 'df_herald'
-local TICK_INTERVAL = 8400    -- 1 dwarf week in unpaused ticks
+local TICK_INTERVAL = 1200    -- 1 dwarf day in unpaused ticks
 
 local last_event_id = -1      -- ID of last processed event; -1 = uninitialised
 local scan_timer_id = nil     -- handle returned by dfhack.timeout
