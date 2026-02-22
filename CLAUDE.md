@@ -28,8 +28,11 @@ scripts_modactive/
 ### World Scanning
 
 - Iterate `df.global.world.history.events` from `last_event_id + 1` only (incremental)
-- Filter by player's parent entity or user-tracked civs
+- Filter by player's parent entity or user-tracked civs/entities
 - Check event type via `event:getType()` vs `df.history_event_type.*` enum values
+
+**Event Checks**
+
 - Death events: `df.history_event_type.HIST_FIGURE_DIED`; victim field: `event.victim_hf` (integer hf id)
 
 ### Notifications
