@@ -13,8 +13,12 @@ DFHack mod (Lua, v50+ Steam) that scans world history for significant events and
 ```
 scripts_modactive/
 ├── onLoad.init       ← auto-enables the mod when a world loads (no user action needed)
-└── herald-main.lua   ← event loop, scanning logic, and notifications
+├── herald-main.lua   ← event loop, dispatcher; add new event types here
+└── herald-death.lua  ← HIST_FIGURE_DIED handler (leader detection + announcement)
 ```
+
+Each event type lives in its own `herald-<type>.lua` module. Modules export a single
+`check(event)` function and are registered in the `handlers` table in `herald-main.lua`.
 
 ## Architecture
 

@@ -1,5 +1,5 @@
 -- herald-main.lua
--- Event loop and site-leader death notifications for Dwarf Fortress Herald.
+-- Event loop and dispatcher for Dwarf Fortress Herald.
 -- Loaded automatically via scripts_modactive/onLoad.init.
 
 local GLOBAL_KEY    = 'df_herald'
@@ -13,56 +13,27 @@ function isEnabled()
     return enabled
 end
 
--- Returns (entity, position_name) if hf_id holds any position in a civ entity,
--- or nil, nil otherwise.
-local function get_leader_info(hf_id)
-    local hf = df.historical_figure.find(hf_id)
-    if not hf then return nil, nil end
+-- Map event type enum → handler module. Add new handlers here as new event
+-- types are implemented (e.g. herald-battle.lua, herald-artifact.lua).
+local handlers -- initialised lazily after world load so enums are available
 
-    for _, link in ipairs(hf.entity_links) do
-        if link:getType() == df.histfig_entity_link_type.POSITION then
-            local entity = df.historical_entity.find(link.entity_id)
-            if entity then
-                for _, assignment in ipairs(entity.position_assignments) do
-                    if assignment.histfig2 == hf_id then
-                        for _, pos in ipairs(entity.positions) do
-                            if pos.id == assignment.id then
-                                return entity, pos.name
-                            end
-                        end
-                    end
-                end
-            end
-        end
-    end
-
-    return nil, nil
-end
-
-local function handle_death_event(event)
-    local hf_id = event.victim_hf
-    local entity, pos_name = get_leader_info(hf_id)
-    if not entity then return end
-
-    local hf      = df.historical_figure.find(hf_id)
-    local hf_name  = dfhack.TranslateName(hf.name, true)
-    local civ_name = dfhack.TranslateName(entity.name, true)
-
-    dfhack.gui.showAnnouncement(
-        ('[Herald] %s, %s of %s, has died.'):format(hf_name, pos_name, civ_name),
-        COLOR_RED, true   -- pause = true for high-importance event
-    )
+local function get_handlers()
+    if handlers then return handlers end
+    handlers = {
+        [df.history_event_type.HIST_FIGURE_DIED] = dfhack.reqscript('herald-death'),
+    }
+    return handlers
 end
 
 local function scan_events()
     if not dfhack.isMapLoaded() then return end
 
     local events = df.global.world.history.events
+    local h = get_handlers()
     for i = last_event_id + 1, #events - 1 do
-        local ev = events[i]
-        if ev:getType() == df.history_event_type.HIST_FIGURE_DIED then
-            handle_death_event(ev)
-        end
+        local ev      = events[i]
+        local handler = h[ev:getType()]
+        if handler then handler.check(ev) end
         last_event_id = i
     end
 
@@ -81,6 +52,7 @@ local function cleanup()
     scan_timer_id = nil
     last_event_id = -1
     enabled = false
+    handlers = nil  -- reset so enums are re-resolved on next load
 end
 
 dfhack.onStateChange[GLOBAL_KEY] = function(sc)
