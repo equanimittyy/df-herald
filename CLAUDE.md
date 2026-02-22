@@ -6,7 +6,7 @@ DFHack mod (Lua, v50+ Steam) that scans world history for significant events and
 
 - Dwarf Fortress Steam (v50.xx) + DFHack (latest stable)
 - Language: Lua
-- Ref: DFHack Modding Guide
+- Ref: DFHack Modding Guide (https://docs.dfhack.org/)
 
 ## Architecture
 
