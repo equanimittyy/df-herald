@@ -8,6 +8,14 @@ DFHack mod (Lua, v50+ Steam) that scans world history for significant events and
 - Language: Lua
 - Ref: DFHack Modding Guide (https://docs.dfhack.org/)
 
+## File Structure
+
+```
+scripts_modactive/
+├── onLoad.init       ← auto-enables the mod when a world loads (no user action needed)
+└── herald-main.lua   ← event loop, scanning logic, and notifications
+```
+
 ## Architecture
 
 ### Event Loop
@@ -15,12 +23,14 @@ DFHack mod (Lua, v50+ Steam) that scans world history for significant events and
 - Poll every 8,400 ticks (1 dwarf week) via `dfhack.timeout(8400, 'ticks', callback)`
 - Handle `onStateChange`: start on `SC_MAP_LOADED`, stop on `SC_MAP_UNLOADED`
 - Track `last_event_id` from `df.global.world.history.events` to avoid duplicates
+- Timers in `'ticks'` mode are auto-cancelled by DFHack on world unload
 
 ### World Scanning
 
 - Iterate `df.global.world.history.events` from `last_event_id + 1` only (incremental)
 - Filter by player's parent entity or user-tracked civs
-- Event types: `histevent_site_conqueredst`, `histevent_artifact_storedst`, `histevent_war_field_battlest`, etc.
+- Check event type via `event:getType()` vs `df.history_event_type.*` enum values
+- Death events: `df.history_event_type.HIST_FIGURE_DIED`; victim field: `event.victim_hf` (integer hf id)
 
 ### Notifications
 
@@ -39,6 +49,13 @@ DFHack mod (Lua, v50+ Steam) that scans world history for significant events and
 - Ticks: `df.global.cur_year_tick`
 - Events: `df.global.world.history.events`
 - Entities: `df.global.world.entities.all`
+- Historical figure: `df.historical_figure.find(hf_id)`
+- HF entity links: `hf.entity_links[i].type` / `.entity_id`; link type enum: `df.histfig_entity_link_type.POSITION`
+- Entity resolution: `df.historical_entity.find(entity_id)`
+- Position assignments: `entity.position_assignments[i].histfig2` / `.id`
+- Position name: `entity.positions[i].name`
+- Name translation: `dfhack.TranslateName(name_obj, true)`
+- Player civ id: `df.global.plotinfo.civ_id`
 
 ## Rules
 

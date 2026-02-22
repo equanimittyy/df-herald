@@ -1,0 +1,3 @@
+-- Auto-enables the Herald mod when a world loads. DFHack sources this file
+-- after SC_MAP_LOADED fires, so herald-main.lua handles immediate boot itself.
+herald-main
