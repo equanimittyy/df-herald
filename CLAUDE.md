@@ -31,7 +31,7 @@ scripts_modactive/
 - Filter by player's parent entity or user-tracked civs/entities
 - Check event type via `event:getType()` vs `df.history_event_type.*` enum values
 
-**Event Checks**
+**Event Checks** (Keep this code seperate to the event and scanning loop, one script per event check)
 
 - Death events: `df.history_event_type.HIST_FIGURE_DIED`; victim field: `event.victim_hf` (integer hf id)
 
