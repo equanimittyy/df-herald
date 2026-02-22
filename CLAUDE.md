@@ -47,7 +47,9 @@ Each event type lives in its own `herald-<type>.lua` module. Modules export a si
 ### Settings & Persistence
 
 - UI: `require('gui')`, `require('gui.widgets')`
-- Settings screen: toggle categories (War, Diplomacy, Artifacts, Beasts) + tracked civs list
+- Settings screen:
+  - Tracked civs lists with nested with toggle categories (Succession, War, Diplomacy, Artifacts, Beasts, Site raids)
+  - Tracked figures list (Death, Marraige, Children, Legendary, Artifacts)
 - Global config: `dfhack-config/herald.json`
 - Per-save config: `dfhack.persistent.get` / `dfhack.persistent.save`
 
