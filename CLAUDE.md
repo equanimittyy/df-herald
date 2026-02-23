@@ -83,7 +83,7 @@ objects accessed via their respective handler references (`h[ev_type].check`).
 - Entity resolution: `df.historical_entity.find(entity_id)`
 - Position assignments: `entity.position_assignments[i].histfig2` / `.id`
 - Position name: `entity.positions[i].name`
-- Name translation: `dfhack.TranslateName(name_obj, true)`
+- Name translation: `dfhack.translation.translateName(name_obj, true)` (renamed from `dfhack.TranslateName` in v50.15+)
 - Player civ id: `df.global.plotinfo.civ_id`
 
 ## Rules

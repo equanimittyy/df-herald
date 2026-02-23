@@ -27,20 +27,20 @@ local function get_leader_info(hf_id, dprint)
     end
 
     dprint('death: checking HF "%s" (id %d) for leader links',
-        dfhack.TranslateName(hf.name, true), hf_id)
+        dfhack.translation.translateName(hf.name, true), hf_id)
 
     for _, link in ipairs(hf.entity_links) do
         if link:getType() == df.histfig_entity_link_type.POSITION then
             local entity = df.historical_entity.find(link.entity_id)
             if entity then
                 dprint('death: found POSITION link to entity "%s"',
-                    dfhack.TranslateName(entity.name, true))
+                    dfhack.translation.translateName(entity.name, true))
                 for _, assignment in ipairs(entity.position_assignments) do
                     if assignment.histfig2 == hf_id then
                         for _, pos in ipairs(entity.positions) do
                             if pos.id == assignment.id then
                                 dprint('death: matched position "%s"',
-                                    dfhack.TranslateName(pos.name, true))
+                                    dfhack.translation.translateName(pos.name, true))
                                 return entity, pos.name
                             end
                         end
@@ -68,14 +68,15 @@ function check(event, dprint)
     end
 
     local hf       = df.historical_figure.find(hf_id)
-    local hf_name  = dfhack.TranslateName(hf.name, true)
-    local civ_name = dfhack.TranslateName(entity.name, true)
+    local hf_name   = dfhack.translation.translateName(hf.name, true)
+    local civ_name  = dfhack.translation.translateName(entity.name, true)
+    local pos_str   = dfhack.translation.translateName(pos_name, true)
 
     dprint('death.check: announcing death of %s, %s of %s',
-        hf_name, dfhack.TranslateName(pos_name, true), civ_name)
+        hf_name, pos_str, civ_name)
 
     dfhack.gui.showAnnouncement(
-        ('[Herald] %s, %s of %s, has died.'):format(hf_name, pos_name, civ_name),
+        ('[Herald] %s, %s of %s, has died.'):format(hf_name, pos_str, civ_name),
         COLOR_RED, true   -- pause = true for high-importance event
     )
 end
