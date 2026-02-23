@@ -17,8 +17,6 @@ fires an in-game announcement via herald-main. Not intended for direct use.
 
 ]====]
 
-local M = {}
-
 -- Returns (entity, position_name) if hf_id held any position in a civ entity,
 -- or nil, nil otherwise.
 local function get_leader_info(hf_id, dprint)
@@ -57,7 +55,7 @@ local function get_leader_info(hf_id, dprint)
 end
 
 -- dprint is injected by herald-main so all debug output shares the same flag.
-function M.check(event, dprint)
+function check(event, dprint)
     dprint = dprint or function() end  -- safe default when called without debug arg
 
     local hf_id = event.victim_hf
@@ -81,5 +79,3 @@ function M.check(event, dprint)
         COLOR_RED, true   -- pause = true for high-importance event
     )
 end
-
-return M

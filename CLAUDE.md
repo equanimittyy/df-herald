@@ -26,6 +26,15 @@ Every handler script **must** have, in order:
 2. A `--[====[` docblock — same format as `herald-main`, but with no Usage/Commands/Examples
    sections and ending with "Not intended for direct use."
 
+`dfhack.reqscript` returns the script's **environment table**, not any explicit `return`
+value. Export functions by defining them at module scope (no `local`, no wrapper table):
+- Correct: `function check(event, dprint) ... end`
+- Wrong: `local M = {}; function M.check(...) end; return M` — `check` is never in the env
+
+Each handler runs in its **own isolated environment**, so naming the export `check` in every
+handler is safe — `herald-death`'s `check` and `herald-battle`'s `check` are separate
+objects accessed via their respective handler references (`h[ev_type].check`).
+
 `herald-main.lua` additionally has `--@ enable=true` because it is user-facing (supports
 `enable`/`disable`). Handler modules use `--@ module=true` only.
 
