@@ -11,37 +11,49 @@ herald-main
 
 Tags: fort | gameplay
 
-Scans world history for significant events and notifies the player in-game.
+Command: "herald-main"
+
+  Scans world history for significant events and notifies the player in-game.
 
 Announces leader deaths, succession changes, and other notable events as they
 happen, without requiring the player to check the legends screen.
 
+
 Usage
 -----
 
-::
+   enable herald-main
+   disable herald-main
+   herald-main debug [true|false]
 
-    enable herald-main
-    disable herald-main
-    herald-main debug [true|false]
 
-``enable herald-main``
-    Start watching for events (done automatically on world load).
+Commands
+--------
 
-``disable herald-main``
-    Stop watching for events.
+"enable herald-main"
+   Start watching for events (done automatically on world load).
 
-``herald-main debug [true|false]``
-    Toggle debug output on/off, or set it explicitly. Omit the argument to
-    flip the current state. Debug lines appear in the DFHack console and
-    cover loop timing, handler registration, handler dispatch, and
-    per-handler event details (e.g. leader-death resolution).
+"disable herald-main"
+   Stop watching for events.
 
-    Examples::
+"herald-main debug [true|false]"
+   Toggle debug output on/off, or set it explicitly. Omit the argument to
+   flip the current state. Debug lines appear in the DFHack console and
+   cover loop timing, handler registration, handler dispatch, and
+   per-handler event details (e.g. leader-death resolution).
 
-        herald-main debug          -- toggles current state
-        herald-main debug true     -- force on
-        herald-main debug false    -- force off
+
+Examples
+--------
+
+"herald-main debug"
+   Toggle debug output (flip current state).
+
+"herald-main debug true"
+   Force debug output on.
+
+"herald-main debug false"
+   Force debug output off.
 
 ]====]
 
