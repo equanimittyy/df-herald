@@ -83,6 +83,8 @@ Every handler script **must** have, in order:
 - Always guard with `dfhack.isMapLoaded()` before scanning
 - Never re-scan from event ID 0; always incremental
 - Keep UI (`herald-gui.lua`) separate from logic (`herald-main.lua`)
+- Use `DEBUG` (not `debug`) for the debug flag — `debug` shadows Lua's built-in debug library,
+  making `debug = debug or false` always truthy and permanently enabling debug output
 
 ## Future (on request only)
 

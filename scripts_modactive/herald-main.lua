@@ -67,13 +67,14 @@ enabled = enabled or false    -- top-level var; DFHack enable/disable convention
 
 -- Debug flag. Controlled via the launcher or console:
 --   herald-main debug [true|false]
-debug = debug or false
+-- Named DEBUG (not debug) to avoid shadowing Lua's built-in debug library.
+DEBUG = DEBUG or false
 
--- Internal helper: prints a formatted debug line when debug=true.
+-- Internal helper: prints a formatted debug line when DEBUG=true.
 -- Outputs to both the DFHack console and the in-game announcements log.
 -- Passed to handler.check(ev, dprint) so handlers share the same flag.
 local function dprint(fmt, ...)
-    if not debug then return end
+    if not DEBUG then return end
     local msg = ('[Herald DEBUG] ' .. fmt):format(...)
     print(msg)
     if dfhack.isMapLoaded() then
@@ -158,11 +159,11 @@ end
 local args = {...}
 if args[1] == 'debug' then
     if args[2] == 'true' or args[2] == 'on' then
-        debug = true
+        DEBUG = true
     elseif args[2] == 'false' or args[2] == 'off' then
-        debug = false
+        DEBUG = false
     else
-        debug = not debug
+        DEBUG = not DEBUG
     end
-    print('[Herald] Debug ' .. (debug and 'enabled' or 'disabled'))
+    print('[Herald] Debug ' .. (DEBUG and 'enabled' or 'disabled'))
 end
