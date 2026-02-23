@@ -38,9 +38,10 @@ Commands
 
 "herald-main debug [true|false]"
    Toggle debug output on/off, or set it explicitly. Omit the argument to
-   flip the current state. Debug lines appear in the DFHack console and
-   cover loop timing, handler registration, handler dispatch, and
-   per-handler event details (e.g. leader-death resolution).
+   flip the current state. Debug lines appear in both the DFHack console
+   and the in-game announcements log (highlighted in cyan), covering loop
+   timing, handler registration, handler dispatch, and per-handler event
+   details (e.g. leader-death resolution).
 
 
 Examples
@@ -69,10 +70,15 @@ enabled = enabled or false    -- top-level var; DFHack enable/disable convention
 debug = debug or false
 
 -- Internal helper: prints a formatted debug line when debug=true.
+-- Outputs to both the DFHack console and the in-game announcements log.
 -- Passed to handler.check(ev, dprint) so handlers share the same flag.
 local function dprint(fmt, ...)
     if not debug then return end
-    print(('[Herald DEBUG] ' .. fmt):format(...))
+    local msg = ('[Herald DEBUG] ' .. fmt):format(...)
+    print(msg)
+    if dfhack.isMapLoaded() then
+        dfhack.gui.showAnnouncement(msg, COLOR_LIGHTCYAN)
+    end
 end
 
 function isEnabled()
