@@ -19,8 +19,15 @@ scripts_modactive/
 
 Each event type lives in its own `herald-<type>.lua` module. Modules export a single
 `check(event)` function and are registered in the `handlers` table in `herald-main.lua`.
-Every handler script **must** have `--@ module=true` near the top, or `dfhack.reqscript`
-will throw "Cannot be used as a module" and break the event loop.
+
+Every handler script **must** have, in order:
+1. `--@ module=true` — required for `dfhack.reqscript`; omitting it throws "Cannot be used
+   as a module" and breaks the event loop.
+2. A `--[====[` docblock — same format as `herald-main`, but with no Usage/Commands/Examples
+   sections and ending with "Not intended for direct use."
+
+`herald-main.lua` additionally has `--@ enable=true` because it is user-facing (supports
+`enable`/`disable`). Handler modules use `--@ module=true` only.
 
 ## Architecture
 

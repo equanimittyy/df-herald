@@ -4,6 +4,19 @@
 
 --@ module=true
 
+--[====[
+herald-death
+============
+
+Tags: fort | gameplay
+
+  Handles ``df.history_event_type.HIST_FIGURE_DIED`` events for the Herald mod.
+
+Detects when a historical figure who held a leadership position has died and
+fires an in-game announcement via herald-main. Not intended for direct use.
+
+]====]
+
 local M = {}
 
 -- Returns (entity, position_name) if hf_id held any position in a civ entity,
