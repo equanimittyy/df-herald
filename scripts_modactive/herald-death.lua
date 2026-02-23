@@ -2,6 +2,8 @@
 -- Handles df.history_event_type.HIST_FIGURE_DIED events.
 -- Loaded by herald-main.lua via dfhack.reqscript.
 
+--@ module=true
+
 local M = {}
 
 -- Returns (entity, position_name) if hf_id held any position in a civ entity,

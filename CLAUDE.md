@@ -19,6 +19,8 @@ scripts_modactive/
 
 Each event type lives in its own `herald-<type>.lua` module. Modules export a single
 `check(event)` function and are registered in the `handlers` table in `herald-main.lua`.
+Every handler script **must** have `--@ module=true` near the top, or `dfhack.reqscript`
+will throw "Cannot be used as a module" and break the event loop.
 
 ## Architecture
 
@@ -28,6 +30,8 @@ Each event type lives in its own `herald-<type>.lua` module. Modules export a si
 - Handle `onStateChange`: start on `SC_MAP_LOADED`, stop on `SC_MAP_UNLOADED`
 - Track `last_event_id` from `df.global.world.history.events` to avoid duplicates
 - Timers in `'ticks'` mode are auto-cancelled by DFHack on world unload
+- `dfhack.timeout` fires **once only**; `scan_events` must reschedule itself at the end.
+  Any error or early return before the rescheduling line permanently kills the loop.
 
 ### World Scanning
 
