@@ -14,28 +14,33 @@ DFHack mod (Lua, v50+ Steam) that scans world history for significant events and
 scripts_modactive/
 ├── onLoad.init              ← auto-enables the mod when a world loads (no user action needed)
 ├── herald-main.lua          ← event loop, dispatcher; add new event types here
-├── herald-fort-death.lua    ← HIST_FIGURE_DIED handler (leader detection + announcement) [Fort]
-└── herald-world-leaders.lua ← poll-based world leader tracking (died_year check) [World]
+├── herald-fort-death.lua    ← HIST_FIGURE_DIED handler (leader detection + announcement) [Individuals]
+└── herald-world-leaders.lua ← poll-based world leader tracking (died_year check) [Civilisations]
 ```
 
-Each event type lives in its own `herald-<type>.lua` module. Fort handlers export a single
-`check(event, dprint)` function and are registered in the `handlers` table in `herald-main.lua`.
-World handlers export `check(dprint)` and `reset()`, registered in `world_handlers`.
+Each event type lives in its own `herald-<type>.lua` module. Event-driven Individual handlers export
+`check(event, dprint)` and are registered in `get_handlers()`. Poll-based Individual and Civilisation
+handlers export `check(dprint)` and `reset()`, registered in `get_world_handlers()`.
 
 ## Handler Categories
 
-- **Fort** (event-driven): called once per matching `df.history_event_type.*` event via the
-  incremental event scan. Interface: `check(event, dprint)`. Registered in `get_handlers()`.
-- **World/Global** (poll-based): called once per scan cycle regardless of events. Manage their
-  own state snapshot and detect changes by comparing to previous cycle. Interface: `check(dprint)`
-  + `reset()`. Registered in `get_world_handlers()`.
-- **Adventure** (future): not yet implemented.
+- **Individuals**: tracks events for specific historical figures. Uses two sub-modes:
+  - *Event-driven* (in-fort / on-screen): called once per matching `df.history_event_type.*` event
+    via the incremental scan. Interface: `check(event, dprint)`. Registered in `get_handlers()`.
+  - *Poll-based* (off-screen): called once per scan cycle; snapshots HF state and detects changes
+    (e.g. `hf.died_year ~= -1`). Interface: `check(dprint)` + `reset()`. Registered in
+    `get_world_handlers()`.
+- **Civilisations** (poll-based): called once per scan cycle regardless of events. Tracks civ-level
+  state (leaders, succession, etc.). Manages its own state snapshot and detects changes by comparing
+  to previous cycle. Interface: `check(dprint)` + `reset()`. Registered in `get_world_handlers()`.
 
-Fort handlers are reliable for in-fort occurrences. World handlers are needed for out-of-fort
-changes because `df.global.world.history.events` is **unreliable** for those: the game may set
-`hf.died_year`/`hf.died_seconds` directly without generating a `HIST_FIGURE_DIED` event.
+Event-driven Individual handlers are reliable for in-fort occurrences. Poll-based handlers (both
+Individual off-screen and Civilisation) are needed because `df.global.world.history.events` is
+**unreliable** for out-of-fort changes: the game may set `hf.died_year`/`hf.died_seconds` directly
+without generating a `HIST_FIGURE_DIED` event.
 
 Every handler script **must** have, in order:
+
 1. `--@ module=true` — required for `dfhack.reqscript`; omitting it throws "Cannot be used
    as a module" and breaks the event loop.
 2. A `--[====[` docblock — same format as `herald-main`, but with no Usage/Commands/Examples
@@ -43,6 +48,7 @@ Every handler script **must** have, in order:
 
 `dfhack.reqscript` returns the script's **environment table**, not any explicit `return`
 value. Export functions by defining them at module scope (no `local`, no wrapper table):
+
 - Correct: `function check(event, dprint) ... end`
 - Wrong: `local M = {}; function M.check(...) end; return M` — `check` is never in the env
 
@@ -57,7 +63,9 @@ objects accessed via their respective handler references (`h[ev_type].check`).
 
 ### Event Loop
 
-- Poll every 8,400 ticks (1 dwarf week) via `dfhack.timeout(8400, 'ticks', callback)`
+- Poll on a user-configurable tick interval via `dfhack.timeout(tick_interval, 'ticks', callback)`
+  - Default: 1,200 ticks (1 dwarf day); minimum: 600 ticks (half a dwarf day)
+  - Set via `herald-main interval`; persisted in `dfhack-config/herald.json` as `tick_interval`
 - Handle `onStateChange`: start on `SC_MAP_LOADED`, stop on `SC_MAP_UNLOADED`
 - Track `last_event_id` from `df.global.world.history.events` to avoid duplicates
 - Timers in `'ticks'` mode are auto-cancelled by DFHack on world unload
@@ -73,21 +81,21 @@ objects accessed via their respective handler references (`h[ev_type].check`).
 **Event Scope / Reliability**: history events are unreliable for out-of-fort occurrences.
 World events (raids, battles) can still generate entries, but out-of-fort deaths may bypass
 event generation entirely — the game may only set `hf.died_year`/`hf.died_seconds`. Polling
-HF state directly is more reliable for world-level tracking.
+HF state directly is more reliable for civilisation-level tracking.
 
 **Event Checks** (Keep this code separate to the event and scanning loop, one script per event check)
 
 - Death events: `df.history_event_type.HIST_FIGURE_DIED`; victim field: `event.victim_hf` (integer hf id)
 
-### World-Level Polling
+### Civilisation-Level Polling
 
-Runs alongside the event scan each tick cycle. World handlers snapshot current state and compare
-against the previous cycle to detect changes:
+Runs alongside the event scan each tick cycle. Civilisation handlers snapshot current state and
+compare against the previous cycle to detect changes:
 
-1. `get_world_handlers()` — lazy-init table mapping string keys to world handler modules.
-2. `scan_world_state(dprint)` — iterates world handlers, calling `handler.check(dprint)`.
+1. `get_world_handlers()` — lazy-init table mapping string keys to civilisation handler modules.
+2. `scan_world_state(dprint)` — iterates civilisation handlers, calling `handler.check(dprint)`.
 3. Called at the end of `scan_events()`, sharing the same 8,400-tick cadence.
-4. On cleanup, `handler.reset()` is called on each world handler to clear snapshot state.
+4. On cleanup, `handler.reset()` is called on each civilisation handler to clear snapshot state.
 
 `herald-world-leaders.lua` uses this approach: it snapshots `{ [entity_id] = { [pos_id] = { hf_id,
 pos_name, civ_name } } }` each cycle and checks `hf.died_year ~= -1` to detect leader deaths that
@@ -135,6 +143,6 @@ may have occurred without generating a `HIST_FIGURE_DIED` event.
 
 ## Future (on request only)
 
-- Adventure mode support
+- Adventure mode handler category
 - Legendary citizen tracking (notable deeds of fort-born figures)
 - War progress summaries (casualty totals after battles)
