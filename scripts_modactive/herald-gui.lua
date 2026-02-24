@@ -251,7 +251,7 @@ function HeraldFiguresWindow:init()
     end
 end
 
--- Intercept CUSTOM_CTRL_D before children (EditField in FilteredList) can swallow it.
+-- Intercept keys before children can swallow them.
 function HeraldFiguresWindow:onInput(keys)
     if keys.CUSTOM_CTRL_D then
         self:toggle_dead()
@@ -261,6 +261,11 @@ function HeraldFiguresWindow:onInput(keys)
         self:toggle_tracked_only()
         return true
     end
+    -- Always offer input to fig_list first so keyboard navigation drives it
+    -- regardless of which key names DFHack uses for cursor movement.
+    -- fig_list returns false for anything it doesn't handle (mouse events on
+    -- the detail panel, hotkeys, etc.), which then falls through to super.
+    if self.subviews.fig_list:onInput(keys) then return true end
     return HeraldFiguresWindow.super.onInput(self, keys)
 end
 
