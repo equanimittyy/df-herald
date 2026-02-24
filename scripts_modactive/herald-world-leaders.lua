@@ -23,25 +23,21 @@ local function is_alive(hf)
     return hf.died_year == -1 and hf.died_seconds == -1
 end
 
--- Safely extracts a singular name string from either a static-array field (entity_position_raw
--- style: name[0]) or a plain stl-string field (entity_position / entity.positions.own style).
+-- Normalises a position name field: entity_position_raw uses string[] (name[0]),
+-- entity_position (entity.positions.own) uses plain stl-string.
 local function name_str(field)
     if not field then return nil end
-    if type(field) == 'string' then
-        return field ~= '' and field or nil
-    end
+    if type(field) == 'string' then return field ~= '' and field or nil end
     local s = field[0]
     return (s and s ~= '') and s or nil
 end
 
--- Returns the position title for an assignment, using the gendered form if available.
--- Checks entity_raw.positions first (positions defined in raw files), then falls back to
--- entity.positions.own (instance-level positions used by EVIL/PLAINS and similar entity
--- types whose entity_raw carries an empty positions vector).
+-- Returns the gendered (or neutral) position title for an assignment.
+-- Tries entity_raw.positions first; falls back to entity.positions.own for EVIL/PLAINS
+-- civs whose entity_raw carries no positions.
 local function get_pos_name(entity, pos_id, hf)
     if not entity or pos_id == nil then return nil end
 
-    -- 1. entity_raw.positions — canonical source for most civilised entity types
     local entity_raw = entity.entity_raw
     if entity_raw then
         for _, pos in ipairs(entity_raw.positions) do
@@ -52,8 +48,6 @@ local function get_pos_name(entity, pos_id, hf)
         end
     end
 
-    -- 2. entity.positions.own — instance-level positions (e.g. goblin/evil civs where
-    --    entity_raw.positions is empty but positions are stored on the entity itself)
     local own = entity.positions and entity.positions.own
     if own then
         for _, pos in ipairs(own) do
