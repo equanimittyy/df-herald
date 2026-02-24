@@ -318,6 +318,7 @@ function FiguresPanel:toggle_pinned(choice)
     local filter_text = fl.edit.text
     self:refresh_list()
     fl:setFilter(filter_text)
+    self.parent_view.subviews.pinned_panel:refresh_pinned_list()
 end
 
 function FiguresPanel:toggle_dead()
@@ -414,11 +415,11 @@ function PinnedPanel:init()
         -- Column headers
         widgets.Label{
             view_id = 'list_header',
-            frame   = { t = 1, l = 1, r = 27 },
+            frame   = { t = 1, l = 1, r = 25 },
             text    = {
                 { text = ('%-20s'):format('Name'),  pen = COLOR_GREY },
                 { text = ('%-12s'):format('Race'),  pen = COLOR_GREY },
-                { text = 'Civ',                     pen = COLOR_GREY },
+                { text = 'Status',                  pen = COLOR_GREY },
             },
         },
         widgets.Label{
@@ -430,15 +431,10 @@ function PinnedPanel:init()
             frame = { t = 2, l = 0, r = 0, h = 1 },
             text  = { { text = string.rep('\xc4', 74), pen = COLOR_GREY } },
         },
-        -- Vertical separator between list and ann panel
-        widgets.Label{
-            frame = { t = 3, b = 1, l = 48, w = 1 },
-            text  = { { text = string.rep('\xb3\n', 35), pen = COLOR_GREY } },
-        },
         -- Pinned figure / civ list
         widgets.List{
             view_id   = 'pinned_list',
-            frame     = { t = 3, b = 1, l = 1, r = 27 },
+            frame     = { t = 3, b = 1, l = 1, r = 25 },
             on_select = function() end,
         },
         -- Announcement panels
@@ -491,12 +487,14 @@ function PinnedPanel:refresh_pinned_list()
             if name == '' then name = '(unnamed)' end
             local race    = get_race_name(hf)
             if race == '?' then race = 'Unknown' end
-            local civ_full = get_civ_name(hf)
+            local status_token = is_dead
+                and { text = 'dead', pen = COLOR_RED }
+                or  { text = '',     pen = COLOR_GREEN }
             table.insert(choices, {
                 text = {
                     { text = ('%-20s'):format(name:sub(1,20)), pen = is_dead and COLOR_GREY or nil },
                     { text = ('%-12s'):format(race:sub(1,12)), pen = COLOR_GREY },
-                    { text = civ_full:sub(1, 14),              pen = COLOR_GREY },
+                    status_token,
                 },
                 hf_id = hf.id,
             })
@@ -516,6 +514,7 @@ function PinnedPanel:unpin_selected()
     if not choice or not choice.hf_id then return end
     ind_death.set_pinned(choice.hf_id, nil)
     self:refresh_pinned_list()
+    self.parent_view.subviews.figures_panel:refresh_list()
 end
 
 -- CivisationsPanel (placeholder) -----------------------------------------------
@@ -569,6 +568,7 @@ function HeraldWindow:init()
             labels = { 'Pinned', 'Historical Figures', 'Civilisations' },
             key          = 'CUSTOM_CTRL_T',
             key_back     = 'CUSTOM_CTRL_Y',
+            get_cur_page = function() return self.cur_tab end,
             on_select    = function(idx) self:switch_tab(idx) end,
         },
         pinned_panel,
