@@ -37,10 +37,6 @@ local function get_civ_name(hf)
     return ''
 end
 
-local function get_civ_display(hf)
-    return get_civ_name(hf):sub(1, 20)
-end
-
 -- Normalises a position name field: entity_position_raw uses string[] (name[0]),
 -- entity_position (entity.positions.own) uses plain stl-string.
 local function name_str(field)
@@ -50,7 +46,21 @@ local function name_str(field)
     return (s and s ~= '') and s or nil
 end
 
+-- Returns the name of the SiteGovernment entity the hf is a member of, or nil.
+local function get_site_gov(hf)
+    for _, link in ipairs(hf.entity_links) do
+        if link:getType() == df.histfig_entity_link_type.MEMBER then
+            local ent = df.historical_entity.find(link.entity_id)
+            if ent and ent.type == df.historical_entity_type.SiteGovernment then
+                return dfhack.translation.translateName(ent.name, true)
+            end
+        end
+    end
+    return nil
+end
+
 -- Returns { {pos_name, civ_name}, ... } for all position links of hf.
+-- Match assignments by histfig2 == hf.id (the HF holder field on the assignment).
 local function get_positions(hf)
     local results = {}
     for _, link in ipairs(hf.entity_links) do
@@ -59,7 +69,7 @@ local function get_positions(hf)
             if entity then
                 local civ_name = dfhack.translation.translateName(entity.name, true)
                 for _, asgn in ipairs(entity.positions.assignments) do
-                    if asgn.id == link.link_id then
+                    if asgn.histfig2 == hf.id then
                         local pos_id   = asgn.position_id
                         local pos_name = nil
                         -- Try entity_raw.positions first
@@ -96,24 +106,26 @@ local function get_positions(hf)
 end
 
 -- Build the choice list for the FilteredList.
-local function build_choices(show_dead)
+-- Column widths: Name=22, Race=12, Civ=25, Status=remaining
+local function build_choices(show_dead, show_tracked_only)
     local choices = {}
     local tracked = ind_death.get_tracked()
     for _, hf in ipairs(df.global.world.history.figures) do
         local is_dead = hf.died_year ~= -1
         if is_dead and not show_dead then goto continue end
+        if show_tracked_only and not tracked[hf.id] then goto continue end
 
         local name     = dfhack.translation.translateName(hf.name, true)
         if name == '' then name = '(unnamed)' end
         local race     = get_race_name(hf)
         if race == '?' then race = 'Unknown' end
-        local civ_disp = get_civ_display(hf)
+        local civ_full = get_civ_name(hf)   -- full name for search
         local is_tracked = tracked[hf.id]
 
-        -- Pad columns: name=22, race=12, civ=20
-        local name_col = name:sub(1, 21)
-        local race_col = race:sub(1, 11)
-        local civ_col  = civ_disp:sub(1, 19)
+        -- Pad columns: name=22, race=12, civ=25
+        local name_col = name:sub(1, 22)
+        local race_col = race:sub(1, 12)
+        local civ_col  = civ_full:sub(1, 24)
 
         local status_token
         if is_dead then
@@ -122,13 +134,13 @@ local function build_choices(show_dead)
             status_token = { text = is_tracked and 'tracked' or '', pen = COLOR_GREEN }
         end
 
-        local search_key = (name .. ' ' .. race .. ' ' .. civ_disp):lower()
+        local search_key = (name .. ' ' .. race .. ' ' .. civ_full):lower()
 
         table.insert(choices, {
             text       = {
                 { text = ('%-22s'):format(name_col), pen = is_dead and COLOR_GREY or nil },
                 { text = ('%-12s'):format(race_col), pen = COLOR_GREY },
-                { text = ('%-20s'):format(civ_col),  pen = COLOR_GREY },
+                { text = ('%-25s'):format(civ_col),  pen = COLOR_GREY },
                 status_token,
             },
             search_key = search_key,
@@ -147,40 +159,40 @@ end
 local HeraldFiguresWindow = defclass(HeraldFiguresWindow, widgets.Window)
 HeraldFiguresWindow.ATTRS {
     frame_title = 'Herald: Figure Tracking',
-    frame       = { w = 76, h = 38 },
+    frame       = { w = 76, h = 45 },
     resizable   = false,
 }
 
 function HeraldFiguresWindow:init()
-    self.show_dead = false
+    self.show_dead         = false
+    self.show_tracked_only = false
 
     self:addviews{
-        -- Column header
+        -- Column header (matches data column widths: name=22, race=12, civ=25)
         widgets.Label{
             frame = { t = 0, l = 1 },
             text  = {
-                { text = ('%-28s'):format('Name'),   pen = COLOR_GREY },
+                { text = ('%-22s'):format('Name'),   pen = COLOR_GREY },
                 { text = ('%-12s'):format('Race'),   pen = COLOR_GREY },
-                { text = ('%-12s'):format('Civ'),    pen = COLOR_GREY },
+                { text = ('%-25s'):format('Civ'),    pen = COLOR_GREY },
                 { text = 'Status',                   pen = COLOR_GREY },
             },
         },
-        -- Figure list
+        -- Figure list; on_submit removed so clicking a row does NOT track/untrack
         widgets.FilteredList{
             view_id   = 'fig_list',
             frame     = { t = 1, b = 13, l = 1, r = 1 },
             on_select = function(idx, choice) self:update_detail(choice) end,
-            on_submit = function(idx, choice) self:toggle_tracking(choice) end,
         },
         -- Separator
         widgets.Label{
-            frame = { t = 25, l = 0, r = 0, h = 1 },
+            frame = { t = 32, l = 0, r = 0, h = 1 },
             text  = { { text = string.rep('\xc4', 74), pen = COLOR_GREY } },
         },
         -- Detail panel
         widgets.Label{
             view_id = 'detail_panel',
-            frame   = { t = 26, b = 3, l = 1, r = 1 },
+            frame   = { t = 33, b = 3, l = 1, r = 1 },
             text    = {},
         },
         -- Footer hotkeys
@@ -189,19 +201,29 @@ function HeraldFiguresWindow:init()
             key         = 'SELECT',
             label       = 'Track/Untrack',
             auto_width  = true,
-            on_submit = function()
+            on_activate = function()
                 local fl = self.subviews.fig_list
                 local idx, choice = fl:getSelected()
                 if choice then self:toggle_tracking(choice) end
             end,
         },
         widgets.HotkeyLabel{
-            view_id     = 'toggle_dead_btn',
-            frame       = { b = 0, l = 25 },
-            key         = 'CUSTOM_CTRL_D',
-            label       = 'Show dead: No',
+            view_id     = 'toggle_tracked_btn',
+            frame       = { b = 1, l = 1 },
+            key         = 'CUSTOM_CTRL_T',
+            label       = function()
+                return 'Tracked only: ' .. (self.show_tracked_only and 'Yes' or 'No ')
+            end,
             auto_width  = true,
-            on_activate = function() self:toggle_dead() end,
+        },
+        widgets.HotkeyLabel{
+            view_id     = 'toggle_dead_btn',
+            frame       = { b = 1, l = 35 },
+            key         = 'CUSTOM_CTRL_D',
+            label       = function()
+                return 'Show dead: ' .. (self.show_dead and 'Yes' or 'No ')
+            end,
+            auto_width  = true,
         },
         widgets.HotkeyLabel{
             frame       = { b = 0, r = 1 },
@@ -213,12 +235,42 @@ function HeraldFiguresWindow:init()
     }
 
     self:refresh_list()
+
+    -- Ensure the detail panel always updates after every search-filter change.
+    -- on_select alone is unreliable when the list transitions back from "no matches":
+    -- if the internal selected index was already 1, setSelected(1) doesn't change it
+    -- and invoke_onselect may not re-fire.  Overriding onFilterChange on the instance
+    -- runs AFTER the list is updated, so getSelected() returns the correct new choice.
+    local fl  = self.subviews.fig_list
+    local win = self
+    local _orig_ofc = fl.onFilterChange   -- captures class method via __index
+    fl.onFilterChange = function(this, text, pos)
+        _orig_ofc(this, text, pos)
+        local _, choice = this:getSelected()
+        win:update_detail(choice)
+    end
+end
+
+-- Intercept CUSTOM_CTRL_D before children (EditField in FilteredList) can swallow it.
+function HeraldFiguresWindow:onInput(keys)
+    if keys.CUSTOM_CTRL_D then
+        self:toggle_dead()
+        return true
+    end
+    if keys.CUSTOM_CTRL_T then
+        self:toggle_tracked_only()
+        return true
+    end
+    return HeraldFiguresWindow.super.onInput(self, keys)
 end
 
 function HeraldFiguresWindow:refresh_list()
-    local choices = build_choices(self.show_dead)
+    local choices = build_choices(self.show_dead, self.show_tracked_only)
     self.subviews.fig_list:setChoices(choices)
-    self.subviews.detail_panel:setText({})
+    -- Populate detail panel from whatever is now selected (first item on open,
+    -- preserved selection after a toggle-dead refresh).
+    local _, choice = self.subviews.fig_list:getSelected()
+    self:update_detail(choice)
 end
 
 function HeraldFiguresWindow:update_detail(choice)
@@ -233,7 +285,9 @@ function HeraldFiguresWindow:update_detail(choice)
     local name    = dfhack.translation.translateName(hf.name, true)
     if name == '' then name = '(unnamed)' end
     local race    = get_race_name(hf)
-    local civ     = get_civ_name(hf)
+    if race == '?' then race = 'Unknown' end
+    local civ = get_civ_name(hf)
+    local gov = get_site_gov(hf)
     local is_tracked = tracked[hf_id] and 'Yes' or 'No'
     local alive   = hf.died_year == -1 and 'Alive' or 'Dead'
 
@@ -248,33 +302,35 @@ function HeraldFiguresWindow:update_detail(choice)
         { text = 'Tracked: ', pen = COLOR_GREY },
         { text = is_tracked, pen = tracked[hf_id] and COLOR_GREEN or COLOR_WHITE },
         NEWLINE,
-        { text = 'Civ: ', pen = COLOR_GREY },
-        { text = civ ~= '' and civ or '(none)' },
+        { text = 'Civ: ',        pen = COLOR_GREY },
+        { text = civ ~= '' and civ or 'None' },
+        NEWLINE,
+        { text = 'Site Gov: ',        pen = COLOR_GREY },
+        { text = gov or 'None' },
         NEWLINE,
     }
 
     local positions = get_positions(hf)
+    table.insert(lines, { text = 'Positions: ', pen = COLOR_GREY })
     if #positions == 0 then
-        table.insert(lines, { text = 'Positions: ', pen = COLOR_GREY })
-        table.insert(lines, { text = '(none)' })
-        table.insert(lines, NEWLINE)
+        table.insert(lines, { text = 'None' })
     else
-        table.insert(lines, { text = 'Positions:', pen = COLOR_GREY })
-        table.insert(lines, NEWLINE)
-        local max_show = 4
-        for i, p in ipairs(positions) do
-            if i > max_show then
-                table.insert(lines, { text = '  (more...)', pen = COLOR_GREY })
-                table.insert(lines, NEWLINE)
-                break
-            end
-            local pos_label = p.pos_name or '(unnamed position)'
-            table.insert(lines, { text = '  ' .. pos_label .. ' of ' .. p.civ_name })
-            table.insert(lines, NEWLINE)
+        local pos_strs = {}
+        for _, p in ipairs(positions) do
+            table.insert(pos_strs, (p.pos_name or '(unnamed)') .. ' of ' .. p.civ_name)
         end
+        table.insert(lines, { text = table.concat(pos_strs, ', ') })
     end
+    table.insert(lines, NEWLINE)
 
     self.subviews.detail_panel:setText(lines)
+    -- Force layout recalculation: the Label's computed frame can go stale when
+    -- content transitions from empty ({}) to non-empty, causing nothing to render
+    -- until a window-move triggers onResize.  Guard against being called during
+    -- init() before the window is placed on screen (frame_parent_rect is nil then).
+    if self.frame_parent_rect then
+        self:updateLayout()
+    end
 end
 
 function HeraldFiguresWindow:toggle_tracking(choice)
@@ -298,8 +354,11 @@ end
 
 function HeraldFiguresWindow:toggle_dead()
     self.show_dead = not self.show_dead
-    local btn = self.subviews.toggle_dead_btn
-    btn.label = 'Show dead: ' .. (self.show_dead and 'Yes' or 'No')
+    self:refresh_list()
+end
+
+function HeraldFiguresWindow:toggle_tracked_only()
+    self.show_tracked_only = not self.show_tracked_only
     self:refresh_list()
 end
 
