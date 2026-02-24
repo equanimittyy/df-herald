@@ -1,7 +1,3 @@
--- herald-main.lua
--- Event loop and dispatcher for Dwarf Fortress Herald.
--- Loaded automatically via scripts_modactive/onLoad.init.
-
 --@ module=true
 --@ enable=true
 
@@ -65,14 +61,9 @@ local last_event_id = -1      -- ID of last processed event; -1 = uninitialised
 local scan_timer_id = nil     -- handle returned by dfhack.timeout
 enabled = enabled or false    -- top-level var; DFHack enable/disable convention
 
--- Debug flag. Controlled via the launcher or console:
---   herald-main debug [true|false]
 -- Named DEBUG (not debug) to avoid shadowing Lua's built-in debug library.
 DEBUG = DEBUG or false
 
--- Internal helper: prints a formatted debug line when DEBUG=true.
--- Outputs to both the DFHack console and the in-game announcements log.
--- Passed to handler.check(ev, dprint) so handlers share the same flag.
 local function dprint(fmt, ...)
     if not DEBUG then return end
     local msg = ('[Herald DEBUG] ' .. fmt):format(...)
@@ -86,9 +77,7 @@ function isEnabled()
     return enabled
 end
 
--- Map event type enum → handler module. Add new handlers here as new event
--- types are implemented (e.g. herald-battle.lua, herald-artifact.lua).
--- Fort handlers: check(event, dprint) — called once per matching event.
+-- add new event-type handlers here (e.g. herald-battle.lua)
 local handlers -- initialised lazily after world load so enums are available
 
 local function get_handlers()
@@ -101,8 +90,6 @@ local function get_handlers()
     return handlers
 end
 
--- World handlers: check(dprint) — called once per scan cycle; manage own state.
--- Also export reset() which is called on world unload.
 local world_handlers -- initialised lazily
 
 local function get_world_handlers()

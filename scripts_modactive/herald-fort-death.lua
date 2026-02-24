@@ -1,7 +1,3 @@
--- herald-fort-death.lua
--- Fort handler: HIST_FIGURE_DIED event (in-fort leader deaths).
--- Loaded by herald-main.lua via dfhack.reqscript.
-
 --@ module=true
 
 --[====[
@@ -19,8 +15,6 @@ Not intended for direct use.
 
 ]====]
 
--- Returns (entity, position_name) if hf_id held any position in a civ entity,
--- or nil, nil otherwise.
 local function get_leader_info(hf_id, dprint)
     local hf = df.historical_figure.find(hf_id)
     if not hf then
@@ -56,9 +50,8 @@ local function get_leader_info(hf_id, dprint)
     return nil, nil
 end
 
--- dprint is injected by herald-main so all debug output shares the same flag.
 function check(event, dprint)
-    dprint = dprint or function() end  -- safe default when called without debug arg
+    dprint = dprint or function() end
 
     local hf_id = event.victim_hf
     dprint('death.check: HIST_FIGURE_DIED victim hf_id=%d', hf_id)

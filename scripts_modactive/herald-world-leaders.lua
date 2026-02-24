@@ -1,7 +1,3 @@
--- herald-world-leaders.lua
--- Poll-based world leader tracking for the Herald mod.
--- Loaded by herald-main.lua via dfhack.reqscript.
-
 --@ module=true
 
 --[====[
@@ -21,15 +17,12 @@ Not intended for direct use.
 ]====]
 
 -- tracked_leaders: { [entity_id] = { [pos_id] = { hf_id, pos_name, civ_name } } }
--- Holds the snapshot from the previous scan cycle.
 local tracked_leaders = {}
 
--- Returns true if hf is currently alive.
 local function is_alive(hf)
     return hf.died_year == -1 and hf.died_seconds == -1
 end
 
--- dprint is injected by herald-main so all debug output shares the same flag.
 function check(dprint)
     dprint = dprint or function() end
 
@@ -53,7 +46,6 @@ function check(dprint)
             local hf = df.historical_figure.find(hf_id)
             if not hf then goto continue_assignment end
 
-            -- Resolve position name from entity.positions by matching pos.id == assignment.id
             local pos_name = nil
             for _, pos in ipairs(entity.positions) do
                 if pos.id == assignment.id then
@@ -65,7 +57,6 @@ function check(dprint)
 
             local pos_id = assignment.id
 
-            -- Build the new snapshot entry (alive leaders only)
             if is_alive(hf) then
                 if not new_snapshot[entity_id] then
                     new_snapshot[entity_id] = {}
@@ -79,7 +70,6 @@ function check(dprint)
                     dfhack.translation.translateName(hf.name, true), pos_name, civ_name)
             end
 
-            -- Compare against previous snapshot
             local prev_entity = tracked_leaders[entity_id]
             if prev_entity then
                 local prev = prev_entity[pos_id]
@@ -118,13 +108,11 @@ function check(dprint)
         ::continue_entity::
     end
 
-    -- Replace old snapshot with the new one (alive holders only)
     tracked_leaders = new_snapshot
     dprint('world-leaders.check: snapshot updated, %d entities tracked',
         (function() local n=0 for _ in pairs(tracked_leaders) do n=n+1 end return n end)())
 end
 
--- Called by herald-main on world unload to clear stale snapshot state.
 function reset()
     tracked_leaders = {}
 end
