@@ -38,6 +38,9 @@ function check(dprint)
     local new_snapshot = {}
 
     for _, entity in ipairs(df.global.world.entities.all) do
+        -- Only track civilisation-layer entities; guilds, religions, animal herds, etc.
+        -- are irrelevant to wars, raids, and succession tracking.
+        if entity.type ~= df.historical_entity_type.Civilization then goto continue_entity end
         if #entity.position_assignments == 0 then goto continue_entity end
 
         local entity_id = entity.id
