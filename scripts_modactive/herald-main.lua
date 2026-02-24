@@ -86,6 +86,36 @@ enabled = enabled or false    -- top-level var; DFHack enable/disable convention
 -- Named DEBUG (not debug) to avoid shadowing Lua's built-in debug library.
 DEBUG = DEBUG or false
 
+local DEFAULT_ANNOUNCEMENTS = {
+    individuals   = { death = true,  marriage = false, children = false,
+                      migration = false, legendary = false, combat = false },
+    civilisations = { positions = true, diplomacy = false, raids = false,
+                      theft = false, kidnappings = false, armies = false },
+}
+
+local function deepcopy(t)
+    if type(t) ~= 'table' then return t end
+    local copy = {}
+    for k, v in pairs(t) do copy[k] = deepcopy(v) end
+    return copy
+end
+
+-- Merges src into dst for two-level announcement tables; fills missing keys from defaults.
+local function merge_announcements(saved)
+    local result = deepcopy(DEFAULT_ANNOUNCEMENTS)
+    if type(saved) ~= 'table' then return result end
+    for cat, defaults in pairs(DEFAULT_ANNOUNCEMENTS) do
+        if type(saved[cat]) == 'table' then
+            for key in pairs(defaults) do
+                if type(saved[cat][key]) == 'boolean' then
+                    result[cat][key] = saved[cat][key]
+                end
+            end
+        end
+    end
+    return result
+end
+
 local function load_config()
     local ok, data = pcall(function()
         local f = assert(io.open(CONFIG_PATH, 'r'))
@@ -96,15 +126,19 @@ local function load_config()
         local interval = type(data.tick_interval) == 'number'
             and math.max(MIN_INTERVAL, math.floor(data.tick_interval))
             or  DEFAULT_INTERVAL
-        return interval, data.debug == true
+        return interval, data.debug == true, merge_announcements(data.announcements)
     end
-    return DEFAULT_INTERVAL, false
+    return DEFAULT_INTERVAL, false, deepcopy(DEFAULT_ANNOUNCEMENTS)
 end
 
 local function save_config()
     local ok, err = pcall(function()
         local f = assert(io.open(CONFIG_PATH, 'w'))
-        f:write(json.encode({ tick_interval = tick_interval, debug = DEBUG }))
+        f:write(json.encode({
+            tick_interval = tick_interval,
+            debug         = DEBUG,
+            announcements = announcements,
+        }))
         f:close()
     end)
     if not ok then
@@ -113,9 +147,19 @@ local function save_config()
 end
 
 do
-    local saved_interval, saved_debug = load_config()
+    local saved_interval, saved_debug, saved_ann = load_config()
     tick_interval = tick_interval or saved_interval
-    DEBUG = DEBUG or saved_debug
+    DEBUG         = DEBUG or saved_debug
+    announcements = announcements or saved_ann
+end
+
+function get_announcements()
+    return announcements
+end
+
+function save_announcements(new_ann)
+    announcements = new_ann
+    save_config()
 end
 
 local function dprint(fmt, ...)
@@ -272,8 +316,8 @@ local function init_scan()
     last_event_id = #df.global.world.history.events - 1  -- watermark: skip old history
     enabled = true
     dprint('init_scan: watermark set to event id %d', last_event_id)
-    dfhack.reqscript('herald-ind-death').load_tracked()
-    dprint('init_scan: tracked HF list loaded')
+    dfhack.reqscript('herald-ind-death').load_pinned()
+    dprint('init_scan: pinned HF list loaded')
     scan_timer_id = dfhack.timeout(tick_interval, 'ticks', scan_events)
 end
 

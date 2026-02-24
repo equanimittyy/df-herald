@@ -5,7 +5,7 @@ herald-gui
 ==========
 Tags: fort | gameplay
 
-  Settings UI for the Herald mod: browse and track historical figures.
+  Settings UI for the Herald mod: tabbed window with figure tracking and announcement toggles.
 
 Not intended for direct use.
 ]====]
@@ -60,7 +60,6 @@ local function get_site_gov(hf)
 end
 
 -- Returns { {pos_name, civ_name}, ... } for all position links of hf.
--- Match assignments by histfig2 == hf.id (the HF holder field on the assignment).
 local function get_positions(hf)
     local results = {}
     for _, link in ipairs(hf.entity_links) do
@@ -72,7 +71,6 @@ local function get_positions(hf)
                     if asgn.histfig2 == hf.id then
                         local pos_id   = asgn.position_id
                         local pos_name = nil
-                        -- Try entity_raw.positions first
                         if entity.entity_raw then
                             for _, pos in ipairs(entity.entity_raw.positions) do
                                 if pos.id == pos_id then
@@ -84,7 +82,6 @@ local function get_positions(hf)
                                 end
                             end
                         end
-                        -- Fallback: entity.positions.own
                         if not pos_name and entity.positions and entity.positions.own then
                             for _, pos in ipairs(entity.positions.own) do
                                 if pos.id == pos_id then
@@ -105,22 +102,22 @@ local function get_positions(hf)
     return results
 end
 
--- Build the choice list for the FilteredList.
+-- Build the choice list for the Figures FilteredList.
 -- Column widths: Name=22, Race=12, Civ=25, Status=remaining
-local function build_choices(show_dead, show_tracked_only)
+local function build_choices(show_dead, show_pinned_only)
     local choices = {}
-    local tracked = ind_death.get_tracked()
+    local pinned = ind_death.get_pinned()
     for _, hf in ipairs(df.global.world.history.figures) do
         local is_dead = hf.died_year ~= -1
         if is_dead and not show_dead then goto continue end
-        if show_tracked_only and not tracked[hf.id] then goto continue end
+        if show_pinned_only and not pinned[hf.id] then goto continue end
 
         local name     = dfhack.translation.translateName(hf.name, true)
         if name == '' then name = '(unnamed)' end
         local race     = get_race_name(hf)
         if race == '?' then race = 'Unknown' end
-        local civ_full = get_civ_name(hf)   -- full name for search
-        local is_tracked = tracked[hf.id]
+        local civ_full = get_civ_name(hf)
+        local is_pinned = pinned[hf.id]
 
         local name_col = name:sub(1, 22)
         local race_col = race:sub(1, 12)
@@ -128,9 +125,9 @@ local function build_choices(show_dead, show_tracked_only)
 
         local status_token
         if is_dead then
-            status_token = { text = 'dead', pen = COLOR_RED }
+            status_token = { text = 'dead',   pen = COLOR_RED }
         else
-            status_token = { text = is_tracked and 'tracked' or '', pen = COLOR_GREEN }
+            status_token = { text = is_pinned and 'pinned' or '', pen = COLOR_GREEN }
         end
 
         local search_key = (name .. ' ' .. race .. ' ' .. civ_full):lower()
@@ -153,21 +150,18 @@ local function build_choices(show_dead, show_tracked_only)
     return choices
 end
 
--- HeraldFiguresWindow ----------------------------------------------------------
+-- FiguresPanel -----------------------------------------------------------------
 
-local HeraldFiguresWindow = defclass(HeraldFiguresWindow, widgets.Window)
-HeraldFiguresWindow.ATTRS {
-    frame_title = 'Herald: Figure Tracking',
-    frame       = { w = 76, h = 45 },
-    resizable   = false,
+local FiguresPanel = defclass(FiguresPanel, widgets.Panel)
+FiguresPanel.ATTRS {
+    frame = { t = 2, b = 1 },
 }
 
-function HeraldFiguresWindow:init()
-    self.show_dead         = false
-    self.show_tracked_only = false
+function FiguresPanel:init()
+    self.show_dead       = false
+    self.show_pinned_only = false
 
     self:addviews{
-        -- Column header (matches data column widths: name=22, race=12, civ=25)
         widgets.Label{
             frame = { t = 0, l = 1 },
             text  = {
@@ -177,41 +171,37 @@ function HeraldFiguresWindow:init()
                 { text = 'Status',                   pen = COLOR_GREY },
             },
         },
-        -- Figure list; on_submit removed so clicking a row does NOT track/untrack
         widgets.FilteredList{
             view_id   = 'fig_list',
             frame     = { t = 1, b = 13, l = 1, r = 1 },
             on_select = function(idx, choice) self:update_detail(choice) end,
         },
-        -- Separator
         widgets.Label{
-            frame = { t = 32, l = 0, r = 0, h = 1 },
+            frame = { t = 30, l = 0, r = 0, h = 1 },
             text  = { { text = string.rep('\xc4', 74), pen = COLOR_GREY } },
         },
-        -- Detail panel (scrollable list, one row per field/position)
         widgets.List{
             view_id   = 'detail_panel',
-            frame     = { t = 33, b = 2, l = 1, r = 1 },
+            frame     = { t = 31, b = 2, l = 1, r = 1 },
             on_select = function() end,
         },
-        -- Footer hotkeys
         widgets.HotkeyLabel{
             frame       = { b = 0, l = 1 },
             key         = 'SELECT',
-            label       = 'Track/Untrack',
+            label       = 'Pin/Unpin',
             auto_width  = true,
             on_activate = function()
                 local fl = self.subviews.fig_list
                 local idx, choice = fl:getSelected()
-                if choice then self:toggle_tracking(choice) end
+                if choice then self:toggle_pinned(choice) end
             end,
         },
         widgets.HotkeyLabel{
-            view_id     = 'toggle_tracked_btn',
+            view_id     = 'toggle_pinned_btn',
             frame       = { b = 1, l = 1 },
-            key         = 'CUSTOM_CTRL_T',
+            key         = 'CUSTOM_CTRL_P',
             label       = function()
-                return 'Tracked only: ' .. (self.show_tracked_only and 'Yes' or 'No ')
+                return 'Pinned only: ' .. (self.show_pinned_only and 'Yes' or 'No ')
             end,
             auto_width  = true,
         },
@@ -224,56 +214,41 @@ function HeraldFiguresWindow:init()
             end,
             auto_width  = true,
         },
-        widgets.HotkeyLabel{
-            frame       = { b = 0, r = 1 },
-            key         = 'LEAVESCREEN',
-            label       = 'Close',
-            auto_width  = true,
-            on_activate = function() self.parent_view:dismiss() end,
-        },
     }
 
     self:refresh_list()
 
-    -- Override onFilterChange so the detail panel updates on every filter change.
-    -- on_select alone misfires when the list returns from "no matches" with the same
-    -- selected index; onFilterChange runs after the list updates, so getSelected() is reliable.
     local fl  = self.subviews.fig_list
-    local win = self
-    local _orig_ofc = fl.onFilterChange   -- captures class method via __index
+    local pan = self
+    local _orig_ofc = fl.onFilterChange
     fl.onFilterChange = function(this, text, pos)
         _orig_ofc(this, text, pos)
         local _, choice = this:getSelected()
-        win:update_detail(choice)
+        pan:update_detail(choice)
     end
 end
 
--- Intercept keys before children can swallow them.
-function HeraldFiguresWindow:onInput(keys)
+function FiguresPanel:onInput(keys)
     if keys.CUSTOM_CTRL_D then
         self:toggle_dead()
         return true
     end
-    if keys.CUSTOM_CTRL_T then
-        self:toggle_tracked_only()
+    if keys.CUSTOM_CTRL_P then
+        self:toggle_pinned_only()
         return true
     end
-    -- Route input through fig_list first for keyboard navigation; it returns false
-    -- for anything it doesn't handle (hotkeys, detail-panel clicks), falling through to super.
     if self.subviews.fig_list:onInput(keys) then return true end
-    return HeraldFiguresWindow.super.onInput(self, keys)
+    return FiguresPanel.super.onInput(self, keys)
 end
 
-function HeraldFiguresWindow:refresh_list()
-    local choices = build_choices(self.show_dead, self.show_tracked_only)
+function FiguresPanel:refresh_list()
+    local choices = build_choices(self.show_dead, self.show_pinned_only)
     self.subviews.fig_list:setChoices(choices)
-    -- Populate detail panel from whatever is now selected (first item on open,
-    -- preserved selection after a toggle-dead refresh).
     local _, choice = self.subviews.fig_list:getSelected()
     self:update_detail(choice)
 end
 
-function HeraldFiguresWindow:update_detail(choice)
+function FiguresPanel:update_detail(choice)
     if not choice then
         self.subviews.detail_panel:setChoices({})
         return
@@ -281,15 +256,15 @@ function HeraldFiguresWindow:update_detail(choice)
 
     local hf      = choice.hf
     local hf_id   = choice.hf_id
-    local tracked = ind_death.get_tracked()
+    local pinned  = ind_death.get_pinned()
     local name    = dfhack.translation.translateName(hf.name, true)
     if name == '' then name = '(unnamed)' end
     local race    = get_race_name(hf)
     if race == '?' then race = 'Unknown' end
-    local civ = get_civ_name(hf)
-    local gov = get_site_gov(hf)
-    local is_tracked = tracked[hf_id] and 'Yes' or 'No'
-    local alive   = hf.died_year == -1 and 'Alive' or 'Dead'
+    local civ       = get_civ_name(hf)
+    local gov       = get_site_gov(hf)
+    local is_pinned = pinned[hf_id] and 'Yes' or 'No'
+    local alive     = hf.died_year == -1 and 'Alive' or 'Dead'
 
     local rows = {
         { text = {
@@ -301,8 +276,8 @@ function HeraldFiguresWindow:update_detail(choice)
             { text = alive, pen = hf.died_year == -1 and COLOR_GREEN or COLOR_RED },
         }},
         { text = {
-            { text = 'Tracked: ', pen = COLOR_GREY },
-            { text = is_tracked, pen = tracked[hf_id] and COLOR_GREEN or COLOR_WHITE },
+            { text = 'Pinned: ', pen = COLOR_GREY },
+            { text = is_pinned, pen = pinned[hf_id] and COLOR_GREEN or COLOR_WHITE },
         }},
         { text = {
             { text = 'Civ: ',     pen = COLOR_GREY },
@@ -328,32 +303,302 @@ function HeraldFiguresWindow:update_detail(choice)
     self.subviews.detail_panel:setChoices(rows)
 end
 
-function HeraldFiguresWindow:toggle_tracking(choice)
+function FiguresPanel:toggle_pinned(choice)
     if not choice then return end
-    local hf_id   = choice.hf_id
-    local tracked = ind_death.get_tracked()
-    local now_tracked = not tracked[hf_id]
-    ind_death.set_tracked(hf_id, now_tracked or nil)
+    local hf_id    = choice.hf_id
+    local pinned   = ind_death.get_pinned()
+    local now_pinned = not pinned[hf_id]
+    ind_death.set_pinned(hf_id, now_pinned or nil)
     local name = dfhack.translation.translateName(choice.hf.name, true)
     if name == '' then name = '(unnamed)' end
-    print(('[Herald] %s (id %d) is %s tracked.'):format(
-        name, hf_id, now_tracked and 'now' or 'no longer'))
+    print(('[Herald] %s (id %d) is %s pinned.'):format(
+        name, hf_id, now_pinned and 'now' or 'no longer'))
     self:update_detail(choice)
-    -- Rebuild list to update status column
     local fl = self.subviews.fig_list
     local filter_text = fl.edit.text
     self:refresh_list()
     fl:setFilter(filter_text)
 end
 
-function HeraldFiguresWindow:toggle_dead()
+function FiguresPanel:toggle_dead()
     self.show_dead = not self.show_dead
     self:refresh_list()
 end
 
-function HeraldFiguresWindow:toggle_tracked_only()
-    self.show_tracked_only = not self.show_tracked_only
+function FiguresPanel:toggle_pinned_only()
+    self.show_pinned_only = not self.show_pinned_only
     self:refresh_list()
+end
+
+-- PinnedPanel ------------------------------------------------------------------
+
+local INDIVIDUALS_ANN = {
+    { key = 'death',     label = 'Death',     impl = true  },
+    { key = 'marriage',  label = 'Marriage',  impl = false },
+    { key = 'children',  label = 'Children',  impl = false },
+    { key = 'migration', label = 'Migration', impl = false },
+    { key = 'legendary', label = 'Legendary', impl = false },
+    { key = 'combat',    label = 'Combat',    impl = false },
+}
+
+local CIVILISATIONS_ANN = {
+    { key = 'positions',   label = 'Positions',   impl = true  },
+    { key = 'diplomacy',   label = 'Diplomacy',   impl = false },
+    { key = 'raids',       label = 'Raids',       impl = false },
+    { key = 'theft',       label = 'Theft',       impl = false },
+    { key = 'kidnappings', label = 'Kidnappings', impl = false },
+    { key = 'armies',      label = 'Armies',      impl = false },
+}
+
+local PinnedPanel = defclass(PinnedPanel, widgets.Panel)
+PinnedPanel.ATTRS {
+    frame = { t = 2, b = 1 },
+}
+
+function PinnedPanel:init()
+    -- 'individuals' or 'civilisations'
+    self.view_type = 'individuals'
+
+    local main = dfhack.reqscript('herald-main')
+    local ann   = main.get_announcements()
+
+    -- Helper to build a list of ToggleHotkeyLabel widgets for an announcement category
+    local function make_toggle_views(entries, category)
+        local views = {}
+        for i, entry in ipairs(entries) do
+            local e = entry  -- capture loop variable
+            local display_label = e.impl and e.label or (e.label .. ' *')
+            local initial = ann[category][e.key]
+            table.insert(views, widgets.ToggleHotkeyLabel{
+                frame          = { t = i - 1, h = 1, l = 0, r = 0 },
+                label          = display_label,
+                initial_option = initial and 1 or 2,
+                on_change      = e.impl and function(new_val)
+                    local a = dfhack.reqscript('herald-main').get_announcements()
+                    a[category][e.key] = new_val
+                    dfhack.reqscript('herald-main').save_announcements(a)
+                end or function() end,
+            })
+        end
+        return views
+    end
+
+    -- Announcement panel for individuals (visible by default)
+    local ann_ind = widgets.Panel{
+        view_id = 'ann_panel_individuals',
+        frame   = { t = 3, b = 1, l = 50, r = 1 },
+        visible = true,
+    }
+    ann_ind:addviews(make_toggle_views(INDIVIDUALS_ANN, 'individuals'))
+
+    -- Announcement panel for civilisations (hidden initially)
+    local ann_civ = widgets.Panel{
+        view_id = 'ann_panel_civilisations',
+        frame   = { t = 3, b = 1, l = 50, r = 1 },
+        visible = false,
+    }
+    ann_civ:addviews(make_toggle_views(CIVILISATIONS_ANN, 'civilisations'))
+
+    self:addviews{
+        -- Type toggle
+        widgets.CycleHotkeyLabel{
+            view_id = 'type_toggle',
+            frame   = { t = 0, l = 1 },
+            key     = 'CUSTOM_CTRL_I',
+            label   = 'View: ',
+            options = { 'Individuals', 'Civilisations' },
+            on_change = function(new_val)
+                self:on_type_change(new_val)
+            end,
+        },
+        -- Column headers
+        widgets.Label{
+            view_id = 'list_header',
+            frame   = { t = 1, l = 1, r = 27 },
+            text    = {
+                { text = ('%-20s'):format('Name'),  pen = COLOR_GREY },
+                { text = ('%-12s'):format('Race'),  pen = COLOR_GREY },
+                { text = 'Civ',                     pen = COLOR_GREY },
+            },
+        },
+        widgets.Label{
+            frame = { t = 1, l = 50 },
+            text  = { { text = 'Announcements', pen = COLOR_GREY } },
+        },
+        -- Full-width separator
+        widgets.Label{
+            frame = { t = 2, l = 0, r = 0, h = 1 },
+            text  = { { text = string.rep('\xc4', 74), pen = COLOR_GREY } },
+        },
+        -- Vertical separator between list and ann panel
+        widgets.Label{
+            frame = { t = 3, b = 1, l = 48, w = 1 },
+            text  = { { text = string.rep('\xb3\n', 35), pen = COLOR_GREY } },
+        },
+        -- Pinned figure / civ list
+        widgets.List{
+            view_id   = 'pinned_list',
+            frame     = { t = 3, b = 1, l = 1, r = 27 },
+            on_select = function() end,
+        },
+        -- Announcement panels
+        ann_ind,
+        ann_civ,
+        -- Footer
+        widgets.HotkeyLabel{
+            frame       = { b = 0, l = 1 },
+            key         = 'SELECT',
+            label       = 'Unpin',
+            auto_width  = true,
+            on_activate = function() self:unpin_selected() end,
+        },
+        widgets.Label{
+            frame = { b = 0, l = 20 },
+            text  = { { text = '* = not yet implemented', pen = COLOR_GREY } },
+        },
+    }
+
+    self:refresh_pinned_list()
+end
+
+function PinnedPanel:on_type_change(new_val)
+    local is_ind = (new_val == 'Individuals')
+    self.view_type = is_ind and 'individuals' or 'civilisations'
+    self.subviews.ann_panel_individuals.visible  = is_ind
+    self.subviews.ann_panel_civilisations.visible = not is_ind
+    self:refresh_pinned_list()
+end
+
+function PinnedPanel:refresh_pinned_list()
+    local choices = {}
+    if self.view_type == 'individuals' then
+        local pinned = ind_death.get_pinned()
+        -- Collect pinned HFs
+        local hf_list = {}
+        for hf_id in pairs(pinned) do
+            local hf = df.historical_figure.find(hf_id)
+            if hf then table.insert(hf_list, hf) end
+        end
+        -- Sort alphabetically
+        table.sort(hf_list, function(a, b)
+            local na = dfhack.translation.translateName(a.name, true)
+            local nb = dfhack.translation.translateName(b.name, true)
+            return na < nb
+        end)
+        for _, hf in ipairs(hf_list) do
+            local is_dead = hf.died_year ~= -1
+            local name    = dfhack.translation.translateName(hf.name, true)
+            if name == '' then name = '(unnamed)' end
+            local race    = get_race_name(hf)
+            if race == '?' then race = 'Unknown' end
+            local civ_full = get_civ_name(hf)
+            table.insert(choices, {
+                text = {
+                    { text = ('%-20s'):format(name:sub(1,20)), pen = is_dead and COLOR_GREY or nil },
+                    { text = ('%-12s'):format(race:sub(1,12)), pen = COLOR_GREY },
+                    { text = civ_full:sub(1, 14),              pen = COLOR_GREY },
+                },
+                hf_id = hf.id,
+            })
+        end
+        if #choices == 0 then
+            table.insert(choices, { text = { { text = 'No pinned individuals', pen = COLOR_GREY } } })
+        end
+    else
+        table.insert(choices, { text = { { text = 'No pinned civilisations', pen = COLOR_GREY } } })
+    end
+    self.subviews.pinned_list:setChoices(choices)
+end
+
+function PinnedPanel:unpin_selected()
+    if self.view_type ~= 'individuals' then return end
+    local _, choice = self.subviews.pinned_list:getSelected()
+    if not choice or not choice.hf_id then return end
+    ind_death.set_pinned(choice.hf_id, nil)
+    self:refresh_pinned_list()
+end
+
+-- CivisationsPanel (placeholder) -----------------------------------------------
+
+local CivisationsPanel = defclass(CivisationsPanel, widgets.Panel)
+CivisationsPanel.ATTRS {
+    frame = { t = 2, b = 1 },
+}
+
+function CivisationsPanel:init()
+    self:addviews{
+        widgets.Label{
+            frame = { t = 2, l = 2 },
+            text  = 'Civilisation tracking',
+        },
+        widgets.Label{
+            frame = { t = 3, l = 2 },
+            text  = { { text = 'Coming soon.', pen = COLOR_GREY } },
+        },
+    }
+end
+
+-- HeraldWindow -----------------------------------------------------------------
+
+local HeraldWindow = defclass(HeraldWindow, widgets.Window)
+HeraldWindow.ATTRS {
+    frame_title = 'Herald: Settings',
+    frame       = { w = 76, h = 45 },
+    resizable   = false,
+}
+
+function HeraldWindow:init()
+    self.cur_tab = 1
+
+    local pinned_panel = PinnedPanel{
+        view_id = 'pinned_panel',
+        visible = true,
+    }
+    local figures_panel = FiguresPanel{
+        view_id = 'figures_panel',
+        visible = false,
+    }
+    local civs_panel = CivisationsPanel{
+        view_id = 'civs_panel',
+        visible = false,
+    }
+
+    self:addviews{
+        widgets.TabBar{
+            frame  = { t = 0, l = 0 },
+            labels = { 'Pinned', 'Historical Figures', 'Civilisations' },
+            key          = 'CUSTOM_CTRL_T',
+            key_back     = 'CUSTOM_CTRL_Y',
+            on_select    = function(idx) self:switch_tab(idx) end,
+        },
+        pinned_panel,
+        figures_panel,
+        civs_panel,
+        widgets.HotkeyLabel{
+            frame       = { b = 0, r = 1 },
+            key         = 'LEAVESCREEN',
+            label       = 'Close',
+            auto_width  = true,
+            on_activate = function() self.parent_view:dismiss() end,
+        },
+    }
+end
+
+function HeraldWindow:switch_tab(idx)
+    self.cur_tab = idx
+    self.subviews.pinned_panel.visible  = (idx == 1)
+    self.subviews.figures_panel.visible = (idx == 2)
+    self.subviews.civs_panel.visible    = (idx == 3)
+end
+
+function HeraldWindow:onInput(keys)
+    -- Route Ctrl-D and Ctrl-P to figures panel only when on tab 2
+    if self.cur_tab == 2 then
+        if keys.CUSTOM_CTRL_D or keys.CUSTOM_CTRL_P then
+            return self.subviews.figures_panel:onInput(keys)
+        end
+    end
+    return HeraldWindow.super.onInput(self, keys)
 end
 
 -- Screen + open_gui ------------------------------------------------------------
@@ -364,7 +609,7 @@ HeraldGuiScreen.ATTRS {
 }
 
 function HeraldGuiScreen:init()
-    self:addviews{ HeraldFiguresWindow{} }
+    self:addviews{ HeraldWindow{} }
 end
 
 function HeraldGuiScreen:onDismiss()

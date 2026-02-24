@@ -79,6 +79,9 @@ end
 function check(dprint)
     dprint = dprint or function() end
 
+    local ann = dfhack.reqscript('herald-main').get_announcements()
+    local announce_positions = ann and ann.civilisations and ann.civilisations.positions
+
     dprint('world-leaders.check: scanning entity position assignments')
 
     local new_snapshot = {}
@@ -116,7 +119,9 @@ function check(dprint)
                 if prev and prev.hf_id == hf_id then
                     local hf_name = dfhack.translation.translateName(hf.name, true)
                     dprint('world-leaders: death detected: %s, %s of %s', hf_name, tostring(pos_name), civ_name)
-                    dfhack.gui.showAnnouncement(fmt_death(hf_name, pos_name, civ_name), COLOR_RED, true)
+                    if announce_positions then
+                        dfhack.gui.showAnnouncement(fmt_death(hf_name, pos_name, civ_name), COLOR_RED, true)
+                    end
                 end
             else
                 if not new_snapshot[entity_id] then
@@ -131,7 +136,9 @@ function check(dprint)
                 if prev_entity and (prev == nil or prev.hf_id ~= hf_id) then
                     local hf_name = dfhack.translation.translateName(hf.name, true)
                     dprint('world-leaders: appointment: %s as %s of %s', hf_name, tostring(pos_name), civ_name)
-                    dfhack.gui.showAnnouncement(fmt_appointment(hf_name, pos_name, civ_name), COLOR_YELLOW, true)
+                    if announce_positions then
+                        dfhack.gui.showAnnouncement(fmt_appointment(hf_name, pos_name, civ_name), COLOR_YELLOW, true)
+                    end
                 end
             end
 
