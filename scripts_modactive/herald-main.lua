@@ -85,16 +85,19 @@ local function load_config()
         local s = f:read('*a'); f:close()
         return json.decode(s)
     end)
-    if ok and type(data) == 'table' and type(data.tick_interval) == 'number' then
-        return math.max(MIN_INTERVAL, math.floor(data.tick_interval))
+    if ok and type(data) == 'table' then
+        local interval = type(data.tick_interval) == 'number'
+            and math.max(MIN_INTERVAL, math.floor(data.tick_interval))
+            or  DEFAULT_INTERVAL
+        return interval, data.debug == true
     end
-    return DEFAULT_INTERVAL
+    return DEFAULT_INTERVAL, false
 end
 
 local function save_config()
     local ok, err = pcall(function()
         local f = assert(io.open(CONFIG_PATH, 'w'))
-        f:write(json.encode({ tick_interval = tick_interval }))
+        f:write(json.encode({ tick_interval = tick_interval, debug = DEBUG }))
         f:close()
     end)
     if not ok then
@@ -102,7 +105,11 @@ local function save_config()
     end
 end
 
-tick_interval = tick_interval or load_config()
+do
+    local saved_interval, saved_debug = load_config()
+    tick_interval = tick_interval or saved_interval
+    DEBUG = DEBUG or saved_debug
+end
 
 local function dprint(fmt, ...)
     if not DEBUG then return end
@@ -298,6 +305,7 @@ if args[1] == 'debug' then
     else
         DEBUG = not DEBUG
     end
+    save_config()
     print('[Herald] Debug ' .. (DEBUG and 'enabled' or 'disabled'))
 elseif args[1] == 'interval' then
     view = view and view:raise() or IntervalScreen{}:show()
