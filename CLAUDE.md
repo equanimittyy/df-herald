@@ -12,13 +12,28 @@ DFHack mod (Lua, v50+ Steam) that scans world history for significant events and
 
 ```
 scripts_modactive/
-├── onLoad.init       ← auto-enables the mod when a world loads (no user action needed)
-├── herald-main.lua   ← event loop, dispatcher; add new event types here
-└── herald-death.lua  ← HIST_FIGURE_DIED handler (leader detection + announcement)
+├── onLoad.init              ← auto-enables the mod when a world loads (no user action needed)
+├── herald-main.lua          ← event loop, dispatcher; add new event types here
+├── herald-fort-death.lua    ← HIST_FIGURE_DIED handler (leader detection + announcement) [Fort]
+└── herald-world-leaders.lua ← poll-based world leader tracking (died_year check) [World]
 ```
 
-Each event type lives in its own `herald-<type>.lua` module. Modules export a single
-`check(event)` function and are registered in the `handlers` table in `herald-main.lua`.
+Each event type lives in its own `herald-<type>.lua` module. Fort handlers export a single
+`check(event, dprint)` function and are registered in the `handlers` table in `herald-main.lua`.
+World handlers export `check(dprint)` and `reset()`, registered in `world_handlers`.
+
+## Handler Categories
+
+- **Fort** (event-driven): called once per matching `df.history_event_type.*` event via the
+  incremental event scan. Interface: `check(event, dprint)`. Registered in `get_handlers()`.
+- **World/Global** (poll-based): called once per scan cycle regardless of events. Manage their
+  own state snapshot and detect changes by comparing to previous cycle. Interface: `check(dprint)`
+  + `reset()`. Registered in `get_world_handlers()`.
+- **Adventure** (future): not yet implemented.
+
+Fort handlers are reliable for in-fort occurrences. World handlers are needed for out-of-fort
+changes because `df.global.world.history.events` is **unreliable** for those: the game may set
+`hf.died_year`/`hf.died_seconds` directly without generating a `HIST_FIGURE_DIED` event.
 
 Every handler script **must** have, in order:
 1. `--@ module=true` — required for `dfhack.reqscript`; omitting it throws "Cannot be used
@@ -55,9 +70,28 @@ objects accessed via their respective handler references (`h[ev_type].check`).
 - Filter by player's parent entity or user-tracked civs/entities
 - Check event type via `event:getType()` vs `df.history_event_type.*` enum values
 
-**Event Checks** (Keep this code seperate to the event and scanning loop, one script per event check)
+**Event Scope / Reliability**: history events are unreliable for out-of-fort occurrences.
+World events (raids, battles) can still generate entries, but out-of-fort deaths may bypass
+event generation entirely — the game may only set `hf.died_year`/`hf.died_seconds`. Polling
+HF state directly is more reliable for world-level tracking.
+
+**Event Checks** (Keep this code separate to the event and scanning loop, one script per event check)
 
 - Death events: `df.history_event_type.HIST_FIGURE_DIED`; victim field: `event.victim_hf` (integer hf id)
+
+### World-Level Polling
+
+Runs alongside the event scan each tick cycle. World handlers snapshot current state and compare
+against the previous cycle to detect changes:
+
+1. `get_world_handlers()` — lazy-init table mapping string keys to world handler modules.
+2. `scan_world_state(dprint)` — iterates world handlers, calling `handler.check(dprint)`.
+3. Called at the end of `scan_events()`, sharing the same 8,400-tick cadence.
+4. On cleanup, `handler.reset()` is called on each world handler to clear snapshot state.
+
+`herald-world-leaders.lua` uses this approach: it snapshots `{ [entity_id] = { [pos_id] = { hf_id,
+pos_name, civ_name } } }` each cycle and checks `hf.died_year ~= -1` to detect leader deaths that
+may have occurred without generating a `HIST_FIGURE_DIED` event.
 
 ### Notifications
 
@@ -83,6 +117,7 @@ objects accessed via their respective handler references (`h[ev_type].check`).
 - Entity resolution: `df.historical_entity.find(entity_id)`
 - Position assignments: `entity.position_assignments[i].histfig2` / `.id`
 - Position name: `entity.positions[i].name`
+- HF alive check: `hf.died_year` / `hf.died_seconds` — both `-1` when alive; any other value means dead
 - Name translation: `dfhack.translation.translateName(name_obj, true)` (renamed from `dfhack.TranslateName` in v50.15+)
 - Player civ id: `df.global.plotinfo.civ_id`
 

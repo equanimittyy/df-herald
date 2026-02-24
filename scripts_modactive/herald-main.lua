@@ -88,16 +88,39 @@ end
 
 -- Map event type enum → handler module. Add new handlers here as new event
 -- types are implemented (e.g. herald-battle.lua, herald-artifact.lua).
+-- Fort handlers: check(event, dprint) — called once per matching event.
 local handlers -- initialised lazily after world load so enums are available
 
 local function get_handlers()
     if handlers then return handlers end
     handlers = {
-        [df.history_event_type.HIST_FIGURE_DIED] = dfhack.reqscript('herald-death'),
+        [df.history_event_type.HIST_FIGURE_DIED] = dfhack.reqscript('herald-fort-death'),
     }
     dprint('Handlers registered:')
-    dprint('  HIST_FIGURE_DIED -> herald-death')
+    dprint('  HIST_FIGURE_DIED -> herald-fort-death')
     return handlers
+end
+
+-- World handlers: check(dprint) — called once per scan cycle; manage own state.
+-- Also export reset() which is called on world unload.
+local world_handlers -- initialised lazily
+
+local function get_world_handlers()
+    if world_handlers then return world_handlers end
+    world_handlers = {
+        leaders = dfhack.reqscript('herald-world-leaders'),
+    }
+    dprint('World handlers registered:')
+    dprint('  leaders -> herald-world-leaders')
+    return world_handlers
+end
+
+local function scan_world_state(dprint)
+    local wh = get_world_handlers()
+    for key, handler in pairs(wh) do
+        dprint('scan_world_state: calling handler "%s"', key)
+        handler.check(dprint)
+    end
 end
 
 local function scan_events()
@@ -114,13 +137,15 @@ local function scan_events()
         local ev_type = ev:getType()
         local handler = h[ev_type]
         if handler then
-            dprint('Handler fired: event id=%d type=%s -> herald-death', i, tostring(ev_type))
+            dprint('Handler fired: event id=%d type=%s -> herald-fort-death', i, tostring(ev_type))
             handler.check(ev, dprint)
         end
         last_event_id = i
         scanned = scanned + 1
     end
     dprint('Loop complete; scanned %d event(s), last_event_id=%d', scanned, last_event_id)
+
+    scan_world_state(dprint)
 
     scan_timer_id = dfhack.timeout(TICK_INTERVAL, 'ticks', scan_events)
 end
@@ -140,6 +165,13 @@ local function cleanup()
     last_event_id = -1
     enabled = false
     handlers = nil  -- reset so enums are re-resolved on next load
+    if world_handlers then
+        for key, handler in pairs(world_handlers) do
+            dprint('cleanup: resetting world handler "%s"', key)
+            handler.reset()
+        end
+        world_handlers = nil
+    end
 end
 
 dfhack.onStateChange[GLOBAL_KEY] = function(sc)

@@ -1,19 +1,21 @@
--- herald-death.lua
--- Handles df.history_event_type.HIST_FIGURE_DIED events.
+-- herald-fort-death.lua
+-- Fort handler: HIST_FIGURE_DIED event (in-fort leader deaths).
 -- Loaded by herald-main.lua via dfhack.reqscript.
 
 --@ module=true
 
 --[====[
-herald-death
-============
+herald-fort-death
+=================
 
 Tags: fort | gameplay
 
-  Handles "df.history_event_type.HIST_FIGURE_DIED" events for the Herald mod.
+  Fort handler for "df.history_event_type.HIST_FIGURE_DIED" events.
 
 Detects when a historical figure who held a leadership position has died and
-fires an in-game announcement via herald-main. Not intended for direct use.
+fires an in-game announcement. Reliable for in-fort deaths only — out-of-fort
+deaths may not generate this event; see herald-world-leaders for those.
+Not intended for direct use.
 
 ]====]
 
