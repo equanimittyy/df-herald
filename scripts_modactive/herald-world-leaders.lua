@@ -23,13 +23,44 @@ local function is_alive(hf)
     return hf.died_year == -1 and hf.died_seconds == -1
 end
 
+-- Returns the position title for an assignment, using the gendered form if available.
+-- Searches entity_raw.positions by pos.id == pos_id (string[], [0]=singular).
+-- Note: some entity types (e.g. EVIL/PLAINS) have empty entity_raw.positions — their
+-- position names appear to be generated via the language system, not stored as plain strings.
+-- In those cases this returns nil and the caller falls back to generic announcement text.
+local function get_pos_name(entity_raw, pos_id, hf)
+    if not entity_raw or not pos_id then return nil end
+    for _, pos in ipairs(entity_raw.positions) do
+        if pos.id == pos_id then
+            local gendered = (hf.sex == 1) and pos.name_male[0] or pos.name_female[0]
+            return (gendered and gendered ~= '') and gendered or pos.name[0]
+        end
+    end
+    return nil
+end
+
+-- Formats an announcement string, omitting the position clause when pos_name is nil.
+local function fmt_death(hf_name, pos_name, civ_name)
+    if pos_name then
+        return ('[Herald] %s, %s of %s, has died.'):format(hf_name, pos_name, civ_name)
+    end
+    return ('[Herald] %s of %s, a position holder, has died.'):format(hf_name, civ_name)
+end
+
+local function fmt_succession(new_name, prev_name, pos_name, civ_name)
+    if pos_name then
+        return ('[Herald] %s has succeeded %s as %s of %s.'):format(new_name, prev_name, pos_name, civ_name)
+    end
+    return ('[Herald] %s has succeeded %s as a position holder of %s.'):format(new_name, prev_name, civ_name)
+end
+
 function check(dprint)
     dprint = dprint or function() end
 
     dprint('world-leaders.check: scanning entity position assignments')
 
     local new_snapshot = {}
-    local dbg_civs, dbg_with_assignments = 0, 0
+    local dbg_civs = 0
 
     for _, entity in ipairs(df.global.world.entities.all) do
         -- Only track civilisation-layer entities; guilds, religions, animal herds, etc.
@@ -37,39 +68,25 @@ function check(dprint)
         if entity.type ~= df.historical_entity_type.Civilization then goto continue_entity end
         dbg_civs = dbg_civs + 1
         if #entity.positions.assignments == 0 then goto continue_entity end
-        dbg_with_assignments = dbg_with_assignments + 1
 
-        local entity_id = entity.id
-        local civ_name  = dfhack.translation.translateName(entity.name, true)
+        local entity_id  = entity.id
+        local civ_name   = dfhack.translation.translateName(entity.name, true)
+        local entity_raw = entity.entity_raw
+
         dprint('world-leaders: civ "%s" has %d assignments', civ_name, #entity.positions.assignments)
 
         for _, assignment in ipairs(entity.positions.assignments) do
-            dprint('world-leaders:   assignment id=%d histfig=%d histfig2=%d',
-                assignment.id, assignment.histfig or -999, assignment.histfig2 or -999)
             local hf_id = assignment.histfig2
             if hf_id == -1 then goto continue_assignment end
 
             local hf = df.historical_figure.find(hf_id)
             if not hf then goto continue_assignment end
 
-            -- Position definitions live in entity.entity_raw, indexed by assignment.id
-            local pos_name = nil
-            local entity_raw = entity.entity_raw
-
-            -- Look up position name: search entity_raw.positions for pos.id == assignment.position_id
-            local pos_name = nil
             local pos_id   = assignment.position_id
-            if entity_raw and pos_id then
-                for _, pos in ipairs(entity_raw.positions) do
-                    if pos.id == pos_id then
-                        pos_name = pos.name[0]  -- string[], [0]=singular [1]=plural
-                        break
-                    end
-                end
-            end
-            if not pos_name then
-                dprint('world-leaders: no pos_name for entity %d position_id=%s', entity_id, tostring(pos_id))
-            end
+            local pos_name = get_pos_name(entity_raw, pos_id, hf)
+
+            dprint('world-leaders:   hf=%s pos=%s alive=%s',
+                dfhack.translation.translateName(hf.name, true), tostring(pos_name), tostring(is_alive(hf)))
 
             if is_alive(hf) then
                 if not new_snapshot[entity_id] then
@@ -80,8 +97,6 @@ function check(dprint)
                     pos_name = pos_name,
                     civ_name = civ_name,
                 }
-                dprint('world-leaders: alive leader %s, %s of %s',
-                    dfhack.translation.translateName(hf.name, true), pos_name, civ_name)
             end
 
             local prev_entity = tracked_leaders[entity_id]
@@ -89,29 +104,17 @@ function check(dprint)
                 local prev = prev_entity[pos_id]
                 if prev then
                     if not is_alive(hf) and prev.hf_id == hf_id then
-                        -- Same person, now dead — leader died
                         local hf_name = dfhack.translation.translateName(hf.name, true)
-                        dprint('world-leaders: death detected: %s, %s of %s',
-                            hf_name, pos_name, civ_name)
-                        dfhack.gui.showAnnouncement(
-                            ('[Herald] %s, %s of %s, has died.'):format(
-                                hf_name, pos_name, civ_name),
-                            COLOR_RED, true
-                        )
+                        dprint('world-leaders: death detected: %s, %s of %s', hf_name, tostring(pos_name), civ_name)
+                        dfhack.gui.showAnnouncement(fmt_death(hf_name, pos_name, civ_name), COLOR_RED, true)
                     elseif is_alive(hf) and prev.hf_id ~= hf_id then
-                        -- Different person now holds the position — succession
                         local new_name  = dfhack.translation.translateName(hf.name, true)
                         local prev_hf   = df.historical_figure.find(prev.hf_id)
                         local prev_name = prev_hf
                             and dfhack.translation.translateName(prev_hf.name, true)
                             or  ('HF#' .. tostring(prev.hf_id))
-                        dprint('world-leaders: succession detected: %s -> %s, %s of %s',
-                            prev_name, new_name, pos_name, civ_name)
-                        dfhack.gui.showAnnouncement(
-                            ('[Herald] %s has succeeded %s as %s of %s.'):format(
-                                new_name, prev_name, pos_name, civ_name),
-                            COLOR_YELLOW, true
-                        )
+                        dprint('world-leaders: succession: %s -> %s, %s of %s', prev_name, new_name, tostring(pos_name), civ_name)
+                        dfhack.gui.showAnnouncement(fmt_succession(new_name, prev_name, pos_name, civ_name), COLOR_YELLOW, true)
                     end
                 end
             end
@@ -123,10 +126,9 @@ function check(dprint)
     end
 
     tracked_leaders = new_snapshot
-    dprint('world-leaders.check: civs=%d with_assignments=%d tracked=%d',
-        dbg_civs, dbg_with_assignments,
+    dprint('world-leaders.check: civs=%d tracked=%d',
+        dbg_civs,
         (function() local n=0 for _ in pairs(tracked_leaders) do n=n+1 end return n end)())
-    dprint('world-leaders.check: done')
 end
 
 function reset()

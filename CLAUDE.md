@@ -115,8 +115,9 @@ may have occurred without generating a `HIST_FIGURE_DIED` event.
 - Historical figure: `df.historical_figure.find(hf_id)`
 - HF entity links: `hf.entity_links[i].type` / `.entity_id`; link type enum: `df.histfig_entity_link_type.POSITION`
 - Entity resolution: `df.historical_entity.find(entity_id)`
-- Position assignments: `entity.positions.assignments[i].histfig2` / `.id`
-- Position definitions: `entity.positions[i].name` / `.id` (T_positions is also iterable as the definitions vector)
+- Position assignments: `entity.positions.assignments[i]` — fields: `.id` (sequential assignment counter), `.histfig2` (HF holder), `.position_id` (position type ID, links to entity_raw)
+- Position definitions: `entity.entity_raw.positions` — vector of `entity_position_raw`; search by `pos.id == assignment.position_id`; name fields are `string[]`: `pos.name[0]`, `pos.name_male[0]`, `pos.name_female[0]` (singular); may be empty for some entity types (e.g. EVIL/PLAINS with no positions in their raws)
+- HF sex: `hf.sex` — `1`=male, `0`=female; use for gendered position name selection
 - HF alive check: `hf.died_year` / `hf.died_seconds` — both `-1` when alive; any other value means dead
 - Name translation: `dfhack.translation.translateName(name_obj, true)` (renamed from `dfhack.TranslateName` in v50.15+)
 - Player civ id: `df.global.plotinfo.civ_id`
