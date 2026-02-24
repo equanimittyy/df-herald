@@ -14,8 +14,9 @@ DFHack mod (Lua, v50+ Steam) that scans world history for significant events and
 scripts_modactive/
 ├── onLoad.init              ← auto-enables the mod when a world loads (no user action needed)
 ├── herald-main.lua          ← event loop, dispatcher; add new event types here
+├── herald-gui.lua           ← settings UI: figure tracking (HeraldFiguresWindow)
 ├── herald-ind-death.lua     ← HIST_FIGURE_DIED + poll handler for tracked individuals [Individuals]
-└── herald-world-leaders.lua ← poll-based world leader tracking (died_year check) [Civilisations]
+└── herald-world-leaders.lua ← poll-based world leader tracking [Civilisations]
 ```
 
 Each event type lives in its own `herald-<type>.lua` module. Event-driven Individual handlers export
@@ -27,9 +28,9 @@ handlers export `check(dprint)` and `reset()`, registered in `get_world_handlers
 - **Individuals**: tracks events for specific historical figures. Uses two sub-modes:
   - *Event-driven* (in-fort / on-screen): called once per matching `df.history_event_type.*` event
     via the incremental scan. Interface: `check(event, dprint)`. Registered in `get_handlers()`.
-  - *Poll-based* (off-screen): called once per scan cycle; snapshots HF state and detects changes
-    (e.g. `hf.died_year ~= -1`). Interface: `check(dprint)` + `reset()`. Registered in
-    `get_world_handlers()`.
+  - *Poll-based* (off-screen): called once per scan cycle; iterates all tracked HFs and checks
+    `hf.died_year`/`hf.died_seconds` directly for death. Interface: `check(dprint)` + `reset()`.
+    Registered in `get_world_handlers()`.
 - **Civilisations** (poll-based): called once per scan cycle regardless of events. Tracks civ-level
   state (leaders, succession, etc.). Manages its own state snapshot and detects changes by comparing
   to previous cycle. Interface: `check(dprint)` + `reset()`. Registered in `get_world_handlers()`.
@@ -75,7 +76,7 @@ objects accessed via their respective handler references (`h[ev_type].check`).
 ### History Event Scanning
 
 - Iterate `df.global.world.history.events` from `last_event_id + 1` only (incremental)
-- Filter by player's parent entity or user-tracked civs/entities
+- Dispatch each event to its registered handler by type; handlers apply their own filters (e.g. tracked HF list)
 - Check event type via `event:getType()` vs `df.history_event_type.*` enum values
 
 **Event Scope / Reliability**: history events are unreliable for out-of-fort occurrences.
@@ -89,31 +90,31 @@ HF state directly is more reliable for civilisation-level tracking.
 
 ### Civilisation-Level Polling
 
-Runs alongside the event scan each tick cycle. Civilisation handlers snapshot current state and
-compare against the previous cycle to detect changes:
+Runs alongside the event scan each tick cycle. Poll-based world handlers snapshot or inspect state
+and compare against the previous cycle to detect changes:
 
-1. `get_world_handlers()` — lazy-init table mapping string keys to civilisation handler modules.
-2. `scan_world_state(dprint)` — iterates civilisation handlers, calling `handler.check(dprint)`.
+1. `get_world_handlers()` — lazy-init table mapping string keys to poll-based handler modules (both
+   Civilisation and Individual off-screen).
+2. `scan_world_state(dprint)` — iterates all world handlers, calling `handler.check(dprint)`.
 3. Called at the end of `scan_events()`, sharing the same configurable tick interval.
-4. On cleanup, `handler.reset()` is called on each civilisation handler to clear snapshot state.
+4. On cleanup, `handler.reset()` is called on each world handler to clear snapshot state.
 
-`herald-world-leaders.lua` uses this approach: it snapshots `{ [entity_id] = { [pos_id] = { hf_id,
-pos_name, civ_name } } }` each cycle and checks `hf.died_year ~= -1` to detect leader deaths that
-may have occurred without generating a `HIST_FIGURE_DIED` event.
+`herald-world-leaders.lua` uses this approach: it snapshots `{ [entity_id] = { [assignment_id] = { hf_id,
+pos_name, civ_name } } }` each cycle and checks `not is_alive(hf)` (`hf.died_year ~= -1` or
+`hf.died_seconds ~= -1`) to detect leader deaths that may not generate a `HIST_FIGURE_DIED` event.
 
 ### Notifications
 
 - Announcement: `dfhack.gui.showAnnouncement`
-- Modal popup: `gui.MessageWindow` for high-importance events
 
 ### Settings & Persistence
 
 - UI: `require('gui')`, `require('gui.widgets')`
-- Settings screen:
-  - Tracked civs lists with nested with toggle categories (Succession, War, Diplomacy, Artifacts, Beasts, Site raids) + untracked civ search list
-  - Tracked figures list (Death, Marraige, Children, Legendary, Artifacts) + untracked figure search list
+- Settings screen (`herald-gui.lua`): figure list (Name / Race / Civ / Status columns) with detail
+  panel (ID, race, alive/dead, tracked, civ, site gov, positions). Enter to Track/Untrack;
+  Ctrl-D toggles show-dead; Ctrl-T filters to tracked-only figures.
 - Global config: `dfhack-config/herald.json`
-- Per-save config: `dfhack.persistent.get` / `dfhack.persistent.save`
+- Per-save config: `dfhack.persistent.getSiteData` / `dfhack.persistent.saveSiteData`
 
 ## Key API Paths
 
@@ -143,6 +144,8 @@ may have occurred without generating a `HIST_FIGURE_DIED` event.
 
 ## Future (on request only)
 
+- Settings UI: per-HF toggleable announcement categories (Death, Marriage, Children, Legendary, Artifacts)
+- Settings UI: civ tracking with per-civ toggleable announcement categories (Succession, War, Diplomacy, Artifacts, Beasts, Site raids) + untracked civ search list
 - Adventure mode handler category
 - Legendary citizen tracking (notable deeds of fort-born figures)
 - War progress summaries (casualty totals after battles)
