@@ -72,7 +72,7 @@ objects accessed via their respective handler references (`h[ev_type].check`).
 - `dfhack.timeout` fires **once only**; `scan_events` must reschedule itself at the end.
   Any error or early return before the rescheduling line permanently kills the loop.
 
-### World Scanning
+### History Event Scanning
 
 - Iterate `df.global.world.history.events` from `last_event_id + 1` only (incremental)
 - Filter by player's parent entity or user-tracked civs/entities
@@ -94,7 +94,7 @@ compare against the previous cycle to detect changes:
 
 1. `get_world_handlers()` — lazy-init table mapping string keys to civilisation handler modules.
 2. `scan_world_state(dprint)` — iterates civilisation handlers, calling `handler.check(dprint)`.
-3. Called at the end of `scan_events()`, sharing the same 8,400-tick cadence.
+3. Called at the end of `scan_events()`, sharing the same configurable tick interval.
 4. On cleanup, `handler.reset()` is called on each civilisation handler to clear snapshot state.
 
 `herald-world-leaders.lua` uses this approach: it snapshots `{ [entity_id] = { [pos_id] = { hf_id,
