@@ -189,11 +189,11 @@ function HeraldFiguresWindow:init()
             frame = { t = 32, l = 0, r = 0, h = 1 },
             text  = { { text = string.rep('\xc4', 74), pen = COLOR_GREY } },
         },
-        -- Detail panel
-        widgets.Label{
-            view_id = 'detail_panel',
-            frame   = { t = 33, b = 3, l = 1, r = 1 },
-            text    = {},
+        -- Detail panel (scrollable list, one row per field/position)
+        widgets.List{
+            view_id   = 'detail_panel',
+            frame     = { t = 33, b = 2, l = 1, r = 1 },
+            on_select = function() end,
         },
         -- Footer hotkeys
         widgets.HotkeyLabel{
@@ -275,7 +275,7 @@ end
 
 function HeraldFiguresWindow:update_detail(choice)
     if not choice then
-        self.subviews.detail_panel:setText({})
+        self.subviews.detail_panel:setChoices({})
         return
     end
 
@@ -291,46 +291,41 @@ function HeraldFiguresWindow:update_detail(choice)
     local is_tracked = tracked[hf_id] and 'Yes' or 'No'
     local alive   = hf.died_year == -1 and 'Alive' or 'Dead'
 
-    local lines = {
-        { text = 'ID: ',      pen = COLOR_GREY },
-        { text = tostring(hf_id) },
-        { text = '   Race: ', pen = COLOR_GREY },
-        { text = race },
-        { text = '   Status: ', pen = COLOR_GREY },
-        { text = alive, pen = hf.died_year == -1 and COLOR_GREEN or COLOR_RED },
-        NEWLINE,
-        { text = 'Tracked: ', pen = COLOR_GREY },
-        { text = is_tracked, pen = tracked[hf_id] and COLOR_GREEN or COLOR_WHITE },
-        NEWLINE,
-        { text = 'Civ: ',        pen = COLOR_GREY },
-        { text = civ ~= '' and civ or 'None' },
-        NEWLINE,
-        { text = 'Site Gov: ',        pen = COLOR_GREY },
-        { text = gov or 'None' },
-        NEWLINE,
+    local rows = {
+        { text = {
+            { text = 'ID: ',        pen = COLOR_GREY },
+            { text = tostring(hf_id) },
+            { text = '   Race: ',   pen = COLOR_GREY },
+            { text = race },
+            { text = '   Status: ', pen = COLOR_GREY },
+            { text = alive, pen = hf.died_year == -1 and COLOR_GREEN or COLOR_RED },
+        }},
+        { text = {
+            { text = 'Tracked: ', pen = COLOR_GREY },
+            { text = is_tracked, pen = tracked[hf_id] and COLOR_GREEN or COLOR_WHITE },
+        }},
+        { text = {
+            { text = 'Civ: ',     pen = COLOR_GREY },
+            { text = civ ~= '' and civ or 'None' },
+        }},
+        { text = {
+            { text = 'Site Gov: ', pen = COLOR_GREY },
+            { text = gov or 'None' },
+        }},
+        { text = { { text = 'Positions:', pen = COLOR_GREY } } },
     }
 
     local positions = get_positions(hf)
-    table.insert(lines, { text = 'Positions: ', pen = COLOR_GREY })
     if #positions == 0 then
-        table.insert(lines, { text = 'None' })
+        table.insert(rows, { text = { { text = '  None', pen = COLOR_GREY } } })
     else
-        local pos_strs = {}
         for _, p in ipairs(positions) do
-            table.insert(pos_strs, (p.pos_name or '(unnamed)') .. ' of ' .. p.civ_name)
+            local label = '  ' .. (p.pos_name or '(unnamed)') .. ' of ' .. p.civ_name
+            table.insert(rows, { text = { { text = label } } })
         end
-        table.insert(lines, { text = table.concat(pos_strs, ', ') })
     end
-    table.insert(lines, NEWLINE)
 
-    self.subviews.detail_panel:setText(lines)
-    -- Force layout recalculation: the Label's computed frame can go stale when
-    -- content transitions from empty ({}) to non-empty, causing nothing to render
-    -- until a window-move triggers onResize.  Guard against being called during
-    -- init() before the window is placed on screen (frame_parent_rect is nil then).
-    if self.frame_parent_rect then
-        self:updateLayout()
-    end
+    self.subviews.detail_panel:setChoices(rows)
 end
 
 function HeraldFiguresWindow:toggle_tracking(choice)
