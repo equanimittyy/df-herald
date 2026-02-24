@@ -29,33 +29,47 @@ function check(dprint)
     dprint('world-leaders.check: scanning entity position assignments')
 
     local new_snapshot = {}
+    local dbg_civs, dbg_with_assignments = 0, 0
 
     for _, entity in ipairs(df.global.world.entities.all) do
         -- Only track civilisation-layer entities; guilds, religions, animal herds, etc.
         -- are irrelevant to wars, raids, and succession tracking.
         if entity.type ~= df.historical_entity_type.Civilization then goto continue_entity end
+        dbg_civs = dbg_civs + 1
         if #entity.positions.assignments == 0 then goto continue_entity end
+        dbg_with_assignments = dbg_with_assignments + 1
 
         local entity_id = entity.id
         local civ_name  = dfhack.translation.translateName(entity.name, true)
+        dprint('world-leaders: civ "%s" has %d assignments', civ_name, #entity.positions.assignments)
 
         for _, assignment in ipairs(entity.positions.assignments) do
+            dprint('world-leaders:   assignment id=%d histfig=%d histfig2=%d',
+                assignment.id, assignment.histfig or -999, assignment.histfig2 or -999)
             local hf_id = assignment.histfig2
             if hf_id == -1 then goto continue_assignment end
 
             local hf = df.historical_figure.find(hf_id)
             if not hf then goto continue_assignment end
 
+            -- Position definitions live in entity.entity_raw, indexed by assignment.id
             local pos_name = nil
-            for _, pos in ipairs(entity.positions) do
-                if pos.id == assignment.id then
-                    pos_name = dfhack.translation.translateName(pos.name, true)
-                    break
+            local entity_raw = entity.entity_raw
+
+            -- Look up position name: search entity_raw.positions for pos.id == assignment.position_id
+            local pos_name = nil
+            local pos_id   = assignment.position_id
+            if entity_raw and pos_id then
+                for _, pos in ipairs(entity_raw.positions) do
+                    if pos.id == pos_id then
+                        pos_name = pos.name[0]  -- string[], [0]=singular [1]=plural
+                        break
+                    end
                 end
             end
-            if not pos_name then goto continue_assignment end
-
-            local pos_id = assignment.id
+            if not pos_name then
+                dprint('world-leaders: no pos_name for entity %d position_id=%s', entity_id, tostring(pos_id))
+            end
 
             if is_alive(hf) then
                 if not new_snapshot[entity_id] then
@@ -109,8 +123,10 @@ function check(dprint)
     end
 
     tracked_leaders = new_snapshot
-    dprint('world-leaders.check: snapshot updated, %d entities tracked',
+    dprint('world-leaders.check: civs=%d with_assignments=%d tracked=%d',
+        dbg_civs, dbg_with_assignments,
         (function() local n=0 for _ in pairs(tracked_leaders) do n=n+1 end return n end)())
+    dprint('world-leaders.check: done')
 end
 
 function reset()
