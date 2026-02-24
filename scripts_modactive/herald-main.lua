@@ -366,7 +366,7 @@ elseif args[1] == 'interval' then
     view = view and view:raise() or IntervalScreen{}:show()
 elseif args[1] == 'gui' then
     if not dfhack.isMapLoaded() then
-        dfhack.printerr('[Herald] A world must be loaded to open the settings UI.')
+        dfhack.printerr('[Herald] A fort must be loaded to open the settings UI.')
     else
         dfhack.reqscript('herald-gui').open_gui()
     end
