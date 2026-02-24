@@ -575,6 +575,13 @@ function HeraldWindow:init()
         figures_panel,
         civs_panel,
         widgets.HotkeyLabel{
+            frame       = { b = 0, l = 1 },
+            key         = 'CUSTOM_CTRL_J',
+            label       = 'Journal',
+            auto_width  = true,
+            on_activate = function() dfhack.run_command('gui/journal') end,
+        },
+        widgets.HotkeyLabel{
             frame       = { b = 0, r = 1 },
             key         = 'LEAVESCREEN',
             label       = 'Close',
