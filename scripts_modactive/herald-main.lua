@@ -21,6 +21,7 @@ Usage
    enable herald-main
    disable herald-main
    herald-main debug [true|false]
+   herald-main interval
 
 
 Commands
@@ -39,6 +40,11 @@ Commands
    timing, handler registration, handler dispatch, and per-handler event
    details (e.g. leader-death resolution).
 
+"herald-main interval"
+   Open a dialog to set the scan interval in ticks (minimum 600, half a
+   dwarf day). The value is saved to dfhack-config/herald.json and takes
+   effect on the next scan cycle.
+
 
 Examples
 --------
@@ -52,10 +58,19 @@ Examples
 "herald-main debug false"
    Force debug output off.
 
+"herald-main interval"
+   Open the interval editor.
+
 ]====]
 
-local GLOBAL_KEY    = 'df_herald'
-local TICK_INTERVAL = 1200    -- 1 dwarf day in unpaused ticks
+local GLOBAL_KEY       = 'df_herald'
+local CONFIG_PATH      = 'dfhack-config/herald.json'
+local MIN_INTERVAL     = 600   -- half a dwarf day
+local DEFAULT_INTERVAL = 1200  -- 1 dwarf day
+
+local json    = require('json')
+local gui     = require('gui')
+local widgets = require('gui.widgets')
 
 local last_event_id = -1      -- ID of last processed event; -1 = uninitialised
 local scan_timer_id = nil     -- handle returned by dfhack.timeout
@@ -63,6 +78,31 @@ enabled = enabled or false    -- top-level var; DFHack enable/disable convention
 
 -- Named DEBUG (not debug) to avoid shadowing Lua's built-in debug library.
 DEBUG = DEBUG or false
+
+local function load_config()
+    local ok, data = pcall(function()
+        local f = assert(io.open(CONFIG_PATH, 'r'))
+        local s = f:read('*a'); f:close()
+        return json.decode(s)
+    end)
+    if ok and type(data) == 'table' and type(data.tick_interval) == 'number' then
+        return math.max(MIN_INTERVAL, math.floor(data.tick_interval))
+    end
+    return DEFAULT_INTERVAL
+end
+
+local function save_config()
+    local ok, err = pcall(function()
+        local f = assert(io.open(CONFIG_PATH, 'w'))
+        f:write(json.encode({ tick_interval = tick_interval }))
+        f:close()
+    end)
+    if not ok then
+        dfhack.printerr('[Herald] Failed to save config: ' .. tostring(err))
+    end
+end
+
+tick_interval = tick_interval or load_config()
 
 local function dprint(fmt, ...)
     if not DEBUG then return end
@@ -76,6 +116,80 @@ end
 function isEnabled()
     return enabled
 end
+
+-- Interval editor dialog -------------------------------------------------------
+
+local IntervalEditor = defclass(IntervalEditor, widgets.Window)
+IntervalEditor.ATTRS {
+    frame_title = 'Herald: Scan Interval',
+    frame       = { w = 44, h = 9 },
+    resizable   = false,
+}
+
+function IntervalEditor:init()
+    self:addviews{
+        widgets.Label{
+            frame = { t = 0, l = 1 },
+            text  = 'Scan interval in ticks (min 600):',
+        },
+        widgets.EditField{
+            view_id = 'input',
+            frame   = { t = 2, l = 1, w = 10 },
+            text    = tostring(tick_interval),
+            on_char = function(ch) return ch:match('%d') ~= nil end,
+        },
+        widgets.Label{
+            frame = { t = 3, l = 1 },
+            text  = { {text = '600=half-day  1200=day  8400=week', pen = COLOR_GREY} },
+        },
+        widgets.Label{
+            view_id = 'error_msg',
+            frame   = { t = 4, l = 1 },
+            text    = '',
+        },
+        widgets.HotkeyLabel{
+            frame       = { b = 0, l = 1 },
+            key         = 'SELECT',
+            label       = 'Apply',
+            auto_width  = true,
+            on_activate = function() self:apply() end,
+        },
+        widgets.HotkeyLabel{
+            frame       = { b = 0, r = 1 },
+            key         = 'LEAVESCREEN',
+            label       = 'Cancel',
+            auto_width  = true,
+            on_activate = function() self.parent_view:dismiss() end,
+        },
+    }
+end
+
+function IntervalEditor:apply()
+    local val = tonumber(self.subviews.input.text)
+    if not val or val < MIN_INTERVAL then
+        self.subviews.error_msg.text = {text = 'Must be >= 600', pen = COLOR_RED}
+        return
+    end
+    tick_interval = math.floor(val)
+    save_config()
+    dprint('tick_interval updated to %d', tick_interval)
+    self.parent_view:dismiss()
+end
+
+local IntervalScreen = defclass(IntervalScreen, gui.ZScreen)
+IntervalScreen.ATTRS {
+    focus_path = 'herald/interval',
+}
+
+function IntervalScreen:init()
+    self:addviews{ IntervalEditor{} }
+end
+
+function IntervalScreen:onDismiss()
+    view = nil
+end
+
+-- Event loop -------------------------------------------------------------------
 
 -- add new event-type handlers here (e.g. herald-battle.lua)
 local handlers -- initialised lazily after world load so enums are available
@@ -134,7 +248,7 @@ local function scan_events()
 
     scan_world_state(dprint)
 
-    scan_timer_id = dfhack.timeout(TICK_INTERVAL, 'ticks', scan_events)
+    scan_timer_id = dfhack.timeout(tick_interval, 'ticks', scan_events)
 end
 
 local function init_scan()
@@ -142,7 +256,7 @@ local function init_scan()
     last_event_id = #df.global.world.history.events - 1  -- watermark: skip old history
     enabled = true
     dprint('init_scan: watermark set to event id %d', last_event_id)
-    scan_timer_id = dfhack.timeout(TICK_INTERVAL, 'ticks', scan_events)
+    scan_timer_id = dfhack.timeout(tick_interval, 'ticks', scan_events)
 end
 
 local function cleanup()
@@ -174,7 +288,7 @@ if dfhack.isMapLoaded() then
     init_scan()
 end
 
--- Handle direct invocation: "herald-main debug [true|false]"
+-- Handle direct invocation: "herald-main debug [true|false]" / "herald-main interval"
 local args = {...}
 if args[1] == 'debug' then
     if args[2] == 'true' or args[2] == 'on' then
@@ -185,4 +299,6 @@ if args[1] == 'debug' then
         DEBUG = not DEBUG
     end
     print('[Herald] Debug ' .. (DEBUG and 'enabled' or 'disabled'))
+elseif args[1] == 'interval' then
+    view = view and view:raise() or IntervalScreen{}:show()
 end
