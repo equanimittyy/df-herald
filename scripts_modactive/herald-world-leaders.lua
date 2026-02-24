@@ -8,7 +8,7 @@ Tags: fort | gameplay
 
   Tracks world leadership positions by polling HF state each scan cycle.
 
-Detects leader deaths and succession changes that may not generate a
+Detects leader deaths and appointments that may not generate a
 HIST_FIGURE_DIED history event (e.g. out-of-fort deaths where the game
 sets hf.died_year/hf.died_seconds directly). Snapshots all entity
 position holders each cycle and compares against the previous snapshot.
@@ -16,7 +16,7 @@ Not intended for direct use.
 
 ]====]
 
--- tracked_leaders: { [entity_id] = { [pos_id] = { hf_id, pos_name, civ_name } } }
+-- tracked_leaders: { [entity_id] = { [assignment_id] = { hf_id, pos_name, civ_name } } }
 local tracked_leaders = {}
 
 local function is_alive(hf)
@@ -69,11 +69,11 @@ local function fmt_death(hf_name, pos_name, civ_name)
     return ('[Herald] %s of %s, a position holder, has died.'):format(hf_name, civ_name)
 end
 
-local function fmt_succession(new_name, prev_name, pos_name, civ_name)
+local function fmt_appointment(hf_name, pos_name, civ_name)
     if pos_name then
-        return ('[Herald] %s has succeeded %s as %s of %s.'):format(new_name, prev_name, pos_name, civ_name)
+        return ('[Herald] %s has been appointed %s of %s.'):format(hf_name, pos_name, civ_name)
     end
-    return ('[Herald] %s has succeeded %s as a position holder of %s.'):format(new_name, prev_name, civ_name)
+    return ('[Herald] %s has been appointed to a position in %s.'):format(hf_name, civ_name)
 end
 
 function check(dprint)
@@ -109,34 +109,29 @@ function check(dprint)
             dprint('world-leaders:   hf=%s pos=%s alive=%s',
                 dfhack.translation.translateName(hf.name, true), tostring(pos_name), tostring(is_alive(hf)))
 
-            if is_alive(hf) then
+            local prev_entity  = tracked_leaders[entity_id]
+            local prev         = prev_entity and prev_entity[assignment.id]
+
+            if not is_alive(hf) then
+                if prev and prev.hf_id == hf_id then
+                    local hf_name = dfhack.translation.translateName(hf.name, true)
+                    dprint('world-leaders: death detected: %s, %s of %s', hf_name, tostring(pos_name), civ_name)
+                    dfhack.gui.showAnnouncement(fmt_death(hf_name, pos_name, civ_name), COLOR_RED, true)
+                end
+            else
                 if not new_snapshot[entity_id] then
                     new_snapshot[entity_id] = {}
                 end
-                new_snapshot[entity_id][pos_id] = {
+                new_snapshot[entity_id][assignment.id] = {
                     hf_id    = hf_id,
                     pos_name = pos_name,
                     civ_name = civ_name,
                 }
-            end
 
-            local prev_entity = tracked_leaders[entity_id]
-            if prev_entity then
-                local prev = prev_entity[pos_id]
-                if prev then
-                    if not is_alive(hf) and prev.hf_id == hf_id then
-                        local hf_name = dfhack.translation.translateName(hf.name, true)
-                        dprint('world-leaders: death detected: %s, %s of %s', hf_name, tostring(pos_name), civ_name)
-                        dfhack.gui.showAnnouncement(fmt_death(hf_name, pos_name, civ_name), COLOR_RED, true)
-                    elseif is_alive(hf) and prev.hf_id ~= hf_id then
-                        local new_name  = dfhack.translation.translateName(hf.name, true)
-                        local prev_hf   = df.historical_figure.find(prev.hf_id)
-                        local prev_name = prev_hf
-                            and dfhack.translation.translateName(prev_hf.name, true)
-                            or  ('HF#' .. tostring(prev.hf_id))
-                        dprint('world-leaders: succession: %s -> %s, %s of %s', prev_name, new_name, tostring(pos_name), civ_name)
-                        dfhack.gui.showAnnouncement(fmt_succession(new_name, prev_name, pos_name, civ_name), COLOR_YELLOW, true)
-                    end
+                if prev_entity and (prev == nil or prev.hf_id ~= hf_id) then
+                    local hf_name = dfhack.translation.translateName(hf.name, true)
+                    dprint('world-leaders: appointment: %s as %s of %s', hf_name, tostring(pos_name), civ_name)
+                    dfhack.gui.showAnnouncement(fmt_appointment(hf_name, pos_name, civ_name), COLOR_YELLOW, true)
                 end
             end
 
