@@ -189,7 +189,7 @@ function HeraldFiguresWindow:init()
             key         = 'SELECT',
             label       = 'Track/Untrack',
             auto_width  = true,
-            on_activate = function()
+            on_submit = function()
                 local fl = self.subviews.fig_list
                 local idx, choice = fl:getSelected()
                 if choice then self:toggle_tracking(choice) end
@@ -197,8 +197,8 @@ function HeraldFiguresWindow:init()
         },
         widgets.HotkeyLabel{
             view_id     = 'toggle_dead_btn',
-            frame       = { b = 0, l = 20 },
-            key         = 'CUSTOM_D',
+            frame       = { b = 0, l = 25 },
+            key         = 'CUSTOM_CTRL_D',
             label       = 'Show dead: No',
             auto_width  = true,
             on_activate = function() self:toggle_dead() end,
