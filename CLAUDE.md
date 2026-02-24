@@ -14,7 +14,7 @@ DFHack mod (Lua, v50+ Steam) that scans world history for significant events and
 scripts_modactive/
 ├── onLoad.init              ← auto-enables the mod when a world loads (no user action needed)
 ├── herald-main.lua          ← event loop, dispatcher; add new event types here
-├── herald-fort-death.lua    ← HIST_FIGURE_DIED handler (leader detection + announcement) [Individuals]
+├── herald-ind-death.lua     ← HIST_FIGURE_DIED + poll handler for tracked individuals [Individuals]
 └── herald-world-leaders.lua ← poll-based world leader tracking (died_year check) [Civilisations]
 ```
 

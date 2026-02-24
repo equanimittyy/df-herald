@@ -204,10 +204,10 @@ local handlers -- initialised lazily after world load so enums are available
 local function get_handlers()
     if handlers then return handlers end
     handlers = {
-        [df.history_event_type.HIST_FIGURE_DIED] = dfhack.reqscript('herald-fort-death'),
+        [df.history_event_type.HIST_FIGURE_DIED] = dfhack.reqscript('herald-ind-death'),
     }
     dprint('Handlers registered:')
-    dprint('  HIST_FIGURE_DIED -> herald-fort-death')
+    dprint('  HIST_FIGURE_DIED -> herald-ind-death')
     return handlers
 end
 
@@ -216,10 +216,12 @@ local world_handlers -- initialised lazily
 local function get_world_handlers()
     if world_handlers then return world_handlers end
     world_handlers = {
-        leaders = dfhack.reqscript('herald-world-leaders'),
+        leaders     = dfhack.reqscript('herald-world-leaders'),
+        individuals = dfhack.reqscript('herald-ind-death'),
     }
     dprint('World handlers registered:')
     dprint('  leaders -> herald-world-leaders')
+    dprint('  individuals -> herald-ind-death')
     return world_handlers
 end
 
@@ -245,7 +247,7 @@ local function scan_events()
         local ev_type = ev:getType()
         local handler = h[ev_type]
         if handler then
-            dprint('Handler fired: event id=%d type=%s -> herald-fort-death', i, tostring(ev_type))
+            dprint('Handler fired: event id=%d type=%s', i, tostring(ev_type))
             handler.check(ev, dprint)
         end
         last_event_id = i
