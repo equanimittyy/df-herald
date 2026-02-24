@@ -22,6 +22,7 @@ Usage
    disable herald-main
    herald-main debug [true|false]
    herald-main interval
+   herald-main gui
 
 
 Commands
@@ -45,6 +46,9 @@ Commands
    dwarf day). The value is saved to dfhack-config/herald.json and takes
    effect on the next scan cycle.
 
+"herald-main gui"
+   Open the Herald settings window (requires a loaded world).
+
 
 Examples
 --------
@@ -60,6 +64,9 @@ Examples
 
 "herald-main interval"
    Open the interval editor.
+
+"herald-main gui"
+   Open the settings UI.
 
 ]====]
 
@@ -265,6 +272,8 @@ local function init_scan()
     last_event_id = #df.global.world.history.events - 1  -- watermark: skip old history
     enabled = true
     dprint('init_scan: watermark set to event id %d', last_event_id)
+    dfhack.reqscript('herald-ind-death').load_tracked()
+    dprint('init_scan: tracked HF list loaded')
     scan_timer_id = dfhack.timeout(tick_interval, 'ticks', scan_events)
 end
 
@@ -311,4 +320,10 @@ if args[1] == 'debug' then
     print('[Herald] Debug ' .. (DEBUG and 'enabled' or 'disabled'))
 elseif args[1] == 'interval' then
     view = view and view:raise() or IntervalScreen{}:show()
+elseif args[1] == 'gui' then
+    if not dfhack.isMapLoaded() then
+        dfhack.printerr('[Herald] A world must be loaded to open the settings UI.')
+    else
+        dfhack.reqscript('herald-gui').open_gui()
+    end
 end

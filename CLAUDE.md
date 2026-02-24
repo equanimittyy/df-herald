@@ -121,7 +121,7 @@ may have occurred without generating a `HIST_FIGURE_DIED` event.
 - Events: `df.global.world.history.events`
 - Entities: `df.global.world.entities.all`
 - Historical figure: `df.historical_figure.find(hf_id)`
-- HF entity links: `hf.entity_links[i].type` / `.entity_id`; link type enum: `df.histfig_entity_link_type.POSITION`
+- HF entity links: `hf.entity_links[i]:getType()` / `.entity_id`; link type enum: `df.histfig_entity_link_type.POSITION` — use `:getType()` (virtual method), NOT `.type` (not a field on concrete subtypes like `histfig_entity_link_memberst`)
 - Entity resolution: `df.historical_entity.find(entity_id)`
 - Position assignments: `entity.positions.assignments[i]` — fields: `.id` (sequential assignment counter), `.histfig2` (HF holder), `.position_id` (position type ID)
 - Position definitions — two sources, must check both:

@@ -16,7 +16,8 @@ Not intended for direct use.
 
 ]====]
 
--- Placeholder: will be populated from user config (not yet implemented)
+local PERSIST_KEY = 'herald_tracked_hf_ids'
+
 local tracked_hf_ids = {}   -- set: { [hf_id] = true }
 
 -- HF IDs already announced this session (prevents event+poll double-fire)
@@ -66,6 +67,30 @@ function check(event_or_dprint, dprint_or_nil)
     end
 end
 
+function load_tracked()
+    local data = dfhack.persistent.getSiteData(PERSIST_KEY, {})
+    tracked_hf_ids = {}
+    if type(data.ids) == 'table' then
+        for _, id in ipairs(data.ids) do tracked_hf_ids[id] = true end
+    end
+end
+
+function save_tracked()
+    local ids = {}
+    for id in pairs(tracked_hf_ids) do table.insert(ids, id) end
+    dfhack.persistent.saveSiteData(PERSIST_KEY, { ids = ids })
+end
+
+function get_tracked()
+    return tracked_hf_ids
+end
+
+function set_tracked(hf_id, value)
+    tracked_hf_ids[hf_id] = value or nil
+    save_tracked()
+end
+
 function reset()
     announced_deaths = {}
+    -- tracked_hf_ids is per-save config; reloaded by load_tracked() on SC_MAP_LOADED
 end
