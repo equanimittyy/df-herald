@@ -34,12 +34,12 @@ function check(dprint)
         -- Only track civilisation-layer entities; guilds, religions, animal herds, etc.
         -- are irrelevant to wars, raids, and succession tracking.
         if entity.type ~= df.historical_entity_type.Civilization then goto continue_entity end
-        if #entity.position_assignments == 0 then goto continue_entity end
+        if #entity.positions.assignments == 0 then goto continue_entity end
 
         local entity_id = entity.id
         local civ_name  = dfhack.translation.translateName(entity.name, true)
 
-        for _, assignment in ipairs(entity.position_assignments) do
+        for _, assignment in ipairs(entity.positions.assignments) do
             local hf_id = assignment.histfig2
             if hf_id == -1 then goto continue_assignment end
 

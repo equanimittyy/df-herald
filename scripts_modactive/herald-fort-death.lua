@@ -31,6 +31,7 @@ local function get_leader_info(hf_id, dprint)
             if entity then
                 dprint('death: found POSITION link to entity "%s"',
                     dfhack.translation.translateName(entity.name, true))
+                -- TODO: may need entity.positions.assignments / entity.positions (untested)
                 for _, assignment in ipairs(entity.position_assignments) do
                     if assignment.histfig2 == hf_id then
                         for _, pos in ipairs(entity.positions) do

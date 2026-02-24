@@ -115,8 +115,8 @@ may have occurred without generating a `HIST_FIGURE_DIED` event.
 - Historical figure: `df.historical_figure.find(hf_id)`
 - HF entity links: `hf.entity_links[i].type` / `.entity_id`; link type enum: `df.histfig_entity_link_type.POSITION`
 - Entity resolution: `df.historical_entity.find(entity_id)`
-- Position assignments: `entity.position_assignments[i].histfig2` / `.id`
-- Position name: `entity.positions[i].name`
+- Position assignments: `entity.positions.assignments[i].histfig2` / `.id`
+- Position definitions: `entity.positions[i].name` / `.id` (T_positions is also iterable as the definitions vector)
 - HF alive check: `hf.died_year` / `hf.died_seconds` — both `-1` when alive; any other value means dead
 - Name translation: `dfhack.translation.translateName(name_obj, true)` (renamed from `dfhack.TranslateName` in v50.15+)
 - Player civ id: `df.global.plotinfo.civ_id`
