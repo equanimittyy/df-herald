@@ -23,19 +23,47 @@ local function is_alive(hf)
     return hf.died_year == -1 and hf.died_seconds == -1
 end
 
+-- Safely extracts a singular name string from either a static-array field (entity_position_raw
+-- style: name[0]) or a plain stl-string field (entity_position / entity.positions.own style).
+local function name_str(field)
+    if not field then return nil end
+    if type(field) == 'string' then
+        return field ~= '' and field or nil
+    end
+    local s = field[0]
+    return (s and s ~= '') and s or nil
+end
+
 -- Returns the position title for an assignment, using the gendered form if available.
--- Searches entity_raw.positions by pos.id == pos_id (string[], [0]=singular).
--- Note: some entity types (e.g. EVIL/PLAINS) have empty entity_raw.positions — their
--- position names appear to be generated via the language system, not stored as plain strings.
--- In those cases this returns nil and the caller falls back to generic announcement text.
-local function get_pos_name(entity_raw, pos_id, hf)
-    if not entity_raw or not pos_id then return nil end
-    for _, pos in ipairs(entity_raw.positions) do
-        if pos.id == pos_id then
-            local gendered = (hf.sex == 1) and pos.name_male[0] or pos.name_female[0]
-            return (gendered and gendered ~= '') and gendered or pos.name[0]
+-- Checks entity_raw.positions first (positions defined in raw files), then falls back to
+-- entity.positions.own (instance-level positions used by EVIL/PLAINS and similar entity
+-- types whose entity_raw carries an empty positions vector).
+local function get_pos_name(entity, pos_id, hf)
+    if not entity or pos_id == nil then return nil end
+
+    -- 1. entity_raw.positions — canonical source for most civilised entity types
+    local entity_raw = entity.entity_raw
+    if entity_raw then
+        for _, pos in ipairs(entity_raw.positions) do
+            if pos.id == pos_id then
+                local gendered = hf.sex == 1 and name_str(pos.name_male) or name_str(pos.name_female)
+                return gendered or name_str(pos.name)
+            end
         end
     end
+
+    -- 2. entity.positions.own — instance-level positions (e.g. goblin/evil civs where
+    --    entity_raw.positions is empty but positions are stored on the entity itself)
+    local own = entity.positions and entity.positions.own
+    if own then
+        for _, pos in ipairs(own) do
+            if pos.id == pos_id then
+                local gendered = hf.sex == 1 and name_str(pos.name_male) or name_str(pos.name_female)
+                return gendered or name_str(pos.name)
+            end
+        end
+    end
+
     return nil
 end
 
@@ -69,9 +97,8 @@ function check(dprint)
         dbg_civs = dbg_civs + 1
         if #entity.positions.assignments == 0 then goto continue_entity end
 
-        local entity_id  = entity.id
-        local civ_name   = dfhack.translation.translateName(entity.name, true)
-        local entity_raw = entity.entity_raw
+        local entity_id = entity.id
+        local civ_name  = dfhack.translation.translateName(entity.name, true)
 
         dprint('world-leaders: civ "%s" has %d assignments', civ_name, #entity.positions.assignments)
 
@@ -83,7 +110,7 @@ function check(dprint)
             if not hf then goto continue_assignment end
 
             local pos_id   = assignment.position_id
-            local pos_name = get_pos_name(entity_raw, pos_id, hf)
+            local pos_name = get_pos_name(entity, pos_id, hf)
 
             dprint('world-leaders:   hf=%s pos=%s alive=%s',
                 dfhack.translation.translateName(hf.name, true), tostring(pos_name), tostring(is_alive(hf)))
