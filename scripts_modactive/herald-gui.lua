@@ -122,7 +122,6 @@ local function build_choices(show_dead, show_tracked_only)
         local civ_full = get_civ_name(hf)   -- full name for search
         local is_tracked = tracked[hf.id]
 
-        -- Pad columns: name=22, race=12, civ=25
         local name_col = name:sub(1, 22)
         local race_col = race:sub(1, 12)
         local civ_col  = civ_full:sub(1, 24)
@@ -236,11 +235,9 @@ function HeraldFiguresWindow:init()
 
     self:refresh_list()
 
-    -- Ensure the detail panel always updates after every search-filter change.
-    -- on_select alone is unreliable when the list transitions back from "no matches":
-    -- if the internal selected index was already 1, setSelected(1) doesn't change it
-    -- and invoke_onselect may not re-fire.  Overriding onFilterChange on the instance
-    -- runs AFTER the list is updated, so getSelected() returns the correct new choice.
+    -- Override onFilterChange so the detail panel updates on every filter change.
+    -- on_select alone misfires when the list returns from "no matches" with the same
+    -- selected index; onFilterChange runs after the list updates, so getSelected() is reliable.
     local fl  = self.subviews.fig_list
     local win = self
     local _orig_ofc = fl.onFilterChange   -- captures class method via __index
@@ -261,10 +258,8 @@ function HeraldFiguresWindow:onInput(keys)
         self:toggle_tracked_only()
         return true
     end
-    -- Always offer input to fig_list first so keyboard navigation drives it
-    -- regardless of which key names DFHack uses for cursor movement.
-    -- fig_list returns false for anything it doesn't handle (mouse events on
-    -- the detail panel, hotkeys, etc.), which then falls through to super.
+    -- Route input through fig_list first for keyboard navigation; it returns false
+    -- for anything it doesn't handle (hotkeys, detail-panel clicks), falling through to super.
     if self.subviews.fig_list:onInput(keys) then return true end
     return HeraldFiguresWindow.super.onInput(self, keys)
 end
@@ -343,7 +338,6 @@ function HeraldFiguresWindow:toggle_tracking(choice)
     if name == '' then name = '(unnamed)' end
     print(('[Herald] %s (id %d) is %s tracked.'):format(
         name, hf_id, now_tracked and 'now' or 'no longer'))
-    -- Refresh detail and list
     self:update_detail(choice)
     -- Rebuild list to update status column
     local fl = self.subviews.fig_list
