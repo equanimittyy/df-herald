@@ -229,6 +229,27 @@ local event_will_be_shown
 local function build_hf_event_counts()
     if hf_event_counts_cache then return hf_event_counts_cache end
     local counts = {}
+    local BATTLE_TYPES = {}
+    for _, name in ipairs({'HF_SIMPLE_BATTLE_EVENT', 'HIST_FIGURE_SIMPLE_BATTLE_EVENT'}) do
+        local v = df.history_event_type[name]
+        if v ~= nil then BATTLE_TYPES[v] = true end
+    end
+    local COMP_TYPE = df.history_event_type['COMPETITION']
+
+    local function count_vec(ev, field, seen)
+        local ok, vec = pcall(function() return ev[field] end)
+        if not ok or not vec then return end
+        local ok2, n = pcall(function() return #vec end)
+        if not ok2 then return end
+        for i = 0, n - 1 do
+            local ok3, v = pcall(function() return vec[i] end)
+            if ok3 and type(v) == 'number' and v >= 0 and not seen[v] then
+                seen[v] = true
+                counts[v] = (counts[v] or 0) + 1
+            end
+        end
+    end
+
     for _, ev in ipairs(df.global.world.history.events) do
         if event_will_be_shown and not event_will_be_shown(ev) then goto skip_ev end
         local seen = {}
@@ -238,6 +259,16 @@ local function build_hf_event_counts()
                 seen[val] = true
                 counts[val] = (counts[val] or 0) + 1
             end
+        end
+        -- HF_SIMPLE_BATTLE_EVENT: participants in group1/group2 vectors.
+        if BATTLE_TYPES[ev:getType()] then
+            count_vec(ev, 'group1', seen)
+            count_vec(ev, 'group2', seen)
+        end
+        -- COMPETITION: competitor_hf and winner_hf vectors.
+        if COMP_TYPE and ev:getType() == COMP_TYPE then
+            count_vec(ev, 'competitor_hf', seen)
+            count_vec(ev, 'winner_hf', seen)
         end
         ::skip_ev::
     end
