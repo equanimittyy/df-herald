@@ -15,11 +15,11 @@ Tags: fort | gameplay
 
   Navigation
   ----------
-  Ctrl-T / Ctrl-Y     Cycle tabs forward / back (Pinned → Historical Figures → Civilisations)
+  Ctrl-T / Ctrl-Y     Cycle tabs forward / back
   Ctrl-J              Open the DFHack Journal
   Escape              Close the window
 
-  Tab 1 — Pinned
+  Tab 1 - Pinned
   --------------
   Lists everything you are currently tracking. The left pane shows pinned
   individuals or civilisations; the right pane shows the announcement toggles
@@ -33,7 +33,7 @@ Tags: fort | gameplay
   the right pane. Toggle each event category on or off; changes are saved
   immediately. Categories marked with "*" are not yet implemented.
 
-  Tab 2 — Historical Figures
+  Tab 2 - Historical Figures
   --------------------------
   Searchable list of all historical figures in the current world. 
   Columns: Name, Race, Civ, Status. 
@@ -52,7 +52,7 @@ Tags: fort | gameplay
   in grey with a red "dead" status. Pinning a figure here adds it to the
   Pinned tab and begins tracking the announcement events set for that pin.
 
-  Tab 3 — Civilisations
+  Tab 3 - Civilisations
   ---------------------
   Searchable list of all civilisation-level entities in the world.
 
