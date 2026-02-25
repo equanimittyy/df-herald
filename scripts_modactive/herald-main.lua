@@ -11,8 +11,8 @@ Command: "herald-main"
 
   Scans world history for significant events and notifies the player in-game.
 
-Announces leader deaths, succession changes, and other notable events as they
-happen, without requiring the player to check the legends screen.
+Announces leader deaths, succession changes, and other notable events as they happen, without requiring the player to check the 
+legends screen.
 
 
 Usage
