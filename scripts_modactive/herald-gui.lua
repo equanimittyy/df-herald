@@ -1082,4 +1082,3 @@ end
 function open_gui()
     view = view and view:raise() or HeraldGuiScreen{}:show()
 end
-
