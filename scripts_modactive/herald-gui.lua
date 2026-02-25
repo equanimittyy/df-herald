@@ -910,6 +910,17 @@ function HeraldWindow:switch_tab(idx)
 end
 
 function HeraldWindow:onInput(keys)
+    -- Debounce Ctrl-T: DFHack queues all pending key events and flushes them
+    -- synchronously in one tick. Rapid Ctrl-T spam fires switch_tab dozens of
+    -- times per tick, each triggering postUpdateLayout on large FilteredLists
+    -- and overwhelming DF. Swallow presses that arrive faster than 150 ms.
+    if keys.CUSTOM_CTRL_T then
+        local now = os.clock()
+        if self._last_tab_t and (now - self._last_tab_t) < 0.15 then
+            return true
+        end
+        self._last_tab_t = now
+    end
     -- Route Ctrl-D and Ctrl-P to figures panel only when on tab 2
     if self.cur_tab == 2 then
         if keys.CUSTOM_CTRL_D or keys.CUSTOM_CTRL_P then
