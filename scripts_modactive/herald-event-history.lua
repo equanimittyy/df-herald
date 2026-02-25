@@ -1021,7 +1021,16 @@ local function get_hf_events(hf_id)
             end
         end
     end
-    table.sort(results, function(a, b) return (a.year or -1) < (b.year or -1) end)
+    table.sort(results, function(a, b)
+        local ya, yb = (a.year or -1), (b.year or -1)
+        if ya ~= yb then return ya < yb end
+        local sa = safe_get(a, 'seconds') or -1
+        local sb = safe_get(b, 'seconds') or -1
+        if sa ~= sb then return sa < sb end
+        local ia = safe_get(a, 'id') or -1
+        local ib = safe_get(b, 'id') or -1
+        return ia < ib
+    end)
     return results
 end
 
