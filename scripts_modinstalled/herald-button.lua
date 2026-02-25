@@ -9,23 +9,96 @@ Not intended for direct use.
 local overlay = require('plugins.overlay')
 local widgets = require('gui.widgets')
 
+-- The PNG is 64x36 with two 32x36 states side by side: left = normal, right = hover.
+-- At 8x12 px/tile: 8 total columns, 3 rows. Each state occupies 4 columns.
+local TILE_W        = 8
+local TILE_H        = 12
+local LOGO_COLS     = 4   -- tiles per state
+local LOGO_ROWS     = 3
+local PNG_COLS      = 8   -- total tile columns across the full PNG
+
+-- SCRIPT_PATH is not set for overlay modules; derive directory from source info.
+local _DIR = debug.getinfo(1, 'S').source:match('^@(.*[/\\])') or ''
+
+local normal_pens = nil  -- false = load attempted and failed
+local hover_pens  = nil
+
+local function load_logo_pens()
+    if normal_pens ~= nil then return normal_pens, hover_pens end
+    local path = _DIR .. 'herald-logo.png'
+    local ok, handles = pcall(dfhack.textures.loadTileset, path, TILE_W, TILE_H, true)
+    if not ok or not handles or #handles == 0 then
+        normal_pens = false
+        return normal_pens
+    end
+    normal_pens, hover_pens = {}, {}
+    for row = 0, LOGO_ROWS - 1 do
+        for col = 0, LOGO_COLS - 1 do
+            local ni = row * PNG_COLS + col + 1
+            local hi = row * PNG_COLS + LOGO_COLS + col + 1
+            normal_pens[#normal_pens + 1] =
+                dfhack.pen.parse{tile=dfhack.textures.getTexposByHandle(handles[ni]), ch=32}
+            hover_pens[#hover_pens + 1] =
+                dfhack.pen.parse{tile=dfhack.textures.getTexposByHandle(handles[hi]), ch=32}
+        end
+    end
+    return normal_pens, hover_pens
+end
+
+local LogoButton = defclass(LogoButton, widgets.Panel)
+LogoButton.ATTRS{
+    normal_pens = DEFAULT_NIL,
+    hover_pens  = DEFAULT_NIL,
+    on_click    = DEFAULT_NIL,
+}
+
+function LogoButton:onRenderBody(dc)
+    local hovered = self:getMousePos() ~= nil
+    local pens = (hovered and self.hover_pens) or self.normal_pens
+    for row = 0, LOGO_ROWS - 1 do
+        for col = 0, LOGO_COLS - 1 do
+            dc:seek(col, row):char(32, pens[row * LOGO_COLS + col + 1])
+        end
+    end
+end
+
+function LogoButton:onInput(keys)
+    if keys._MOUSE_L and self:getMousePos() then
+        if self.on_click then self.on_click() end
+        return true
+    end
+    return LogoButton.super.onInput(self, keys)
+end
+
 HeraldButton = defclass(HeraldButton, overlay.OverlayWidget)
 
 HeraldButton.ATTRS{
     default_pos     = {x=10, y=1},
     default_enabled = true,
     viewscreens     = {'dwarfmode'},
-    frame           = {w=8, h=1},
+    frame           = {w=LOGO_COLS, h=LOGO_ROWS},
 }
 
 function HeraldButton:init()
-    self:addviews{
-        widgets.TextButton{
-            frame       = {l=0, t=0},
-            label       = 'Herald',
-            on_activate = function() dfhack.run_command('herald-main', 'gui') end,
+    local np, hp = load_logo_pens()
+    if np then
+        self:addviews{
+            LogoButton{
+                frame       = {l=0, t=0, w=LOGO_COLS, h=LOGO_ROWS},
+                normal_pens = np,
+                hover_pens  = hp,
+                on_click    = function() dfhack.run_command('herald-main', 'gui') end,
+            }
         }
-    }
+    else
+        self:addviews{
+            widgets.TextButton{
+                frame       = {l=0, t=0},
+                label       = 'Herald',
+                on_activate = function() dfhack.run_command('herald-main', 'gui') end,
+            }
+        }
+    end
 end
 
 OVERLAY_WIDGETS = { button = HeraldButton }
