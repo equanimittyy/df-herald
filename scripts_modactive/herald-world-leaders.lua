@@ -213,8 +213,7 @@ function check(dprint)
         (function() local n=0 for _ in pairs(tracked_leaders) do n=n+1 end return n end)())
 end
 
--- Loads pinned civ list from per-save persistence.
--- Drops entries where the entity no longer exists in the world.
+-- Loads pinned civs from persistence; drops stale entity entries.
 function load_pinned_civs()
     local data = dfhack.persistent.getSiteData(PERSIST_CIVS_KEY, {})
     pinned_civ_ids = {}
@@ -232,8 +231,7 @@ function get_pinned_civs()
     return pinned_civ_ids
 end
 
--- Pins or unpins a civilisation. value=true pins (inits default settings);
--- value=false/nil unpins.
+-- Pins (truthy value) or unpins (nil/false) a civilisation.
 function set_pinned_civ(entity_id, value)
     if value then
         pinned_civ_ids[entity_id] = default_civ_pin_settings()

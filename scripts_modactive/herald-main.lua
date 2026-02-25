@@ -100,7 +100,7 @@ local function deepcopy(t)
     return copy
 end
 
--- Merges src into dst for two-level announcement tables; fills missing keys from defaults.
+-- Merges saved announcement config over defaults; fills any missing keys.
 local function merge_announcements(saved)
     local result = deepcopy(DEFAULT_ANNOUNCEMENTS)
     if type(saved) ~= 'table' then return result end

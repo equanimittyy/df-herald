@@ -397,9 +397,8 @@ function PinnedPanel:init()
     self.view_type  = 'individuals'
     self.selected_id = nil  -- hf_id or entity_id of currently selected pin
 
-    -- Helper to build ToggleHotkeyLabel widgets for an announcement category.
-    -- Toggles are per-pin: on_change saves to the selected pin's settings.
-    -- Name label at t=0; toggles start at t=1 to leave room for the name row.
+    -- Builds ToggleHotkeyLabel widgets for an announcement category.
+    -- on_change writes the new value to the selected pin's settings.
     local function make_toggle_views(entries, category)
         local views = {}
         for i, entry in ipairs(entries) do
@@ -582,13 +581,11 @@ function PinnedPanel:refresh_pinned_list()
     local choices = {}
     if self.view_type == 'individuals' then
         local pinned = ind_death.get_pinned()
-        -- Collect pinned HFs
         local hf_list = {}
         for hf_id in pairs(pinned) do
             local hf = df.historical_figure.find(hf_id)
             if hf then table.insert(hf_list, hf) end
         end
-        -- Sort alphabetically
         table.sort(hf_list, function(a, b)
             local na = dfhack.translation.translateName(a.name, true)
             local nb = dfhack.translation.translateName(b.name, true)
@@ -617,7 +614,6 @@ function PinnedPanel:refresh_pinned_list()
             table.insert(choices, { text = { { text = 'No pinned individuals', pen = COLOR_GREY } } })
         end
     else
-        -- Civilisations view
         local pinned_civs = wld_leaders.get_pinned_civs()
         local civ_list = {}
         for entity_id in pairs(pinned_civs) do

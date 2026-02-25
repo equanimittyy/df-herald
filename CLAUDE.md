@@ -12,109 +12,118 @@ DFHack mod (Lua, v50+ Steam) that scans world history for significant events and
 
 ```
 scripts_modactive/
-├── onLoad.init              ← auto-enables the mod when a world loads (no user action needed)
+├── onLoad.init              ← auto-enables the mod on world load
 ├── herald-main.lua          ← event loop, dispatcher; add new event types here
-├── herald-gui.lua           ← settings UI: figure tracking (HeraldFiguresWindow)
-├── herald-ind-death.lua     ← HIST_FIGURE_DIED + poll handler for tracked individuals [Individuals]
+├── herald-gui.lua           ← settings UI: tabbed window (Pinned / Historical Figures / Civilisations)
+├── herald-ind-death.lua     ← HIST_FIGURE_DIED + poll handler for pinned individuals [Individuals]
 └── herald-world-leaders.lua ← poll-based world leader tracking [Civilisations]
 ```
 
-Each event type lives in its own `herald-<type>.lua` module. Event-driven Individual handlers export
-`check(event, dprint)` and are registered in `get_handlers()`. Poll-based Individual and Civilisation
-handlers export `check(dprint)` and `reset()`, registered in `get_world_handlers()`.
+Each event type lives in its own `herald-<type>.lua` module. Event-driven handlers export
+`check(event, dprint)` and register in `get_handlers()`. Poll-based handlers export
+`check(dprint)` + `reset()` and register in `get_world_handlers()`.
 
 ## Handler Categories
 
-- **Individuals**: tracks events for specific historical figures. Uses two sub-modes:
-  - *Event-driven* (in-fort / on-screen): called once per matching `df.history_event_type.*` event
-    via the incremental scan. Interface: `check(event, dprint)`. Registered in `get_handlers()`.
-  - *Poll-based* (off-screen): called once per scan cycle; iterates all tracked HFs and checks
-    `hf.died_year`/`hf.died_seconds` directly for death. Interface: `check(dprint)` + `reset()`.
-    Registered in `get_world_handlers()`.
-- **Civilisations** (poll-based): called once per scan cycle regardless of events. Tracks civ-level
-  state (leaders, succession, etc.). Manages its own state snapshot and detects changes by comparing
-  to previous cycle. Interface: `check(dprint)` + `reset()`. Registered in `get_world_handlers()`.
+- **Individuals** — two sub-modes:
+  - *Event-driven* (in-fort): called per matching `df.history_event_type.*` event via the
+    incremental scan. Interface: `check(event, dprint)`. Registered in `get_handlers()`.
+  - *Poll-based* (off-screen): called each scan cycle; checks HF state directly for deaths.
+    Interface: `check(dprint)` + `reset()`. Registered in `get_world_handlers()`.
+- **Civilisations** (poll-based): called each cycle regardless of events; snapshots civ-level
+  state and detects changes by comparing to the previous cycle.
+  Interface: `check(dprint)` + `reset()`. Registered in `get_world_handlers()`.
 
-Event-driven Individual handlers are reliable for in-fort occurrences. Poll-based handlers (both
-Individual off-screen and Civilisation) are needed because `df.global.world.history.events` is
-**unreliable** for out-of-fort changes: the game may set `hf.died_year`/`hf.died_seconds` directly
-without generating a `HIST_FIGURE_DIED` event.
+Poll-based handlers are necessary because `df.global.world.history.events` is **unreliable**
+for out-of-fort changes — the game may set `hf.died_year`/`hf.died_seconds` directly without
+generating a `HIST_FIGURE_DIED` event.
+
+## Module Requirements
 
 Every handler script **must** have, in order:
 
-1. `--@ module=true` — required for `dfhack.reqscript`; omitting it throws "Cannot be used
-   as a module" and breaks the event loop.
-2. A `--[====[` docblock — same format as `herald-main`, but with no Usage/Commands/Examples
-   sections and ending with "Not intended for direct use."
+1. `--@ module=true` — required for `dfhack.reqscript`; omitting throws "Cannot be used as a module".
+2. A `--[====[` docblock ending with "Not intended for direct use."
 
-`dfhack.reqscript` returns the script's **environment table**, not any explicit `return`
-value. Export functions by defining them at module scope (no `local`, no wrapper table):
+`dfhack.reqscript` returns the script's **environment table** — export functions at module scope
+(no `local`, no wrapper table):
 
 - Correct: `function check(event, dprint) ... end`
 - Wrong: `local M = {}; function M.check(...) end; return M` — `check` is never in the env
 
-Each handler runs in its **own isolated environment**, so naming the export `check` in every
-handler is safe — `herald-death`'s `check` and `herald-battle`'s `check` are separate
-objects accessed via their respective handler references (`h[ev_type].check`).
-
-`herald-main.lua` additionally has `--@ enable=true` because it is user-facing (supports
-`enable`/`disable`). Handler modules use `--@ module=true` only.
+Each handler runs in its **own isolated environment**, so naming exports `check` in every handler
+is safe — each is a separate object accessed via its handler reference. `herald-main.lua` uses
+`--@ enable=true` (user-facing); all handler modules use `--@ module=true` only.
 
 ## Architecture
 
 ### Event Loop
 
-- Poll on a user-configurable tick interval via `dfhack.timeout(tick_interval, 'ticks', callback)`
-  - Default: 1,200 ticks (1 dwarf day); minimum: 600 ticks (half a dwarf day)
+- Poll via `dfhack.timeout(tick_interval, 'ticks', callback)`
+  - Default: 1,200 ticks (1 dwarf day); minimum: 600 ticks (half a day)
   - Set via `herald-main interval`; persisted in `dfhack-config/herald.json` as `tick_interval`
-- Handle `onStateChange`: start on `SC_MAP_LOADED`, stop on `SC_MAP_UNLOADED`
-- Track `last_event_id` from `df.global.world.history.events` to avoid duplicates
+- `onStateChange`: start on `SC_MAP_LOADED`, stop on `SC_MAP_UNLOADED`
+- `last_event_id` tracks position in `df.global.world.history.events` to avoid duplicates
+- `dfhack.timeout` fires **once only** — `scan_events` must reschedule at the end; any early
+  return permanently kills the loop
 - Timers in `'ticks'` mode are auto-cancelled by DFHack on world unload
-- `dfhack.timeout` fires **once only**; `scan_events` must reschedule itself at the end.
-  Any error or early return before the rescheduling line permanently kills the loop.
 
 ### History Event Scanning
 
-- Iterate `df.global.world.history.events` from `last_event_id + 1` only (incremental)
-- Dispatch each event to its registered handler by type; handlers apply their own filters (e.g. tracked HF list)
-- Check event type via `event:getType()` vs `df.history_event_type.*` enum values
+- Iterate events from `last_event_id + 1` (incremental; never re-scan from 0)
+- Dispatch by `event:getType()` vs `df.history_event_type.*`; handlers apply their own filters
+- Keep event checks in separate scripts, one per event type — never embed in the scan loop
+- Out-of-fort deaths may not generate a history event; poll HF state directly for reliability
 
-**Event Scope / Reliability**: history events are unreliable for out-of-fort occurrences.
-World events (raids, battles) can still generate entries, but out-of-fort deaths may bypass
-event generation entirely — the game may only set `hf.died_year`/`hf.died_seconds`. Polling
-HF state directly is more reliable for civilisation-level tracking.
-
-**Event Checks** (Keep this code separate to the event and scanning loop, one script per event check)
-
-- Death events: `df.history_event_type.HIST_FIGURE_DIED`; victim field: `event.victim_hf` (integer hf id)
+Implemented event checks:
+- Death: `df.history_event_type.HIST_FIGURE_DIED`; victim field: `event.victim_hf` (hf id)
 
 ### Civilisation-Level Polling
 
-Runs alongside the event scan each tick cycle. Poll-based world handlers snapshot or inspect state
-and compare against the previous cycle to detect changes:
+Runs alongside the event scan each cycle via `scan_world_state(dprint)`:
 
-1. `get_world_handlers()` — lazy-init table mapping string keys to poll-based handler modules (both
-   Civilisation and Individual off-screen).
-2. `scan_world_state(dprint)` — iterates all world handlers, calling `handler.check(dprint)`.
-3. Called at the end of `scan_events()`, sharing the same configurable tick interval.
-4. On cleanup, `handler.reset()` is called on each world handler to clear snapshot state.
+1. `get_world_handlers()` — lazy-init map of string keys to poll-based handler modules
+2. `scan_world_state(dprint)` — iterates all world handlers, calling `handler.check(dprint)`
+3. On cleanup, `handler.reset()` clears snapshot state
 
-`herald-world-leaders.lua` uses this approach: it snapshots `{ [entity_id] = { [assignment_id] = { hf_id,
-pos_name, civ_name } } }` each cycle and checks `not is_alive(hf)` (`hf.died_year ~= -1` or
-`hf.died_seconds ~= -1`) to detect leader deaths that may not generate a `HIST_FIGURE_DIED` event.
+`herald-world-leaders.lua` snapshots `{ [entity_id] = { [assignment_id] = { hf_id, pos_name,
+civ_name } } }` each cycle to detect position holder deaths and new appointments.
 
-### Notifications
+### Debug Output
 
-- Announcement: `dfhack.gui.showAnnouncement`
+When `DEBUG = true`, handlers emit verbose trace lines covering:
+- Untracked HFs/civs: `"is not tracked, skipping"`
+- Duplicate suppression: `"already announced, skipping"`
+- Announcement fired: `"firing announcement … (setting is ON)"`
+- Announcement suppressed: `"announcement suppressed … (setting is OFF)"`
 
 ### Settings & Persistence
 
-- UI: `require('gui')`, `require('gui.widgets')`
-- Settings screen (`herald-gui.lua`): figure list (Name / Race / Civ / Status columns) with detail
-  panel (ID, race, alive/dead, tracked, civ, site gov, positions). Enter to Track/Untrack;
-  Ctrl-D toggles show-dead; Ctrl-T filters to tracked-only figures.
-- Global config: `dfhack-config/herald.json`
-- Per-save config: `dfhack.persistent.getSiteData` / `dfhack.persistent.saveSiteData`
+Settings screen (`herald-gui.lua`): 3-tab window — Ctrl-T / Ctrl-Y to navigate.
+
+- **Pinned** (tab 1): left list of pinned individuals or civs; Ctrl-I toggles Individuals/
+  Civilisations view. Right panel shows per-pin announcement toggles (unimplemented categories
+  marked `*`). Enter unpins the selection.
+- **Historical Figures** (tab 2): Name/Race/Civ/Status list with detail panel. Enter to
+  pin/unpin; Ctrl-D show-dead; Ctrl-P pinned-only.
+- **Civilisations** (tab 3): full civ list. Enter to pin/unpin; Ctrl-P pinned-only.
+
+**Global config** (`dfhack-config/herald.json`):
+```json
+{ "tick_interval": 1200, "debug": false,
+  "announcements": {
+    "individuals":   { "death": true, "marriage": false, "children": false,
+                       "migration": false, "legendary": false, "combat": false },
+    "civilisations": { "positions": true, "diplomacy": false, "raids": false,
+                       "theft": false, "kidnappings": false, "armies": false }
+  }
+}
+```
+
+**Per-save config** (`dfhack.persistent.getSiteData/saveSiteData`):
+- Individuals: key `herald_pinned_hf_ids`
+- Civilisations: key `herald_pinned_civ_ids`
+- Schema: `{ "pins": [ { "id": <int>, "settings": { <key>: <bool>, ... } } ] }`
 
 ## Key API Paths
 
@@ -122,30 +131,34 @@ pos_name, civ_name } } }` each cycle and checks `not is_alive(hf)` (`hf.died_yea
 - Events: `df.global.world.history.events`
 - Entities: `df.global.world.entities.all`
 - Historical figure: `df.historical_figure.find(hf_id)`
-- HF entity links: `hf.entity_links[i]:getType()` / `.entity_id`; link type enum: `df.histfig_entity_link_type.POSITION` — use `:getType()` (virtual method), NOT `.type` (not a field on concrete subtypes like `histfig_entity_link_memberst`)
+- HF entity links: `hf.entity_links[i]:getType()` / `.entity_id`; link type enum:
+  `df.histfig_entity_link_type.POSITION` — use `:getType()` (virtual method), NOT `.type`
+  (not a field on concrete subtypes like `histfig_entity_link_memberst`)
 - Entity resolution: `df.historical_entity.find(entity_id)`
-- Position assignments: `entity.positions.assignments[i]` — fields: `.id` (sequential assignment counter), `.histfig2` (HF holder), `.position_id` (position type ID)
-- Position definitions — two sources, must check both:
-  - `entity.entity_raw.positions` — vector of `entity_position_raw`; used by most civ types (PLAINS, etc.); name fields are `string[]`: `pos.name[0]`, `pos.name_male[0]`, `pos.name_female[0]` (singular). **Empty for EVIL/PLAINS and similar entity types.**
-  - `entity.positions.own` — vector of `entity_position`; instance-level positions used by EVIL/PLAINS and other types whose `entity_raw.positions` is empty; name fields are plain `stl-string`: `pos.name`, `pos.name_male`, `pos.name_female`. Search `pos.id == assignment.position_id` in both vectors; `own` is the fallback.
+- Position assignments: `entity.positions.assignments[i]` — `.id`, `.histfig2` (HF holder),
+  `.position_id`
+- Position names — two sources, check both:
+  - `entity.entity_raw.positions` — `entity_position_raw`; name fields `string[]`:
+    `pos.name[0]`, `pos.name_male[0]`, `pos.name_female[0]`. **Empty for EVIL/PLAINS types.**
+  - `entity.positions.own` — `entity_position`; name fields plain `stl-string`: `pos.name`,
+    `pos.name_male`, `pos.name_female`. Fallback for EVIL/PLAINS.
 - HF sex: `hf.sex` — `1`=male, `0`=female; use for gendered position name selection
-- HF alive check: `hf.died_year` / `hf.died_seconds` — both `-1` when alive; any other value means dead
-- Name translation: `dfhack.translation.translateName(name_obj, true)` (renamed from `dfhack.TranslateName` in v50.15+)
-- Player civ id: `df.global.plotinfo.civ_id`
+- HF alive: `hf.died_year == -1 and hf.died_seconds == -1`
+- Name translation: `dfhack.translation.translateName(name_obj, true)`
+- Player civ: `df.global.plotinfo.civ_id`
+- Announcements: `dfhack.gui.showAnnouncement(msg, color, pause)`
 
 ## Rules
 
 - Use graphics-compatible UI only (no legacy text-mode)
-- Always guard with `dfhack.isMapLoaded()` before scanning
+- Guard with `dfhack.isMapLoaded()` before scanning
 - Never re-scan from event ID 0; always incremental
 - Keep UI (`herald-gui.lua`) separate from logic (`herald-main.lua`)
-- Use `DEBUG` (not `debug`) for the debug flag — `debug` shadows Lua's built-in debug library,
-  making `debug = debug or false` always truthy and permanently enabling debug output
+- Use `DEBUG` (not `debug`) — `debug` shadows Lua's built-in, making
+  `debug = debug or false` always truthy and permanently enabling debug output
 
 ## Future (on request only)
 
-- Settings UI: per-HF toggleable announcement categories (Death, Marriage, Children, Legendary, Artifacts)
-- Settings UI: civ tracking with per-civ toggleable announcement categories (Succession, War, Diplomacy, Artifacts, Beasts, Site raids) + untracked civ search list
 - Adventure mode handler category
 - Legendary citizen tracking (notable deeds of fort-born figures)
 - War progress summaries (casualty totals after battles)

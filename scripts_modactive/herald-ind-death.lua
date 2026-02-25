@@ -20,8 +20,7 @@ local PERSIST_KEY = 'herald_pinned_hf_ids'
 
 -- { [hf_id] = { death=bool, marriage=bool, children=bool,
 --               migration=bool, legendary=bool, combat=bool } }
--- Absent key = not pinned. Settings table is truthy, so all existing
--- `if pinned[hf_id]` checks in the GUI continue to work unchanged.
+-- Absent key = not pinned; settings table is truthy so `if pinned[hf_id]` still works.
 local pinned_hf_ids = {}
 
 -- HF IDs already announced this session (prevents event+poll double-fire)
