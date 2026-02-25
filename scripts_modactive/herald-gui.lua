@@ -183,10 +183,10 @@ end
 --   doer / target     = HF_DOES_INTERACTION
 --   victim_hf, slayer_hf = HIST_FIGURE_DIED
 --   snatcher / target = HIST_FIGURE_ABDUCTED
---   attacker_general_hf, defender_general_hf = WAR_FIELD_BATTLE
---   histfig1, histfig2 = HFS_FORMED_REPUTATION_RELATIONSHIP
---   corruptor_hf, target_hf = HFS_FORMED_INTRIGUE_RELATIONSHIP
+--   attacker_hf       = HF_ATTACKED_SITE, HF_DESTROYED_SITE (df-struct name='attacker_hf')
+--   attacker_general_hf, defender_general_hf = WAR_FIELD_BATTLE, WAR_ATTACKED_SITE
 --   histfig1, histfig2 / hfid1, hfid2 = HFS_FORMED_REPUTATION_RELATIONSHIP
+--   corruptor_hf, target_hf = HFS_FORMED_INTRIGUE_RELATIONSHIP
 --   seeker_hf, target_hf = HF_RELATIONSHIP_DENIED
 --   changee, changer  = CHANGE_CREATURE_TYPE
 --   woundee_hfid, wounder_hfid = HIST_FIGURE_WOUNDED
@@ -202,9 +202,10 @@ local HF_FIELDS = {
     'hfid',
     'histfig', 'histfig1', 'histfig2',
     'hfid1', 'hfid2',  -- alternate names for reputation relationship fields
-    'seeker_hf',       -- HF_RELATIONSHIP_DENIED seeker
+    'seeker_hf', 'target_hf',  -- HF_RELATIONSHIP_DENIED + HFS_FORMED_INTRIGUE_RELATIONSHIP
     'doer', 'target',
     'snatcher',
+    'attacker_hf',
     'attacker_general_hf', 'defender_general_hf',
     'corruptor_hf',
     'changee', 'changer',
@@ -1631,6 +1632,48 @@ do
         return att .. ' battled ' .. def .. loc
     end)
 
+    add('WAR_ATTACKED_SITE', function(ev, focal)
+        local att_hf  = safe_get(ev, 'attacker_general_hf')
+        local def_hf  = safe_get(ev, 'defender_general_hf')
+        local att_civ = ent_name_by_id(safe_get(ev, 'attacker_civ'))
+        local def_civ = ent_name_by_id(safe_get(ev, 'defender_civ'))
+        local site_n  = site_name_by_id(safe_get(ev, 'site'))
+        local loc     = site_n and (' on ' .. site_n) or ' on a site'
+        if focal == att_hf then
+            local vs = def_civ and (' against ' .. def_civ) or ''
+            return 'Led an attack' .. vs .. loc
+        elseif focal == def_hf then
+            local vs = att_civ and (' against ' .. att_civ) or ''
+            return 'Defended' .. loc .. (vs ~= '' and vs or '')
+        end
+        local att = hf_name_by_id(att_hf) or att_civ or 'unknown'
+        return att .. ' attacked' .. loc
+    end)
+
+    add('HF_ATTACKED_SITE', function(ev, focal)
+        local att_hf  = safe_get(ev, 'attacker_hf')
+        local def_civ = ent_name_by_id(safe_get(ev, 'defender_civ'))
+        local site_n  = site_name_by_id(safe_get(ev, 'site'))
+        local loc     = site_n and (' on ' .. site_n) or ' on a site'
+        if focal == att_hf then
+            local vs = def_civ and (' against ' .. def_civ) or ''
+            return 'Attacked' .. loc .. vs
+        end
+        local att = hf_name_by_id(att_hf) or 'someone'
+        return att .. ' attacked' .. loc
+    end)
+
+    add('HF_DESTROYED_SITE', function(ev, focal)
+        local att_hf = safe_get(ev, 'attacker_hf')
+        local site_n = site_name_by_id(safe_get(ev, 'site'))
+        local loc    = site_n and (' ' .. site_n) or ' a site'
+        if focal == att_hf then
+            return 'Destroyed' .. loc
+        end
+        local att = hf_name_by_id(att_hf) or 'someone'
+        return att .. ' destroyed' .. loc
+    end)
+
     -- HFS_FORMED_REPUTATION_RELATIONSHIP uses histfig1/histfig2 (df-structures).
     add('HFS_FORMED_REPUTATION_RELATIONSHIP', function(ev, focal)
         local hf1   = safe_get(ev, 'histfig1') or safe_get(ev, 'hfid1')
@@ -1752,6 +1795,10 @@ local function format_event(ev, focal_hf_id)
             or 'unknown'
         local other_id = (focal_hf_id == ev.source_hf) and ev.target_hf or ev.source_hf
         local other    = hf_name_by_id(other_id) or 'someone'
+        if rname:sub(1, 6) == 'former' then
+            local what = rname:sub(8)  -- strip "former "
+            return ('In the year %s, ended a %s relationship with %s'):format(yr, what, other)
+        end
         return ('In the year %s, formed a %s bond with %s'):format(yr, rname, other)
     end
     local year    = (ev.year and ev.year ~= -1) and tostring(ev.year) or '???'
