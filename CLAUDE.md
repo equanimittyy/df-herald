@@ -26,9 +26,9 @@ Each event type lives in its own `herald-<type>.lua` module. Event-driven handle
 ## Handler Categories
 
 - **Individuals** — two sub-modes:
-  - *Event-driven* (in-fort): called per matching `df.history_event_type.*` event via the
+  - _Event-driven_ (in-fort): called per matching `df.history_event_type.*` event via the
     incremental scan. Interface: `check(event, dprint)`. Registered in `get_handlers()`.
-  - *Poll-based* (off-screen): called each scan cycle; checks HF state directly for deaths.
+  - _Poll-based_ (off-screen): called each scan cycle; checks HF state directly for deaths.
     Interface: `check(dprint)` + `reset()`. Registered in `get_world_handlers()`.
 - **Civilisations** (poll-based): called each cycle regardless of events; snapshots civ-level
   state and detects changes by comparing to the previous cycle.
@@ -76,6 +76,7 @@ is safe — each is a separate object accessed via its handler reference. `heral
 - Out-of-fort deaths may not generate a history event; poll HF state directly for reliability
 
 Implemented event checks:
+
 - Death: `df.history_event_type.HIST_FIGURE_DIED`; victim field: `event.victim_hf` (hf id)
 
 ### Civilisation-Level Polling
@@ -92,6 +93,7 @@ civ_name } } }` each cycle to detect position holder deaths and new appointments
 ### Debug Output
 
 When `DEBUG = true`, handlers emit verbose trace lines covering:
+
 - Untracked HFs/civs: `"is not tracked, skipping"`
 - Duplicate suppression: `"already announced, skipping"`
 - Announcement fired: `"firing announcement … (setting is ON)"`
@@ -99,7 +101,7 @@ When `DEBUG = true`, handlers emit verbose trace lines covering:
 
 ### Settings & Persistence
 
-Settings screen (`herald-gui.lua`): 3-tab window — Ctrl-T / Ctrl-Y to navigate.
+Settings screen (`herald-gui.lua`): 3-tab window — Ctrl-T to cycle tabs.
 
 - **Pinned** (tab 1): left list of pinned individuals or civs; Ctrl-I toggles Individuals/
   Civilisations view. Right panel shows per-pin announcement toggles (unimplemented categories
@@ -109,18 +111,34 @@ Settings screen (`herald-gui.lua`): 3-tab window — Ctrl-T / Ctrl-Y to navigate
 - **Civilisations** (tab 3): full civ list. Enter to pin/unpin; Ctrl-P pinned-only.
 
 **Global config** (`dfhack-config/herald.json`):
+
 ```json
-{ "tick_interval": 1200, "debug": false,
+{
+  "tick_interval": 1200,
+  "debug": false,
   "announcements": {
-    "individuals":   { "death": true, "marriage": false, "children": false,
-                       "migration": false, "legendary": false, "combat": false },
-    "civilisations": { "positions": true, "diplomacy": false, "raids": false,
-                       "theft": false, "kidnappings": false, "armies": false }
+    "individuals": {
+      "death": true,
+      "marriage": false,
+      "children": false,
+      "migration": false,
+      "legendary": false,
+      "combat": false
+    },
+    "civilisations": {
+      "positions": true,
+      "diplomacy": false,
+      "raids": false,
+      "theft": false,
+      "kidnappings": false,
+      "armies": false
+    }
   }
 }
 ```
 
 **Per-save config** (`dfhack.persistent.getSiteData/saveSiteData`):
+
 - Individuals: key `herald_pinned_hf_ids`
 - Civilisations: key `herald_pinned_civ_ids`
 - Schema: `{ "pins": [ { "id": <int>, "settings": { <key>: <bool>, ... } } ] }`
@@ -156,6 +174,8 @@ Settings screen (`herald-gui.lua`): 3-tab window — Ctrl-T / Ctrl-Y to navigate
 - Keep UI (`herald-gui.lua`) separate from logic (`herald-main.lua`)
 - Use `DEBUG` (not `debug`) — `debug` shadows Lua's built-in, making
   `debug = debug or false` always truthy and permanently enabling debug output
+- Do not use em-dashes (`—`) in any string printed to the user (announcements,
+  debug output, or console `print`); DF cannot render them. Use `-` instead.
 
 ## Future (on request only)
 
