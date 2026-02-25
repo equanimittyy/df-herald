@@ -186,7 +186,13 @@ end
 --   attacker_general_hf, defender_general_hf = WAR_FIELD_BATTLE
 --   histfig1, histfig2 = HFS_FORMED_REPUTATION_RELATIONSHIP
 --   corruptor_hf, target_hf = HFS_FORMED_INTRIGUE_RELATIONSHIP
+--   histfig1, histfig2 / hfid1, hfid2 = HFS_FORMED_REPUTATION_RELATIONSHIP
+--   seeker_hf, target_hf = HF_RELATIONSHIP_DENIED
 --   changee, changer  = CHANGE_CREATURE_TYPE
+--   woundee_hfid, wounder_hfid = HIST_FIGURE_WOUNDED
+--   builder_hf        = CREATED_SITE, CREATED_STRUCTURE (df-struct name='builder_hf')
+--   creator_hfid      = ARTIFACT_CREATED (df-struct name='creator_hfid')
+--   woundee / wounder = HF_WOUNDED (df-struct name='woundee', name='wounder')
 --   maker             = MASTERPIECE_CREATED_*
 -- Others (builder, figure, etc.) kept for unmapped types.
 -- Note: competitor_hf / winner_hf (COMPETITION) are vectors handled separately.
@@ -195,11 +201,16 @@ local HF_FIELDS = {
     'hf', 'hf_target', 'hf_1', 'hf_2',
     'hfid',
     'histfig', 'histfig1', 'histfig2',
+    'hfid1', 'hfid2',  -- alternate names for reputation relationship fields
+    'seeker_hf',       -- HF_RELATIONSHIP_DENIED seeker
     'doer', 'target',
     'snatcher',
     'attacker_general_hf', 'defender_general_hf',
     'corruptor_hf',
     'changee', 'changer',
+    'woundee', 'wounder',
+    'builder_hf',
+    'creator_hfid',
     'maker', 'builder', 'figure', 'member', 'initiator_hf', 'mover_hf', 'moved_hf',
 }
 
@@ -228,6 +239,29 @@ local function build_hf_event_counts()
             end
         end
         ::skip_ev::
+    end
+    -- Also count vague relationship events; these live in a separate block store,
+    -- not in world.history.events (hence why they appear in legends_plus.xml only).
+    local ok_re, rel_evs = pcall(function()
+        return df.global.world.history.relationship_events
+    end)
+    if ok_re and rel_evs then
+        for i = 0, #rel_evs - 1 do
+            local ok_b, block = pcall(function() return rel_evs[i] end)
+            if not ok_b then break end
+            local ok_ne, ne = pcall(function() return block.next_element end)
+            if not ok_ne then break end
+            for k = 0, ne - 1 do
+                local ok_s, src = pcall(function() return block.source_hf[k] end)
+                local ok_t, tgt = pcall(function() return block.target_hf[k] end)
+                if ok_s and type(src) == 'number' and src >= 0 then
+                    counts[src] = (counts[src] or 0) + 1
+                end
+                if ok_t and type(tgt) == 'number' and tgt >= 0 then
+                    counts[tgt] = (counts[tgt] or 0) + 1
+                end
+            end
+        end
     end
     hf_event_counts_cache = counts
     return counts
@@ -1597,11 +1631,33 @@ do
         return att .. ' battled ' .. def .. loc
     end)
 
+    -- HFS_FORMED_REPUTATION_RELATIONSHIP uses histfig1/histfig2 (df-structures).
     add('HFS_FORMED_REPUTATION_RELATIONSHIP', function(ev, focal)
-        local hf1     = safe_get(ev, 'histfig1')
-        local hf2     = safe_get(ev, 'histfig2')
-        local other   = hf_name_by_id((focal == hf1) and hf2 or hf1) or 'someone'
+        local hf1   = safe_get(ev, 'histfig1') or safe_get(ev, 'hfid1')
+        local hf2   = safe_get(ev, 'histfig2') or safe_get(ev, 'hfid2')
+        local other = hf_name_by_id((focal == hf1) and hf2 or hf1) or 'someone'
         return 'Formed a relationship with ' .. other
+    end)
+
+    -- HF_RELATIONSHIP_DENIED: one HF sought a relationship with another but was refused.
+    -- Fields: seeker_hf, target_hf, type (unit_relationship_type enum).
+    add('HF_RELATIONSHIP_DENIED', function(ev, focal)
+        local seeker_id = safe_get(ev, 'seeker_hf')
+        local target_id = safe_get(ev, 'target_hf')
+        local rtype     = safe_get(ev, 'type')
+        local rname     = rtype and (df.unit_relationship_type[rtype] or 'unknown')
+                            or 'unknown'
+        rname = rname:lower():gsub('_', ' ')
+        if focal == seeker_id then
+            local other = hf_name_by_id(target_id) or 'someone'
+            return 'Was denied a ' .. rname .. ' relationship with ' .. other
+        elseif focal == target_id then
+            local other = hf_name_by_id(seeker_id) or 'someone'
+            return 'Denied a ' .. rname .. ' relationship sought by ' .. other
+        end
+        local seeker = hf_name_by_id(seeker_id) or 'someone'
+        local target = hf_name_by_id(target_id) or 'someone'
+        return seeker .. ' was denied a ' .. rname .. ' relationship with ' .. target
     end)
 
     add('HFS_FORMED_INTRIGUE_RELATIONSHIP', function(ev, focal)
@@ -1633,6 +1689,45 @@ do
         local changee = hf_name_by_id(changee_id) or 'someone'
         return changee .. ' transformed from ' .. article(old_n) .. ' into ' .. article(new_n)
     end)
+
+    local function hf_wounded_fn(ev, focal)
+        local woundee_id = safe_get(ev, 'woundee')  -- df-struct name='woundee'
+        local wounder_id = safe_get(ev, 'wounder')  -- df-struct name='wounder'
+        local site_n     = site_name_by_id(safe_get(ev, 'site'))
+        local loc        = site_n and (' in ' .. site_n) or ''
+        if focal == woundee_id then
+            local by_sfx = (wounder_id and wounder_id >= 0)
+                and (' by ' .. (hf_name_by_id(wounder_id) or 'someone')) or ''
+            return 'Was wounded' .. by_sfx .. loc
+        elseif focal == wounder_id then
+            return 'Wounded ' .. (hf_name_by_id(woundee_id) or 'someone') .. loc
+        end
+        local woundee = hf_name_by_id(woundee_id) or 'someone'
+        local wounder = hf_name_by_id(wounder_id) or 'someone'
+        return woundee .. ' was wounded by ' .. wounder .. loc
+    end
+    add('HIST_FIGURE_WOUNDED', hf_wounded_fn)
+    add('HF_WOUNDED',          hf_wounded_fn)
+
+    add('ARTIFACT_CREATED', function(ev, focal)
+        local site_n = site_name_by_id(safe_get(ev, 'site'))
+        local loc    = site_n and (' in ' .. site_n) or ''
+        return 'Created an artifact' .. loc
+    end)
+
+    add('CREATED_SITE', function(ev, focal)
+        local site_n = site_name_by_id(safe_get(ev, 'site'))
+        if site_n then return 'Constructed ' .. site_n end
+        return 'Constructed a settlement'
+    end)
+
+    local function created_structure_fn(ev, focal)
+        local site_n = site_name_by_id(safe_get(ev, 'site'))
+        local loc    = site_n and (' in ' .. site_n) or ''
+        return 'Constructed a structure' .. loc
+    end
+    add('CREATED_BUILDING',   created_structure_fn)
+    add('CREATED_STRUCTURE',  created_structure_fn)
 end
 
 -- Assigned here so build_hf_event_counts (defined earlier) can use it.
@@ -1648,6 +1743,17 @@ end
 -- format_event: returns "In the year NNN, Description" for the popup list.
 -- focal_hf_id contextualises text (e.g. "Slew X" vs "Slain by Y").
 local function format_event(ev, focal_hf_id)
+    -- Synthetic relationship events from world.history.relationship_events.
+    if type(ev) == 'table' then
+        local yr    = (ev.year and ev.year ~= -1) and tostring(ev.year) or '???'
+        local rtype = ev.rel_type
+        local rname = rtype and rtype >= 0
+            and (df.vague_relationship_type[rtype] or 'unknown'):lower():gsub('_', ' ')
+            or 'unknown'
+        local other_id = (focal_hf_id == ev.source_hf) and ev.target_hf or ev.source_hf
+        local other    = hf_name_by_id(other_id) or 'someone'
+        return ('In the year %s, formed a %s bond with %s'):format(yr, rname, other)
+    end
     local year    = (ev.year and ev.year ~= -1) and tostring(ev.year) or '???'
     local ev_type = ev:getType()
     local desc
@@ -1713,7 +1819,36 @@ local function get_hf_events(hf_id)
             end
         end
     end
-    return results  -- already chronological; events are append-only
+    -- Vague relationship events are in a separate block store; not in world.history.events.
+    -- Each block has parallel arrays indexed 0..next_element-1.
+    local ok_re, rel_evs = pcall(function()
+        return df.global.world.history.relationship_events
+    end)
+    if ok_re and rel_evs then
+        for i = 0, #rel_evs - 1 do
+            local ok_b, block = pcall(function() return rel_evs[i] end)
+            if not ok_b then break end
+            local ok_ne, ne = pcall(function() return block.next_element end)
+            if not ok_ne then break end
+            for k = 0, ne - 1 do
+                local ok_s, src = pcall(function() return block.source_hf[k] end)
+                local ok_t, tgt = pcall(function() return block.target_hf[k] end)
+                if (ok_s and src == hf_id) or (ok_t and tgt == hf_id) then
+                    local ok_rt, rtype = pcall(function() return block.relationship[k] end)
+                    local ok_yr, yr    = pcall(function() return block.year[k] end)
+                    table.insert(results, {
+                        _relationship = true,
+                        year          = ok_yr and yr or -1,
+                        source_hf     = ok_s and src or -1,
+                        target_hf     = ok_t and tgt or -1,
+                        rel_type      = ok_rt and rtype or -1,
+                    })
+                end
+            end
+        end
+    end
+    table.sort(results, function(a, b) return (a.year or -1) < (b.year or -1) end)
+    return results
 end
 
 -- EventHistoryWindow -----------------------------------------------------------
@@ -1777,29 +1912,40 @@ function EventHistoryWindow:init()
         'attacker_general_hf', 'defender_general_hf',
         'position_id', 'assignment_id',
         'artifact_id', 'artifact_record',
-        'histfig', 'histfig1', 'histfig2', 'hfid',
+        'histfig', 'histfig1', 'histfig2', 'hfid', 'hfid1', 'hfid2',
         'hf', 'hf_target', 'victim_hf', 'slayer_hf',
         'doer', 'target', 'snatcher',
+        'seeker_hf',
         'corruptor_hf',
         'changee', 'changer', 'old_race', 'new_race',
+        'woundee', 'wounder',
+        'builder_hf', 'creator_hfid',
         'maker', 'maker_entity', 'item_type', 'item_subtype',
     }
     print(('[Herald] EventHistory: %s (hf_id=%d) - %d event(s)'):format(
         hf_name, self.hf_id or -1, #events))
     for _, ev in ipairs(events) do
         local yr  = (ev.year and ev.year ~= -1) and tostring(ev.year) or '???'
-        local raw = df.history_event_type[ev:getType()] or tostring(ev:getType())
         local fmt = format_event(ev, self.hf_id)
-        print(('  [yr%s] %s -> %s'):format(yr, raw, fmt or '(omitted)'))
-        local parts = {}
-        for _, field in ipairs(PROBE_FIELDS) do
-            local val = safe_get(ev, field)
-            if val ~= nil and val ~= -1 then
-                table.insert(parts, field .. '=' .. tostring(val))
+        if type(ev) == 'table' then
+            local rtype = ev.rel_type
+            local rname = rtype and rtype >= 0
+                and (df.vague_relationship_type[rtype] or tostring(rtype)):lower():gsub('_', ' ')
+                or '?'
+            print(('  [yr%s] RELATIONSHIP(%s) -> %s'):format(yr, rname, fmt or '(omitted)'))
+        else
+            local raw = df.history_event_type[ev:getType()] or tostring(ev:getType())
+            print(('  [yr%s] %s -> %s'):format(yr, raw, fmt or '(omitted)'))
+            local parts = {}
+            for _, field in ipairs(PROBE_FIELDS) do
+                local val = safe_get(ev, field)
+                if val ~= nil and val ~= -1 then
+                    table.insert(parts, field .. '=' .. tostring(val))
+                end
             end
-        end
-        if #parts > 0 then
-            print('    fields: ' .. table.concat(parts, ', '))
+            if #parts > 0 then
+                print('    fields: ' .. table.concat(parts, ', '))
+            end
         end
     end
 
