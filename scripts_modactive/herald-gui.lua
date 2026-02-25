@@ -5,18 +5,18 @@ herald-gui
 ==========
 Tags: fort | gameplay
 
-  Settings UI for the Herald mod. Opens a 76×45 tabbed window for managing which
-  historical figures and civilisations Herald tracks, and which announcements each
+  Settings UI for the Herald mod. Opens a tabbed window for managing which
+  historical figures and civilisations Herald pins (tracks), and which announcements each
   pin fires.
 
-  Opened automatically by ``herald-main`` via Ctrl-H in-fort, or with::
+  Opened automatically by "herald-main" via Ctrl-H in-fort, or with:
 
     herald-gui
 
   Navigation
   ----------
   Ctrl-T / Ctrl-Y     Cycle tabs forward / back (Pinned → Historical Figures → Civilisations)
-  Ctrl-J              Open the DFHack in-game Journal
+  Ctrl-J              Open the DFHack Journal
   Escape              Close the window
 
   Tab 1 — Pinned
@@ -31,12 +31,14 @@ Tags: fort | gameplay
 
   Selecting a pin in the left pane loads its per-pin announcement settings into
   the right pane. Toggle each event category on or off; changes are saved
-  immediately. Categories marked with ``*`` are not yet implemented.
+  immediately. Categories marked with "*" are not yet implemented.
 
   Tab 2 — Historical Figures
   --------------------------
-  Searchable list of all historical figures in the current world. Columns:
-  Name (22), Race (12), Civ (25), Status. A detail pane below the list shows
+  Searchable list of all historical figures in the current world. 
+  Columns: Name, Race, Civ, Status. 
+  
+  A detail pane below the list shows
   the selected figure's ID, race, alive/dead status, civilisation, site
   government, and held positions.
 
