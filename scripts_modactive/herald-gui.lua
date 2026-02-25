@@ -1397,7 +1397,7 @@ do
             if mt then return mt .. reason_sfx() end
         end
 
-        -- Return nil so the caller falls back to the clean enum name ("Changed State").
+        -- Return nil; falls back to enum name display.
         return nil
     end)
 
@@ -1440,7 +1440,6 @@ do
         return 'Lost connection to ' .. loc
     end)
 
-    -- Register under both name variants (DFHack version differences).
     local function hf_simple_battle_fn(ev, focal)
         local subtype = safe_get(ev, 'subtype')
         local ok1, hf1_id = pcall(function() return ev.group1[0] end)
@@ -1450,8 +1449,7 @@ do
         local BT    = df.history_event_hf_simple_battle_event_type
         local sname = BT and BT[subtype]
 
-        -- Focal-aware: return verb-first text so format_event's first-char lowercase
-        -- does not corrupt a proper name that starts the string.
+        -- Verb-first so format_event's first-char lowercase doesn't corrupt a name.
         local in_g1 = hf1_id ~= nil and focal == hf1_id
         local in_g2 = hf2_id ~= nil and focal == hf2_id
         if in_g1 or in_g2 then
@@ -1500,7 +1498,6 @@ do
     add('HF_SIMPLE_BATTLE_EVENT',         hf_simple_battle_fn)
     add('HIST_FIGURE_SIMPLE_BATTLE_EVENT', hf_simple_battle_fn)
 
-    -- Register under both name variants (DFHack version differences).
     local function hf_abducted_fn(ev, focal)
         local snatcher_id = safe_get(ev, 'snatcher')  -- df-structures: 'snatcher' not 'snatcher_hf'
         local target_id   = safe_get(ev, 'target')    -- df-structures: 'target' not 'target_hf'
@@ -1674,7 +1671,7 @@ do
         return att .. ' destroyed' .. loc
     end)
 
-    -- HFS_FORMED_REPUTATION_RELATIONSHIP uses histfig1/histfig2 (df-structures).
+    -- histfig1/histfig2 may also appear as hfid1/hfid2 in older DFHack builds.
     add('HFS_FORMED_REPUTATION_RELATIONSHIP', function(ev, focal)
         local hf1   = safe_get(ev, 'histfig1') or safe_get(ev, 'hfid1')
         local hf2   = safe_get(ev, 'histfig2') or safe_get(ev, 'hfid2')
@@ -1682,8 +1679,6 @@ do
         return 'Formed a relationship with ' .. other
     end)
 
-    -- HF_RELATIONSHIP_DENIED: one HF sought a relationship with another but was refused.
-    -- Fields: seeker_hf, target_hf, type (unit_relationship_type enum).
     add('HF_RELATIONSHIP_DENIED', function(ev, focal)
         local seeker_id = safe_get(ev, 'seeker_hf')
         local target_id = safe_get(ev, 'target_hf')
@@ -1837,24 +1832,48 @@ local function vec_has(ev, field, hf_id)
     return false
 end
 
+-- TODO: battle participation events are not yet showing in HF event history.
+-- The two approaches below (BATTLE_TYPES vector check and contextual WAR_FIELD_BATTLE
+-- aggregation) are implemented but not confirmed working; needs in-game verification.
 local function get_hf_events(hf_id)
     local results = {}
-    -- Support both type name variants across DFHack versions.
-    local BATTLE_TYPE = df.history_event_type['HF_SIMPLE_BATTLE_EVENT']
-        or df.history_event_type['HIST_FIGURE_SIMPLE_BATTLE_EVENT']
-    local COMP_TYPE = df.history_event_type['COMPETITION']
+    -- Set of enum integers for simple battle events; covers both DFHack naming variants.
+    local BATTLE_TYPES = {}
+    for _, name in ipairs({'HF_SIMPLE_BATTLE_EVENT', 'HIST_FIGURE_SIMPLE_BATTLE_EVENT'}) do
+        local v = df.history_event_type[name]
+        if v ~= nil then BATTLE_TYPES[v] = true end
+    end
+    local COMP_TYPE       = df.history_event_type['COMPETITION']
+    local WAR_BATTLE_TYPE = df.history_event_type['WAR_FIELD_BATTLE']
+
+    -- Single pass: collect direct HF events and build a WAR_FIELD_BATTLE index by
+    -- site+year. The index is used in step 2 (contextual aggregation) below.
+    local battle_index = {}  -- { ['site:year'] = { ev, ... } }
+    local added_ids    = {}  -- event.id -> true; prevents duplicates
     for _, ev in ipairs(df.global.world.history.events) do
+        if WAR_BATTLE_TYPE and ev:getType() == WAR_BATTLE_TYPE then
+            local site = safe_get(ev, 'site')
+            local year = safe_get(ev, 'year')
+            if site and site >= 0 and year and year >= 0 then
+                local key = site .. ':' .. year
+                if not battle_index[key] then battle_index[key] = {} end
+                table.insert(battle_index[key], ev)
+            end
+        end
+
         local found = false
         for _, field in ipairs(HF_FIELDS) do
             if safe_get(ev, field) == hf_id then
+                added_ids[ev.id] = true
                 table.insert(results, ev)
                 found = true
                 break
             end
         end
-        -- HF_SIMPLE_BATTLE_EVENT: group1/group2 are vectors; check all elements.
-        if not found and BATTLE_TYPE and ev:getType() == BATTLE_TYPE then
+        -- HF_SIMPLE_BATTLE_EVENT: participants are in group1/group2 vectors, not scalars.
+        if not found and BATTLE_TYPES[ev:getType()] then
             if vec_has(ev, 'group1', hf_id) or vec_has(ev, 'group2', hf_id) then
+                added_ids[ev.id] = true
                 table.insert(results, ev)
                 found = true
             end
@@ -1862,7 +1881,29 @@ local function get_hf_events(hf_id)
         -- COMPETITION: competitor_hf and winner_hf are vectors.
         if not found and COMP_TYPE and ev:getType() == COMP_TYPE then
             if vec_has(ev, 'competitor_hf', hf_id) or vec_has(ev, 'winner_hf', hf_id) then
+                added_ids[ev.id] = true
                 table.insert(results, ev)
+            end
+        end
+    end
+
+    -- Step 2: contextual WAR_FIELD_BATTLE aggregation.
+    -- If a direct HF event (death, abduction, etc.) shares site+year with a battle,
+    -- include the battle. Only iterates direct results to avoid chaining.
+    local direct_count = #results
+    for i = 1, direct_count do
+        local ev   = results[i]
+        local site = safe_get(ev, 'site')
+        local year = safe_get(ev, 'year')
+        if site and site >= 0 and year and year >= 0 then
+            local battles = battle_index[site .. ':' .. year]
+            if battles then
+                for _, bev in ipairs(battles) do
+                    if not added_ids[bev.id] then
+                        added_ids[bev.id] = true
+                        table.insert(results, bev)
+                    end
+                end
             end
         end
     end
