@@ -12,11 +12,12 @@ DFHack mod (Lua, v50+ Steam) that scans world history for significant events and
 
 ```
 scripts_modactive/
-├── onLoad.init              ← auto-enables the mod on world load
-├── herald-main.lua          ← event loop, dispatcher; add new event types here
-├── herald-gui.lua           ← settings UI: tabbed window (Pinned / Historical Figures / Civilisations)
-├── herald-ind-death.lua     ← HIST_FIGURE_DIED + poll handler for pinned individuals [Individuals]
-└── herald-world-leaders.lua ← poll-based world leader tracking [Civilisations]
+├── onLoad.init                  ← auto-enables the mod on world load
+├── herald-main.lua              ← event loop, dispatcher; add new event types here
+├── herald-gui.lua               ← settings UI: tabbed window (Pinned / Historical Figures / Civilisations)
+├── herald-event-history.lua     ← Event History popup subsystem (event collection, describers, UI)
+├── herald-ind-death.lua         ← HIST_FIGURE_DIED + poll handler for pinned individuals [Individuals]
+└── herald-world-leaders.lua     ← poll-based world leader tracking [Civilisations]
 ```
 
 Each event type lives in its own `herald-<type>.lua` module. Event-driven handlers export
@@ -101,23 +102,30 @@ When `DEBUG = true`, handlers emit verbose trace lines covering:
 
 ### Event History (GUI)
 
-`herald-gui.lua` contains the event-display subsystem used by the EventHistory popup (Ctrl-E):
+`herald-event-history.lua` contains the event-display subsystem used by the EventHistory popup
+(Ctrl-E). It is required by `herald-gui.lua` as `local ev_hist = dfhack.reqscript('herald-event-history')`.
+
+Exports (non-local at module scope):
 
 - **`HF_FIELDS`** — ordered list of scalar HF ID field names (e.g. `victim_hf`, `attacker_general_hf`).
-  Iterated for both `build_hf_event_counts` and `get_hf_events`.
+  Iterated for both `build_hf_event_counts` (in herald-gui) and `get_hf_events`.
+- **`safe_get(obj, field)`** — pcall-guarded field accessor; used by event describers and
+  `build_hf_event_counts`.
+- **`event_will_be_shown(ev)`** — calls the describer with `focal=-1`; returns false if the result
+  is nil. Used by `build_hf_event_counts` in herald-gui to exclude noise events from the count.
+- **`open_event_history(hf_id, hf_name)`** — opens (or raises) the EventHistory popup. Called via
+  `ev_hist.open_event_history(...)` from `FiguresPanel` and `PinnedPanel`.
+
+Internal (local) components:
+
 - **`EVENT_DESCRIBE`** — `{ [event_type_int] = fn(ev, focal_hf_id) -> string }`. Populated in a
   `do` block via `add(type_name, fn)`, which silently skips unknown type names (handles DFHack
   version differences). Describers return verb-first text when focal matches a participant;
   return `nil` to suppress the event entirely.
-- **`event_will_be_shown(ev)`** — calls the describer with `focal=-1`; returns false if the result
-  is nil. Used by `build_hf_event_counts` to exclude noise events from the count.
-- **`build_hf_event_counts()`** — lazy per-load cache `{ [hf_id] = count }`. Counts scalar
-  `HF_FIELDS`, `group1`/`group2` vectors (BATTLE_TYPES set), `competitor_hf`/`winner_hf` vectors
-  (COMPETITION), and `world.history.relationship_events` block store.
-- **`get_hf_events(hf_id)`** — full event collection for the popup. Same scalar + vector paths as
-  the count cache, plus contextual `WAR_FIELD_BATTLE` aggregation: battles are indexed by
-  `site:year`; any direct HF event at a matching site+year pulls in the battle. Relationship
-  events come from `world.history.relationship_events` (separate from `world.history.events`).
+- **`get_hf_events(hf_id)`** — full event collection for the popup. Scalar `HF_FIELDS` scan,
+  `group1`/`group2` vectors (BATTLE_TYPES set), `competitor_hf`/`winner_hf` vectors (COMPETITION),
+  contextual `WAR_FIELD_BATTLE` aggregation (battles indexed by `site:year`), and
+  `world.history.relationship_events` block store.
   **Note:** battle participation via contextual aggregation is implemented but unconfirmed —
   see the TODO comment above `get_hf_events`.
 - **`format_event(ev, focal_hf_id)`** — renders `"In the year NNN, ..."` using `EVENT_DESCRIBE`
@@ -199,6 +207,7 @@ Settings screen (`herald-gui.lua`): 3-tab window — Ctrl-T/Ctrl-Y to cycle tabs
 - Guard with `dfhack.isMapLoaded()` before scanning
 - Never re-scan from event ID 0; always incremental
 - Keep UI (`herald-gui.lua`) separate from logic (`herald-main.lua`)
+- Keep event history subsystem (`herald-event-history.lua`) separate from the main settings UI (`herald-gui.lua`)
 - Use `DEBUG` (not `debug`) — `debug` shadows Lua's built-in, making
   `debug = debug or false` always truthy and permanently enabling debug output
 - Do not use em-dashes (`—`) in any string printed to the user (announcements,
