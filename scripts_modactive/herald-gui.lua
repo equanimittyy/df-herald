@@ -9,9 +9,9 @@ Tags: fort | gameplay
   historical figures and civilisations Herald pins (tracks), and which announcements each
   pin fires.
 
-  Opened automatically by "herald-main" via Ctrl-H in-fort, or with:
+  Open with:
 
-    herald-gui
+    herald-main gui
 
   Navigation
   ----------
