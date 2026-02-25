@@ -16,17 +16,47 @@ Not intended for direct use.
 
 ]====]
 
-local PERSIST_KEY     = 'herald_pinned_hf_ids'
-local PERSIST_KEY_OLD = 'herald_tracked_hf_ids'
+local PERSIST_KEY = 'herald_pinned_hf_ids'
 
-local pinned_hf_ids = {}   -- set: { [hf_id] = true }
+-- { [hf_id] = { death=bool, marriage=bool, children=bool,
+--               migration=bool, legendary=bool, combat=bool } }
+-- Absent key = not pinned. Settings table is truthy, so all existing
+-- `if pinned[hf_id]` checks in the GUI continue to work unchanged.
+local pinned_hf_ids = {}
 
 -- HF IDs already announced this session (prevents event+poll double-fire)
 local announced_deaths = {}  -- set: { [hf_id] = true }
 
+local SETTINGS_KEYS = { 'death', 'marriage', 'children', 'migration', 'legendary', 'combat' }
+
+-- Hardcoded defaults match DEFAULT_ANNOUNCEMENTS in herald-main.lua.
+-- Not using reqscript('herald-main') here to avoid circular dep at load time.
+local function default_pin_settings()
+    return {
+        death     = true,
+        marriage  = false,
+        children  = false,
+        migration = false,
+        legendary = false,
+        combat    = false,
+    }
+end
+
+-- Merges a saved settings table with current defaults; fills missing keys.
+local function merge_pin_settings(saved)
+    local defaults = default_pin_settings()
+    if type(saved) ~= 'table' then return defaults end
+    for _, k in ipairs(SETTINGS_KEYS) do
+        if type(saved[k]) == 'boolean' then
+            defaults[k] = saved[k]
+        end
+    end
+    return defaults
+end
+
 local function announce_death(hf_id, dprint)
-    local ann = dfhack.reqscript('herald-main').get_announcements()
-    if not (ann and ann.individuals and ann.individuals.death) then
+    local settings = pinned_hf_ids[hf_id]
+    if not (settings and settings.death) then
         announced_deaths[hf_id] = true  -- mark seen, suppress repeat
         return
     end
@@ -75,24 +105,22 @@ end
 
 function load_pinned()
     local data = dfhack.persistent.getSiteData(PERSIST_KEY, {})
-    if not data.ids or #data.ids == 0 then
-        local old = dfhack.persistent.getSiteData(PERSIST_KEY_OLD, {})
-        if old.ids and #old.ids > 0 then
-            data = old
-            dfhack.persistent.saveSiteData(PERSIST_KEY, data)
-            dfhack.persistent.saveSiteData(PERSIST_KEY_OLD, {})
-        end
-    end
     pinned_hf_ids = {}
-    if type(data.ids) == 'table' then
-        for _, id in ipairs(data.ids) do pinned_hf_ids[id] = true end
+    if type(data.pins) == 'table' then
+        for _, entry in ipairs(data.pins) do
+            if type(entry.id) == 'number' then
+                pinned_hf_ids[entry.id] = merge_pin_settings(entry.settings)
+            end
+        end
     end
 end
 
 function save_pinned()
-    local ids = {}
-    for id in pairs(pinned_hf_ids) do table.insert(ids, id) end
-    dfhack.persistent.saveSiteData(PERSIST_KEY, { ids = ids })
+    local pins = {}
+    for id, settings in pairs(pinned_hf_ids) do
+        table.insert(pins, { id = id, settings = settings })
+    end
+    dfhack.persistent.saveSiteData(PERSIST_KEY, { pins = pins })
 end
 
 function get_pinned()
@@ -100,8 +128,25 @@ function get_pinned()
 end
 
 function set_pinned(hf_id, value)
-    pinned_hf_ids[hf_id] = value or nil
+    if value then
+        pinned_hf_ids[hf_id] = default_pin_settings()
+    else
+        pinned_hf_ids[hf_id] = nil
+    end
     save_pinned()
+end
+
+-- Returns the per-pin settings table for hf_id, or nil if not pinned.
+function get_pin_settings(hf_id)
+    return pinned_hf_ids[hf_id]
+end
+
+-- Updates one announcement key for a pinned HF and persists.
+function set_pin_setting(hf_id, key, value)
+    if pinned_hf_ids[hf_id] then
+        pinned_hf_ids[hf_id][key] = value
+        save_pinned()
+    end
 end
 
 function reset()

@@ -13,6 +13,7 @@ Not intended for direct use.
 local gui       = require('gui')
 local widgets   = require('gui.widgets')
 local ind_death = dfhack.reqscript('herald-ind-death')
+local wld_leaders = dfhack.reqscript('herald-world-leaders')
 
 view = nil  -- module-level; prevents double-open
 
@@ -139,10 +140,45 @@ local function build_choices(show_dead, show_pinned_only)
                 { text = ('%-25s'):format(civ_col),  pen = COLOR_GREY },
                 status_token,
             },
-            search_key = search_key,
-            hf_id      = hf.id,
-            hf         = hf,
-            is_dead    = is_dead,
+            search_key   = search_key,
+            hf_id        = hf.id,
+            hf           = hf,
+            is_dead      = is_dead,
+            display_name = name,
+        })
+
+        ::continue::
+    end
+    return choices
+end
+
+-- Build the choice list for the Civilisations FilteredList.
+local function build_civ_choices(show_pinned_only)
+    local choices = {}
+    local pinned = wld_leaders.get_pinned_civs()
+    for _, entity in ipairs(df.global.world.entities.all) do
+        if entity.type ~= df.historical_entity_type.Civilization then goto continue end
+
+        local entity_id = entity.id
+        local is_pinned = pinned[entity_id]
+        if show_pinned_only and not is_pinned then goto continue end
+
+        local name = dfhack.translation.translateName(entity.name, true)
+        if name == '' then name = '(unnamed)' end
+
+        local status_token = is_pinned
+            and { text = 'pinned', pen = COLOR_GREEN }
+            or  { text = '',       pen = nil }
+
+        table.insert(choices, {
+            text = {
+                { text = ('%-42s'):format(name:sub(1, 42)), pen = nil },
+                status_token,
+            },
+            search_key   = name:lower(),
+            entity_id    = entity_id,
+            entity       = entity,
+            display_name = name,
         })
 
         ::continue::
@@ -358,26 +394,29 @@ PinnedPanel.ATTRS {
 
 function PinnedPanel:init()
     -- 'individuals' or 'civilisations'
-    self.view_type = 'individuals'
+    self.view_type  = 'individuals'
+    self.selected_id = nil  -- hf_id or entity_id of currently selected pin
 
-    local main = dfhack.reqscript('herald-main')
-    local ann   = main.get_announcements()
-
-    -- Helper to build a list of ToggleHotkeyLabel widgets for an announcement category
+    -- Helper to build ToggleHotkeyLabel widgets for an announcement category.
+    -- Toggles are per-pin: on_change saves to the selected pin's settings.
+    -- Name label at t=0; toggles start at t=1 to leave room for the name row.
     local function make_toggle_views(entries, category)
         local views = {}
         for i, entry in ipairs(entries) do
             local e = entry  -- capture loop variable
             local display_label = e.impl and e.label or (e.label .. ' *')
-            local initial = ann[category][e.key]
             table.insert(views, widgets.ToggleHotkeyLabel{
-                frame          = { t = i - 1, h = 1, l = 0, r = 0 },
+                view_id        = 'toggle_' .. e.key,
+                frame          = { t = i, h = 1, l = 0, r = 0 },
                 label          = display_label,
-                initial_option = initial and 1 or 2,
+                initial_option = 2,  -- off until a pin is selected
                 on_change      = e.impl and function(new_val)
-                    local a = dfhack.reqscript('herald-main').get_announcements()
-                    a[category][e.key] = new_val
-                    dfhack.reqscript('herald-main').save_announcements(a)
+                    if not self.selected_id then return end
+                    if self.view_type == 'individuals' then
+                        ind_death.set_pin_setting(self.selected_id, e.key, new_val)
+                    else
+                        wld_leaders.set_civ_pin_setting(self.selected_id, e.key, new_val)
+                    end
                 end or function() end,
             })
         end
@@ -390,6 +429,13 @@ function PinnedPanel:init()
         frame   = { t = 3, b = 1, l = 50, r = 1 },
         visible = true,
     }
+    ann_ind:addviews{
+        widgets.Label{
+            view_id = 'pin_name_label_ind',
+            frame   = { t = 0, h = 1, l = 0, r = 0 },
+            text    = { { text = '(none selected)', pen = COLOR_GREY } },
+        },
+    }
     ann_ind:addviews(make_toggle_views(INDIVIDUALS_ANN, 'individuals'))
 
     -- Announcement panel for civilisations (hidden initially)
@@ -397,6 +443,13 @@ function PinnedPanel:init()
         view_id = 'ann_panel_civilisations',
         frame   = { t = 3, b = 1, l = 50, r = 1 },
         visible = false,
+    }
+    ann_civ:addviews{
+        widgets.Label{
+            view_id = 'pin_name_label_civ',
+            frame   = { t = 0, h = 1, l = 0, r = 0 },
+            text    = { { text = '(none selected)', pen = COLOR_GREY } },
+        },
     }
     ann_civ:addviews(make_toggle_views(CIVILISATIONS_ANN, 'civilisations'))
 
@@ -435,7 +488,7 @@ function PinnedPanel:init()
         widgets.List{
             view_id   = 'pinned_list',
             frame     = { t = 3, b = 1, l = 1, r = 25 },
-            on_select = function() end,
+            on_select = function(idx, choice) self:on_pin_select(idx, choice) end,
         },
         -- Announcement panels
         ann_ind,
@@ -457,11 +510,71 @@ function PinnedPanel:init()
     self:refresh_pinned_list()
 end
 
+-- Called when the user navigates the pinned list.
+function PinnedPanel:on_pin_select(idx, choice)
+    if not choice then
+        self.selected_id = nil
+        self:_update_right_panel(nil, nil)
+        return
+    end
+    if self.view_type == 'individuals' then
+        self.selected_id = choice.hf_id
+    else
+        self.selected_id = choice.entity_id
+    end
+    self:_update_right_panel(choice.display_name, self.selected_id)
+end
+
+-- Updates the name label and toggle option_idx values for the active ann panel.
+function PinnedPanel:_update_right_panel(name, pin_id)
+    local is_ind   = (self.view_type == 'individuals')
+    local label_id = is_ind and 'pin_name_label_ind' or 'pin_name_label_civ'
+    local panel_id = is_ind and 'ann_panel_individuals' or 'ann_panel_civilisations'
+    local panel    = self.subviews[panel_id]
+    local entries  = is_ind and INDIVIDUALS_ANN or CIVILISATIONS_ANN
+
+    -- Update name label (must use setText to invalidate the render cache)
+    panel.subviews[label_id]:setText(
+        name and { { text = name, pen = COLOR_WHITE } }
+             or  { { text = '(none selected)', pen = COLOR_GREY } }
+    )
+
+    -- Update toggle option_idx values
+    local settings = nil
+    if pin_id then
+        settings = is_ind and ind_death.get_pin_settings(pin_id)
+                           or wld_leaders.get_civ_pin_settings(pin_id)
+    end
+    for _, e in ipairs(entries) do
+        local t = panel.subviews['toggle_' .. e.key]
+        if t then
+            t.option_idx = (settings and settings[e.key] == true) and 1 or 2
+        end
+    end
+end
+
 function PinnedPanel:on_type_change(new_val)
     local is_ind = (new_val == 'Individuals')
     self.view_type = is_ind and 'individuals' or 'civilisations'
     self.subviews.ann_panel_individuals.visible  = is_ind
     self.subviews.ann_panel_civilisations.visible = not is_ind
+
+    -- Update column header to match view type
+    local list_header = self.subviews.list_header
+    if is_ind then
+        list_header.text = {
+            { text = ('%-20s'):format('Name'),  pen = COLOR_GREY },
+            { text = ('%-12s'):format('Race'),  pen = COLOR_GREY },
+            { text = 'Status',                  pen = COLOR_GREY },
+        }
+    else
+        list_header.text = {
+            { text = ('%-32s'):format('Name'),  pen = COLOR_GREY },
+            { text = 'Status',                  pen = COLOR_GREY },
+        }
+    end
+
+    -- refresh_pinned_list auto-selects first item and calls _update_right_panel
     self:refresh_pinned_list()
 end
 
@@ -496,28 +609,71 @@ function PinnedPanel:refresh_pinned_list()
                     { text = ('%-12s'):format(race:sub(1,12)), pen = COLOR_GREY },
                     status_token,
                 },
-                hf_id = hf.id,
+                hf_id        = hf.id,
+                display_name = name,
             })
         end
         if #choices == 0 then
             table.insert(choices, { text = { { text = 'No pinned individuals', pen = COLOR_GREY } } })
         end
     else
-        table.insert(choices, { text = { { text = 'No pinned civilisations', pen = COLOR_GREY } } })
+        -- Civilisations view
+        local pinned_civs = wld_leaders.get_pinned_civs()
+        local civ_list = {}
+        for entity_id in pairs(pinned_civs) do
+            local entity = df.historical_entity.find(entity_id)
+            if entity then
+                local name = dfhack.translation.translateName(entity.name, true)
+                if name == '' then name = '(unnamed)' end
+                table.insert(civ_list, { entity_id = entity_id, name = name })
+            end
+        end
+        table.sort(civ_list, function(a, b) return a.name < b.name end)
+        for _, civ in ipairs(civ_list) do
+            table.insert(choices, {
+                text = {
+                    { text = ('%-32s'):format(civ.name:sub(1, 32)), pen = nil },
+                    { text = 'pinned', pen = COLOR_GREEN },
+                },
+                entity_id    = civ.entity_id,
+                display_name = civ.name,
+            })
+        end
+        if #choices == 0 then
+            table.insert(choices, { text = { { text = 'No pinned civilisations', pen = COLOR_GREY } } })
+        end
     end
+
     self.subviews.pinned_list:setChoices(choices)
+
+    -- Auto-select first real item and populate the right panel
+    local first = choices[1]
+    local valid = first and (first.hf_id or first.entity_id)
+    if valid then
+        self.subviews.pinned_list:setSelected(1)
+        self:on_pin_select(1, first)
+    else
+        self.selected_id = nil
+        self:_update_right_panel(nil, nil)
+    end
 end
 
 function PinnedPanel:unpin_selected()
-    if self.view_type ~= 'individuals' then return end
     local _, choice = self.subviews.pinned_list:getSelected()
-    if not choice or not choice.hf_id then return end
-    ind_death.set_pinned(choice.hf_id, nil)
+    if not choice then return end
+    if self.view_type == 'individuals' then
+        if not choice.hf_id then return end
+        ind_death.set_pinned(choice.hf_id, nil)
+        self.parent_view.subviews.figures_panel:refresh_list()
+    else
+        if not choice.entity_id then return end
+        wld_leaders.set_pinned_civ(choice.entity_id, nil)
+        self.parent_view.subviews.civs_panel:refresh_list()
+    end
     self:refresh_pinned_list()
-    self.parent_view.subviews.figures_panel:refresh_list()
 end
 
--- CivisationsPanel (placeholder) -----------------------------------------------
+-- CivisationsPanel -------------------------------------------------------------
 
 local CivisationsPanel = defclass(CivisationsPanel, widgets.Panel)
 CivisationsPanel.ATTRS {
@@ -525,16 +681,79 @@ CivisationsPanel.ATTRS {
 }
 
 function CivisationsPanel:init()
+    self.show_pinned_only = false
+
     self:addviews{
         widgets.Label{
-            frame = { t = 2, l = 2 },
-            text  = 'Civilisation tracking',
+            frame = { t = 0, l = 1 },
+            text  = {
+                { text = ('%-42s'):format('Name'), pen = COLOR_GREY },
+                { text = 'Status',                 pen = COLOR_GREY },
+            },
         },
-        widgets.Label{
-            frame = { t = 3, l = 2 },
-            text  = { { text = 'Coming soon.', pen = COLOR_GREY } },
+        widgets.FilteredList{
+            view_id   = 'civ_list',
+            frame     = { t = 1, b = 2, l = 1, r = 1 },
+            on_select = function(idx, choice) end,
+        },
+        widgets.HotkeyLabel{
+            frame       = { b = 0, l = 1 },
+            key         = 'SELECT',
+            label       = 'Pin/Unpin',
+            auto_width  = true,
+            on_activate = function()
+                local fl = self.subviews.civ_list
+                local idx, choice = fl:getSelected()
+                if choice and choice.entity_id then self:toggle_pinned(choice) end
+            end,
+        },
+        widgets.HotkeyLabel{
+            view_id     = 'toggle_pinned_btn',
+            frame       = { b = 1, l = 1 },
+            key         = 'CUSTOM_CTRL_P',
+            label       = function()
+                return 'Pinned only: ' .. (self.show_pinned_only and 'Yes' or 'No ')
+            end,
+            auto_width  = true,
         },
     }
+
+    self:refresh_list()
+end
+
+function CivisationsPanel:onInput(keys)
+    if keys.CUSTOM_CTRL_P then
+        self:toggle_pinned_only()
+        return true
+    end
+    if self.subviews.civ_list:onInput(keys) then return true end
+    return CivisationsPanel.super.onInput(self, keys)
+end
+
+function CivisationsPanel:refresh_list()
+    local choices = build_civ_choices(self.show_pinned_only)
+    self.subviews.civ_list:setChoices(choices)
+end
+
+function CivisationsPanel:toggle_pinned(choice)
+    if not choice then return end
+    local entity_id = choice.entity_id
+    local pinned    = wld_leaders.get_pinned_civs()
+    local is_pinned = pinned[entity_id]
+    wld_leaders.set_pinned_civ(entity_id, not is_pinned)
+    local name = choice.display_name or '?'
+    print(('[Herald] %s (id %d) is %s pinned.'):format(
+        name, entity_id, not is_pinned and 'now' or 'no longer'))
+    local fl = self.subviews.civ_list
+    local filter_text = fl.edit.text
+    self:refresh_list()
+    fl:setFilter(filter_text)
+    self.parent_view.subviews.pinned_panel:refresh_pinned_list()
+end
+
+function CivisationsPanel:toggle_pinned_only()
+    self.show_pinned_only = not self.show_pinned_only
+    self:refresh_list()
 end
 
 -- HeraldWindow -----------------------------------------------------------------
@@ -603,6 +822,12 @@ function HeraldWindow:onInput(keys)
     if self.cur_tab == 2 then
         if keys.CUSTOM_CTRL_D or keys.CUSTOM_CTRL_P then
             return self.subviews.figures_panel:onInput(keys)
+        end
+    end
+    -- Route Ctrl-P to civs panel when on tab 3
+    if self.cur_tab == 3 then
+        if keys.CUSTOM_CTRL_P then
+            return self.subviews.civs_panel:onInput(keys)
         end
     end
     return HeraldWindow.super.onInput(self, keys)

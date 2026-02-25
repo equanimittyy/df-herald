@@ -16,8 +16,50 @@ Not intended for direct use.
 
 ]====]
 
+local PERSIST_CIVS_KEY = 'herald_pinned_civ_ids'
+
+-- { [entity_id] = { positions=bool, diplomacy=bool, raids=bool,
+--                   theft=bool, kidnappings=bool, armies=bool } }
+-- Absent key = not pinned.
+local pinned_civ_ids = {}
+
 -- tracked_leaders: { [entity_id] = { [assignment_id] = { hf_id, pos_name, civ_name } } }
 local tracked_leaders = {}
+
+local CIV_SETTINGS_KEYS = { 'positions', 'diplomacy', 'raids', 'theft', 'kidnappings', 'armies' }
+
+-- Hardcoded defaults match DEFAULT_ANNOUNCEMENTS in herald-main.lua.
+-- Not using reqscript('herald-main') here to avoid circular dep at load time.
+local function default_civ_pin_settings()
+    return {
+        positions   = true,
+        diplomacy   = false,
+        raids       = false,
+        theft       = false,
+        kidnappings = false,
+        armies      = false,
+    }
+end
+
+-- Merges a saved settings table with current defaults; fills missing keys.
+local function merge_civ_pin_settings(saved)
+    local defaults = default_civ_pin_settings()
+    if type(saved) ~= 'table' then return defaults end
+    for _, k in ipairs(CIV_SETTINGS_KEYS) do
+        if type(saved[k]) == 'boolean' then
+            defaults[k] = saved[k]
+        end
+    end
+    return defaults
+end
+
+local function save_pinned_civs()
+    local pins = {}
+    for id, settings in pairs(pinned_civ_ids) do
+        table.insert(pins, { id = id, settings = settings })
+    end
+    dfhack.persistent.saveSiteData(PERSIST_CIVS_KEY, { pins = pins })
+end
 
 local function is_alive(hf)
     return hf.died_year == -1 and hf.died_seconds == -1
@@ -79,9 +121,6 @@ end
 function check(dprint)
     dprint = dprint or function() end
 
-    local ann = dfhack.reqscript('herald-main').get_announcements()
-    local announce_positions = ann and ann.civilisations and ann.civilisations.positions
-
     dprint('world-leaders.check: scanning entity position assignments')
 
     local new_snapshot = {}
@@ -92,10 +131,16 @@ function check(dprint)
         -- are irrelevant to wars, raids, and succession tracking.
         if entity.type ~= df.historical_entity_type.Civilization then goto continue_entity end
         dbg_civs = dbg_civs + 1
+
+        local entity_id  = entity.id
+        local pin_settings = pinned_civ_ids[entity_id]
+        -- Skip unpinned civs — only pinned civs fire announcements.
+        if not pin_settings then goto continue_entity end
+
         if #entity.positions.assignments == 0 then goto continue_entity end
 
-        local entity_id = entity.id
-        local civ_name  = dfhack.translation.translateName(entity.name, true)
+        local civ_name           = dfhack.translation.translateName(entity.name, true)
+        local announce_positions = pin_settings.positions
 
         dprint('world-leaders: civ "%s" has %d assignments', civ_name, #entity.positions.assignments)
 
@@ -154,6 +199,50 @@ function check(dprint)
         (function() local n=0 for _ in pairs(tracked_leaders) do n=n+1 end return n end)())
 end
 
+-- Loads pinned civ list from per-save persistence.
+-- Drops entries where the entity no longer exists in the world.
+function load_pinned_civs()
+    local data = dfhack.persistent.getSiteData(PERSIST_CIVS_KEY, {})
+    pinned_civ_ids = {}
+    if type(data.pins) == 'table' then
+        for _, entry in ipairs(data.pins) do
+            if type(entry.id) == 'number' and df.historical_entity.find(entry.id) then
+                pinned_civ_ids[entry.id] = merge_civ_pin_settings(entry.settings)
+            end
+        end
+    end
+end
+
+-- Returns the full pinned civ map: { [entity_id] = settings_table }.
+function get_pinned_civs()
+    return pinned_civ_ids
+end
+
+-- Pins or unpins a civilisation. value=true pins (inits default settings);
+-- value=false/nil unpins.
+function set_pinned_civ(entity_id, value)
+    if value then
+        pinned_civ_ids[entity_id] = default_civ_pin_settings()
+    else
+        pinned_civ_ids[entity_id] = nil
+    end
+    save_pinned_civs()
+end
+
+-- Returns the per-civ settings table for entity_id, or nil if not pinned.
+function get_civ_pin_settings(entity_id)
+    return pinned_civ_ids[entity_id]
+end
+
+-- Updates one announcement key for a pinned civ and persists.
+function set_civ_pin_setting(entity_id, key, value)
+    if pinned_civ_ids[entity_id] then
+        pinned_civ_ids[entity_id][key] = value
+        save_pinned_civs()
+    end
+end
+
 function reset()
     tracked_leaders = {}
+    -- pinned_civ_ids is per-save config; reloaded by load_pinned_civs() on SC_MAP_LOADED
 end

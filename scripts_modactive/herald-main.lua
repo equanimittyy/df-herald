@@ -318,6 +318,8 @@ local function init_scan()
     dprint('init_scan: watermark set to event id %d', last_event_id)
     dfhack.reqscript('herald-ind-death').load_pinned()
     dprint('init_scan: pinned HF list loaded')
+    dfhack.reqscript('herald-world-leaders').load_pinned_civs()
+    dprint('init_scan: pinned civ list loaded')
     scan_timer_id = dfhack.timeout(tick_interval, 'ticks', scan_events)
 end
 
