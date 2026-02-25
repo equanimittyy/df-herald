@@ -18,6 +18,10 @@ scripts_modactive/
 ├── herald-event-history.lua     ← Event History popup subsystem (event collection, describers, UI)
 ├── herald-ind-death.lua         ← HIST_FIGURE_DIED + poll handler for pinned individuals [Individuals]
 └── herald-world-leaders.lua     ← poll-based world leader tracking [Civilisations]
+
+scripts_modinstalled/
+├── herald-button.lua            ← DFHack overlay widget; adds Herald button to the main DF screen
+└── herald-logo.png              ← 64×36 px sprite sheet (two 32×36 states: normal | hover)
 ```
 
 Each event type lives in its own `herald-<type>.lua` module. Event-driven handlers export
@@ -136,7 +140,8 @@ Internal (local) components:
 
 ### Settings & Persistence
 
-Settings screen (`herald-gui.lua`): 3-tab window — Ctrl-T/Ctrl-Y to cycle tabs.
+Settings screen (`herald-gui.lua`): 3-tab window — Ctrl-T to cycle tabs. Footer always shows
+Ctrl-J (open DFHack Journal) and Escape (close).
 
 - **Pinned** (tab 1): left list of pinned individuals or civs; Ctrl-I toggles Individuals/
   Civilisations view. Right panel shows per-pin announcement toggles (unimplemented categories
@@ -177,6 +182,19 @@ Settings screen (`herald-gui.lua`): 3-tab window — Ctrl-T/Ctrl-Y to cycle tabs
 - Individuals: key `herald_pinned_hf_ids`
 - Civilisations: key `herald_pinned_civ_ids`
 - Schema: `{ "pins": [ { "id": <int>, "settings": { <key>: <bool>, ... } } ] }`
+
+### Overlay Button
+
+`herald-button.lua` lives in `scripts_modinstalled/` and is auto-loaded by DFHack via the mod
+install mechanism (not `onLoad.init`). It registers `OVERLAY_WIDGETS = { button = HeraldButton }`.
+
+- `HeraldButton` extends `overlay.OverlayWidget`; default position `{x=10, y=1}`, shown on
+  `'dwarfmode'`, frame `{w=4, h=3}`.
+- On click it runs `dfhack.run_command('herald-main', 'gui')`.
+- Logo loaded from `herald-logo.png` (same directory as the script) via
+  `dfhack.textures.loadTileset(path, 8, 12, true)` — 8×12 px/tile, 4 cols × 3 rows per state.
+  Left half of the PNG = normal state; right half = hover/highlighted state.
+- If the PNG fails to load, falls back to a plain `widgets.TextButton` labelled "Herald".
 
 ## Key API Paths
 
