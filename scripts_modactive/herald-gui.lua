@@ -176,22 +176,30 @@ local function get_positions(hf)
 end
 
 -- HF reference field names checked when counting / finding events per HF.
--- Field names verified against df-structures/df.history.xml:
---   hfid       = CHANGE_HF_STATE, CHANGE_HF_JOB
---   histfig    = ADD/REMOVE_HF_ENTITY_LINK, ADD_HF_SITE_LINK
---   hf         = ADD/REMOVE_HF_HF_LINK (the initiating figure)
---   hf_target  = ADD/REMOVE_HF_HF_LINK (the other figure)
---   doer/target= HF_DOES_INTERACTION
+-- Field names verified against df-structures/df.history-events.xml:
+--   hfid              = CHANGE_HF_STATE, CHANGE_HF_JOB
+--   histfig           = ADD/REMOVE_HF_ENTITY_LINK, ADD_HF_SITE_LINK
+--   hf / hf_target    = ADD/REMOVE_HF_HF_LINK
+--   doer / target     = HF_DOES_INTERACTION
 --   victim_hf, slayer_hf = HIST_FIGURE_DIED
---   maker      = MASTERPIECE_CREATED_*
--- Others (builder, figure, etc.) are kept for any types not yet mapped.
+--   snatcher / target = HIST_FIGURE_ABDUCTED
+--   attacker_general_hf, defender_general_hf = WAR_FIELD_BATTLE
+--   histfig1, histfig2 = HFS_FORMED_REPUTATION_RELATIONSHIP
+--   corruptor_hf, target_hf = HFS_FORMED_INTRIGUE_RELATIONSHIP
+--   changee, changer  = CHANGE_CREATURE_TYPE
+--   maker             = MASTERPIECE_CREATED_*
+-- Others (builder, figure, etc.) kept for unmapped types.
+-- Note: competitor_hf / winner_hf (COMPETITION) are vectors handled separately.
 local HF_FIELDS = {
     'victim_hf', 'slayer_hf',
     'hf', 'hf_target', 'hf_1', 'hf_2',
     'hfid',
-    'histfig',
+    'histfig', 'histfig1', 'histfig2',
     'doer', 'target',
-    'snatcher_hf', 'target_hf',
+    'snatcher',
+    'attacker_general_hf', 'defender_general_hf',
+    'corruptor_hf',
+    'changee', 'changer',
     'maker', 'builder', 'figure', 'member', 'initiator_hf', 'mover_hf', 'moved_hf',
 }
 
@@ -958,7 +966,8 @@ local function hf_name_by_id(hf_id)
     local hf = df.historical_figure.find(hf_id)
     if not hf then return nil end
     local n = dfhack.translation.translateName(hf.name, true)
-    return n ~= '' and n or nil
+    if n == '' then return nil end
+    return n:sub(1,1):upper() .. n:sub(2)
 end
 
 local function ent_name_by_id(entity_id)
@@ -980,6 +989,15 @@ end
 local function article(s)
     if not s then return '' end
     return (s:match('^[AaEeIiOoUu]') and 'an ' or 'a ') .. s
+end
+
+local function creature_name(race_id)
+    if not race_id or race_id < 0 then return nil end
+    local ok, raw = pcall(function() return df.creature_raw.find(race_id) end)
+    if not ok or not raw then return nil end
+    local ok2, n = pcall(function() return raw.name[0] end)
+    if not ok2 or not n or n == '' then return nil end
+    return n:sub(1,1):upper() .. n:sub(2):lower()
 end
 
 -- Look up a position name from an entity + position_id, respecting HF sex.
@@ -1222,7 +1240,11 @@ do
                 return 'Began worshipping ' .. other
             end
         elseif ltype == LT.PRISONER then
-            return 'Was imprisoned by ' .. other
+            if focal_is_hf then
+                return 'Imprisoned ' .. other
+            else
+                return 'Was imprisoned by ' .. other
+            end
         end
         local lname = ltype and LT[ltype]
         return (lname and title_case(lname) or 'Linked') .. ' with ' .. other
@@ -1299,7 +1321,7 @@ do
 
         if sname then
             if sname == 'VISITING' then
-                if not site_n then return nil end
+                if not site_n then return 'Began wandering' end
                 return 'visited ' .. site_n
             elseif sname == 'SETTLED' then
                 if substate == 45 then
@@ -1383,47 +1405,70 @@ do
         return 'Lost connection to ' .. loc
     end)
 
-    add('HF_SIMPLE_BATTLE_EVENT', function(ev, focal)
+    -- Register under both name variants (DFHack version differences).
+    local function hf_simple_battle_fn(ev, focal)
         local subtype = safe_get(ev, 'subtype')
         local ok1, hf1_id = pcall(function() return ev.group1[0] end)
         local ok2, hf2_id = pcall(function() return ev.group2[0] end)
         if not ok1 then hf1_id = nil end
         if not ok2 then hf2_id = nil end
-        local hf1  = hf_name_by_id(hf1_id) or 'someone'
-        local hf2  = hf_name_by_id(hf2_id) or 'someone'
-        local BT   = df.history_event_hf_simple_battle_event_type
+        local BT    = df.history_event_hf_simple_battle_event_type
         local sname = BT and BT[subtype]
+
+        -- Focal-aware: return verb-first text so format_event's first-char lowercase
+        -- does not corrupt a proper name that starts the string.
+        local in_g1 = hf1_id ~= nil and focal == hf1_id
+        local in_g2 = hf2_id ~= nil and focal == hf2_id
+        if in_g1 or in_g2 then
+            local other = hf_name_by_id(in_g1 and hf2_id or hf1_id) or 'someone'
+            if sname == 'ATTACKED' then
+                return in_g1 and ('Attacked ' .. other) or ('Was attacked by ' .. other)
+            elseif sname == 'SCUFFLE' then
+                return 'Fought with ' .. other
+            elseif sname == 'CONFRONTED' then
+                return in_g1 and ('Confronted ' .. other) or ('Was confronted by ' .. other)
+            elseif sname == 'HAPPENED_UPON' then
+                return in_g1 and ('Came upon ' .. other) or ('Was happened upon by ' .. other)
+            elseif sname == 'AMBUSHED' then
+                return in_g1 and ('Ambushed ' .. other) or ('Was ambushed by ' .. other)
+            elseif sname == 'CORNERED' then
+                return in_g1 and ('Cornered ' .. other) or ('Was cornered by ' .. other)
+            elseif sname == 'SURPRISED' then
+                return in_g1 and ('Surprised ' .. other) or ('Was surprised by ' .. other)
+            elseif sname == 'GOT_INTO_A_BRAWL' then
+                return 'Got into a brawl with ' .. other
+            elseif sname == 'SUBDUED' then
+                return in_g1 and ('Subdued ' .. other) or ('Was subdued by ' .. other)
+            elseif sname == 'HF2_LOST_AFTER_RECEIVING_WOUNDS' then
+                if in_g1 then return 'Prevailed; ' .. other .. ' escaped wounded' end
+                return 'Escaped wounded from ' .. other
+            elseif sname == 'HF2_LOST_AFTER_GIVING_WOUNDS' then
+                if in_g1 then return 'Prevailed despite wounds from ' .. other end
+                return 'Was forced to retreat after wounding ' .. other
+            elseif sname == 'HF2_LOST_AFTER_MUTUAL_WOUNDS' then
+                if in_g1 then return 'Eventually prevailed; ' .. other .. ' escaped' end
+                return 'Escaped after a mutual battle with ' .. other
+            end
+            return 'Fought with ' .. other
+        end
+
+        -- Non-focal fallback (used by event_will_be_shown with focal=-1).
+        local hf1 = hf_name_by_id(hf1_id) or 'someone'
+        local hf2 = hf_name_by_id(hf2_id) or 'someone'
         if sname == 'ATTACKED' then
             return hf1 .. ' attacked ' .. hf2
-        elseif sname == 'SCUFFLE' then
-            return hf1 .. ' fought with ' .. hf2
-        elseif sname == 'CONFRONTED' then
-            return hf1 .. ' confronted ' .. hf2
-        elseif sname == 'HAPPENED_UPON' then
-            return hf1 .. ' happened upon ' .. hf2
-        elseif sname == 'AMBUSHED' then
-            return hf1 .. ' ambushed ' .. hf2
-        elseif sname == 'CORNERED' then
-            return hf1 .. ' cornered ' .. hf2
-        elseif sname == 'SURPRISED' then
-            return hf1 .. ' surprised ' .. hf2
-        elseif sname == 'GOT_INTO_A_BRAWL' then
-            return hf1 .. ' got into a brawl with ' .. hf2
         elseif sname == 'SUBDUED' then
-            return hf1 .. ' fought with and subdued ' .. hf2
-        elseif sname == 'HF2_LOST_AFTER_RECEIVING_WOUNDS' then
-            return hf2 .. ' managed to escape ' .. hf1 .. "'s onslaught"
-        elseif sname == 'HF2_LOST_AFTER_GIVING_WOUNDS' then
-            return hf2 .. ' was forced to retreat despite ' .. hf1 .. "'s wounds"
-        elseif sname == 'HF2_LOST_AFTER_MUTUAL_WOUNDS' then
-            return hf1 .. ' eventually prevailed and ' .. hf2 .. ' escaped'
+            return hf1 .. ' subdued ' .. hf2
         end
         return hf1 .. ' and ' .. hf2 .. ' were in a battle'
-    end)
+    end
+    add('HF_SIMPLE_BATTLE_EVENT',         hf_simple_battle_fn)
+    add('HIST_FIGURE_SIMPLE_BATTLE_EVENT', hf_simple_battle_fn)
 
-    add('HF_ABDUCTED', function(ev, focal)
-        local snatcher_id = safe_get(ev, 'snatcher_hf')
-        local target_id   = safe_get(ev, 'target_hf')
+    -- Register under both name variants (DFHack version differences).
+    local function hf_abducted_fn(ev, focal)
+        local snatcher_id = safe_get(ev, 'snatcher')  -- df-structures: 'snatcher' not 'snatcher_hf'
+        local target_id   = safe_get(ev, 'target')    -- df-structures: 'target' not 'target_hf'
         local site_n      = site_name_by_id(safe_get(ev, 'site'))
         local site_sfx    = site_n and (' from ' .. site_n) or ''
         local snatcher    = hf_name_by_id(snatcher_id) or 'someone'
@@ -1434,7 +1479,9 @@ do
             return 'Abducted by ' .. snatcher .. site_sfx
         end
         return snatcher .. ' abducted ' .. target .. site_sfx
-    end)
+    end
+    add('HF_ABDUCTED',         hf_abducted_fn)
+    add('HIST_FIGURE_ABDUCTED', hf_abducted_fn)
 
     add('HF_DOES_INTERACTION', function(ev, focal)
         local doer_id   = safe_get(ev, 'doer')
@@ -1499,6 +1546,93 @@ do
         end
         return 'established a new position in ' .. ent_n
     end)
+
+    -- competitor_hf / winner_hf are stl-vectors; iterated in get_hf_events.
+    add('COMPETITION', function(ev, focal)
+        local site_n = site_name_by_id(safe_get(ev, 'site'))
+        local loc    = site_n and (' in ' .. site_n) or ''
+        local ok_w, wlist = pcall(function() return ev.winner_hf end)
+        if ok_w and wlist then
+            local ok_n, n = pcall(function() return #wlist end)
+            if ok_n then
+                for i = 0, n - 1 do
+                    local ok2, v = pcall(function() return wlist[i] end)
+                    if ok2 and v == focal then
+                        return 'Won a competition' .. loc
+                    end
+                end
+            end
+        end
+        local ok_c, clist = pcall(function() return ev.competitor_hf end)
+        if ok_c and clist then
+            local ok_n, n = pcall(function() return #clist end)
+            if ok_n then
+                for i = 0, n - 1 do
+                    local ok2, v = pcall(function() return clist[i] end)
+                    if ok2 and v == focal then
+                        return 'Competed in a competition' .. loc
+                    end
+                end
+            end
+        end
+        return 'A competition was held' .. loc
+    end)
+
+    add('WAR_FIELD_BATTLE', function(ev, focal)
+        local att_hf  = safe_get(ev, 'attacker_general_hf')
+        local def_hf  = safe_get(ev, 'defender_general_hf')
+        local att_civ = ent_name_by_id(safe_get(ev, 'attacker_civ'))
+        local def_civ = ent_name_by_id(safe_get(ev, 'defender_civ'))
+        local site_n  = site_name_by_id(safe_get(ev, 'site'))
+        local loc     = site_n and (' at ' .. site_n) or ''
+        if focal == att_hf then
+            local vs = def_civ and (' against ' .. def_civ) or ''
+            return 'Led forces in battle' .. vs .. loc
+        elseif focal == def_hf then
+            local vs = att_civ and (' against ' .. att_civ) or ''
+            return 'Defended in battle' .. vs .. loc
+        end
+        local att = hf_name_by_id(att_hf) or att_civ or 'unknown'
+        local def = hf_name_by_id(def_hf) or def_civ or 'unknown'
+        return att .. ' battled ' .. def .. loc
+    end)
+
+    add('HFS_FORMED_REPUTATION_RELATIONSHIP', function(ev, focal)
+        local hf1     = safe_get(ev, 'histfig1')
+        local hf2     = safe_get(ev, 'histfig2')
+        local other   = hf_name_by_id((focal == hf1) and hf2 or hf1) or 'someone'
+        return 'Formed a relationship with ' .. other
+    end)
+
+    add('HFS_FORMED_INTRIGUE_RELATIONSHIP', function(ev, focal)
+        local corruptor = safe_get(ev, 'corruptor_hf')
+        local target    = safe_get(ev, 'target_hf')
+        local other     = hf_name_by_id((focal == corruptor) and target or corruptor) or 'someone'
+        if focal == corruptor then
+            return 'Drew ' .. other .. ' into an intrigue'
+        else
+            return 'Was drawn into an intrigue by ' .. other
+        end
+    end)
+
+    add('CHANGE_CREATURE_TYPE', function(ev, focal)
+        local changee_id = safe_get(ev, 'changee')
+        local changer_id = safe_get(ev, 'changer')
+        local old_n      = creature_name(safe_get(ev, 'old_race')) or 'unknown creature'
+        local new_n      = creature_name(safe_get(ev, 'new_race')) or 'unknown creature'
+        local has_changer = changer_id and changer_id >= 0
+        if focal == changee_id then
+            local by_sfx = has_changer
+                and (' by ' .. (hf_name_by_id(changer_id) or 'someone')) or ''
+            return 'Transformed from ' .. article(old_n) .. ' into ' .. article(new_n) .. by_sfx
+        elseif focal == changer_id then
+            local changee = hf_name_by_id(changee_id) or 'someone'
+            return 'Transformed ' .. changee .. ' from ' .. article(old_n) ..
+                ' into ' .. article(new_n)
+        end
+        local changee = hf_name_by_id(changee_id) or 'someone'
+        return changee .. ' transformed from ' .. article(old_n) .. ' into ' .. article(new_n)
+    end)
 end
 
 -- Assigned here so build_hf_event_counts (defined earlier) can use it.
@@ -1537,9 +1671,25 @@ local function format_event(ev, focal_hf_id)
     return ('In the year %s, %s'):format(year, desc:sub(1,1):lower() .. desc:sub(2))
 end
 
+-- Returns true if any element of a stl-vector field on ev equals hf_id.
+local function vec_has(ev, field, hf_id)
+    local ok, vec = pcall(function() return ev[field] end)
+    if not ok or not vec then return false end
+    local ok2, n = pcall(function() return #vec end)
+    if not ok2 then return false end
+    for i = 0, n - 1 do
+        local ok3, v = pcall(function() return vec[i] end)
+        if ok3 and v == hf_id then return true end
+    end
+    return false
+end
+
 local function get_hf_events(hf_id)
     local results = {}
+    -- Support both type name variants across DFHack versions.
     local BATTLE_TYPE = df.history_event_type['HF_SIMPLE_BATTLE_EVENT']
+        or df.history_event_type['HIST_FIGURE_SIMPLE_BATTLE_EVENT']
+    local COMP_TYPE = df.history_event_type['COMPETITION']
     for _, ev in ipairs(df.global.world.history.events) do
         local found = false
         for _, field in ipairs(HF_FIELDS) do
@@ -1549,10 +1699,16 @@ local function get_hf_events(hf_id)
                 break
             end
         end
+        -- HF_SIMPLE_BATTLE_EVENT: group1/group2 are vectors; check all elements.
         if not found and BATTLE_TYPE and ev:getType() == BATTLE_TYPE then
-            local ok1, g1 = pcall(function() return ev.group1[0] end)
-            local ok2, g2 = pcall(function() return ev.group2[0] end)
-            if (ok1 and g1 == hf_id) or (ok2 and g2 == hf_id) then
+            if vec_has(ev, 'group1', hf_id) or vec_has(ev, 'group2', hf_id) then
+                table.insert(results, ev)
+                found = true
+            end
+        end
+        -- COMPETITION: competitor_hf and winner_hf are vectors.
+        if not found and COMP_TYPE and ev:getType() == COMP_TYPE then
+            if vec_has(ev, 'competitor_hf', hf_id) or vec_has(ev, 'winner_hf', hf_id) then
                 table.insert(results, ev)
             end
         end
@@ -1617,11 +1773,15 @@ function EventHistoryWindow:init()
         'link_type', 'death_cause',
         'old_job', 'new_job',
         'civ', 'entity_id', 'entity',
+        'attacker_civ', 'defender_civ',
+        'attacker_general_hf', 'defender_general_hf',
         'position_id', 'assignment_id',
         'artifact_id', 'artifact_record',
-        'histfig', 'hfid',
+        'histfig', 'histfig1', 'histfig2', 'hfid',
         'hf', 'hf_target', 'victim_hf', 'slayer_hf',
-        'doer', 'target', 'snatcher_hf', 'target_hf',
+        'doer', 'target', 'snatcher',
+        'corruptor_hf',
+        'changee', 'changer', 'old_race', 'new_race',
         'maker', 'maker_entity', 'item_type', 'item_subtype',
     }
     print(('[Herald] EventHistory: %s (hf_id=%d) - %d event(s)'):format(
