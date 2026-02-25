@@ -893,6 +893,12 @@ function HeraldWindow:init()
             on_activate = function() dfhack.run_command('gui/journal') end,
         },
         widgets.HotkeyLabel{
+            frame      = { b = 0, l = 20 },
+            key        = 'CUSTOM_CTRL_T',
+            label      = 'Cycle tabs',
+            auto_width = true,
+        },
+        widgets.HotkeyLabel{
             frame       = { b = 0, r = 1 },
             key         = 'LEAVESCREEN',
             label       = 'Close',
