@@ -5,7 +5,63 @@ herald-gui
 ==========
 Tags: fort | gameplay
 
-  Settings UI for the Herald mod: tabbed window with figure tracking and announcement toggles.
+  Settings UI for the Herald mod. Opens a 76×45 tabbed window for managing which
+  historical figures and civilisations Herald tracks, and which announcements each
+  pin fires.
+
+  Opened automatically by ``herald-main`` via Ctrl-H in-fort, or with::
+
+    herald-gui
+
+  Navigation
+  ----------
+  Ctrl-T / Ctrl-Y     Cycle tabs forward / back (Pinned → Historical Figures → Civilisations)
+  Ctrl-J              Open the DFHack in-game Journal
+  Escape              Close the window
+
+  Tab 1 — Pinned
+  --------------
+  Lists everything you are currently tracking. The left pane shows pinned
+  individuals or civilisations; the right pane shows the announcement toggles
+  for the selected pin.
+
+  Ctrl-I              Toggle left-pane view between Individuals and Civilisations
+  Enter               Unpin the selected entry (removes it from tracking)
+  Arrow keys          Move selection up / down in the pinned list
+
+  Selecting a pin in the left pane loads its per-pin announcement settings into
+  the right pane. Toggle each event category on or off; changes are saved
+  immediately. Categories marked with ``*`` are not yet implemented.
+
+  Tab 2 — Historical Figures
+  --------------------------
+  Searchable list of all historical figures in the current world. Columns:
+  Name (22), Race (12), Civ (25), Status. A detail pane below the list shows
+  the selected figure's ID, race, alive/dead status, civilisation, site
+  government, and held positions.
+
+  Type to search         Filter by name, race, or civilisation (incremental)
+  Enter                  Pin or unpin the selected figure
+  Ctrl-P                 Toggle "Pinned only" filter (Yes / No)
+  Ctrl-D                 Toggle "Show dead" filter (Yes / No)
+  Arrow keys             Move selection; detail pane updates automatically
+
+  Pinned figures appear with a green "pinned" status; dead figures are shown
+  in grey with a red "dead" status. Pinning a figure here adds it to the
+  Pinned tab and begins tracking the announcement events set for that pin.
+
+  Tab 3 — Civilisations
+  ---------------------
+  Searchable list of all civilisation-level entities in the world.
+
+  Type to search         Filter by name (incremental)
+  Enter                  Pin or unpin the selected civilisation
+  Ctrl-P                 Toggle "Pinned only" filter (Yes / No)
+  Arrow keys             Move selection
+
+  Pinned civilisations appear with a green "pinned" status. Pinning a
+  civilisation enables tracking of its leadership positions (and other
+  categories once implemented) via the settings on the Pinned tab.
 
 Not intended for direct use.
 ]====]
