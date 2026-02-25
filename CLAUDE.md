@@ -99,15 +99,42 @@ When `DEBUG = true`, handlers emit verbose trace lines covering:
 - Announcement fired: `"firing announcement … (setting is ON)"`
 - Announcement suppressed: `"announcement suppressed … (setting is OFF)"`
 
+### Event History (GUI)
+
+`herald-gui.lua` contains the event-display subsystem used by the EventHistory popup (Ctrl-E):
+
+- **`HF_FIELDS`** — ordered list of scalar HF ID field names (e.g. `victim_hf`, `attacker_general_hf`).
+  Iterated for both `build_hf_event_counts` and `get_hf_events`.
+- **`EVENT_DESCRIBE`** — `{ [event_type_int] = fn(ev, focal_hf_id) -> string }`. Populated in a
+  `do` block via `add(type_name, fn)`, which silently skips unknown type names (handles DFHack
+  version differences). Describers return verb-first text when focal matches a participant;
+  return `nil` to suppress the event entirely.
+- **`event_will_be_shown(ev)`** — calls the describer with `focal=-1`; returns false if the result
+  is nil. Used by `build_hf_event_counts` to exclude noise events from the count.
+- **`build_hf_event_counts()`** — lazy per-load cache `{ [hf_id] = count }`. Counts scalar
+  `HF_FIELDS`, `group1`/`group2` vectors (BATTLE_TYPES set), `competitor_hf`/`winner_hf` vectors
+  (COMPETITION), and `world.history.relationship_events` block store.
+- **`get_hf_events(hf_id)`** — full event collection for the popup. Same scalar + vector paths as
+  the count cache, plus contextual `WAR_FIELD_BATTLE` aggregation: battles are indexed by
+  `site:year`; any direct HF event at a matching site+year pulls in the battle. Relationship
+  events come from `world.history.relationship_events` (separate from `world.history.events`).
+  **Note:** battle participation via contextual aggregation is implemented but unconfirmed —
+  see the TODO comment above `get_hf_events`.
+- **`format_event(ev, focal_hf_id)`** — renders `"In the year NNN, ..."` using `EVENT_DESCRIBE`
+  or `clean_enum_name` fallback.
+- **`BATTLE_TYPES` set pattern** — used in both `get_hf_events` and `build_hf_event_counts` to
+  resolve `HF_SIMPLE_BATTLE_EVENT` / `HIST_FIGURE_SIMPLE_BATTLE_EVENT` across DFHack versions.
+  Always use a set (`{ [v] = true }`) not a single value with `or`.
+
 ### Settings & Persistence
 
-Settings screen (`herald-gui.lua`): 3-tab window — Ctrl-T to cycle tabs.
+Settings screen (`herald-gui.lua`): 3-tab window — Ctrl-T/Ctrl-Y to cycle tabs.
 
 - **Pinned** (tab 1): left list of pinned individuals or civs; Ctrl-I toggles Individuals/
   Civilisations view. Right panel shows per-pin announcement toggles (unimplemented categories
-  marked `*`). Enter unpins the selection.
-- **Historical Figures** (tab 2): Name/Race/Civ/Status list with detail panel. Enter to
-  pin/unpin; Ctrl-D show-dead; Ctrl-P pinned-only.
+  marked `*`). Ctrl-E opens Event History. Enter unpins the selection.
+- **Historical Figures** (tab 2): Name/Race/Civ/Status/Events list with detail panel. Enter to
+  pin/unpin; Ctrl-E event history; Ctrl-D show-dead; Ctrl-P pinned-only.
 - **Civilisations** (tab 3): full civ list. Enter to pin/unpin; Ctrl-P pinned-only.
 
 **Global config** (`dfhack-config/herald.json`):

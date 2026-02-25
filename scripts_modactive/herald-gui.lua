@@ -5,9 +5,9 @@ herald-gui
 ==========
 Tags: fort | gameplay
 
-  Settings UI for the Herald mod. Opens a tabbed window for managing which
-  historical figures and civilisations Herald pins (tracks), and which announcements each
-  pin fires.
+  Settings UI for the Herald mod. Tabbed window for managing pinned historical
+  figures and civilisations, configuring per-pin announcements, and browsing
+  world-history event logs.
 
   Open with:
 
@@ -15,57 +15,45 @@ Tags: fort | gameplay
 
   Navigation
   ----------
-  Ctrl-T              Cycle tabs forward
+  Ctrl-T     Cycle tabs forward / backward
   Ctrl-J              Open the DFHack Journal
   Escape              Close the window
 
   Tab 1 - Pinned
   --------------
-  Lists everything you are currently tracking. The left pane shows pinned
-  individuals or civilisations; the right pane shows the announcement toggles
-  for the selected pin.
+  Left pane: pinned individuals or civilisations (Ctrl-I to toggle view).
+  Right pane: per-pin announcement toggles; changes are saved immediately.
+  Categories marked "*" are not yet implemented.
 
-  Ctrl-I              Toggle left-pane view between Individuals and Civilisations
-  Enter               Unpin the selected entry (removes it from tracking)
-  Ctrl-E              Open event history popup for the selected individual (Individuals view only)
-  Arrow keys          Move selection up / down in the pinned list
-
-  Selecting a pin in the left pane loads its per-pin announcement settings into
-  the right pane. Toggle each event category on or off; changes are saved
-  immediately. Categories marked with "*" are not yet implemented.
+  Ctrl-I              Toggle between Individuals and Civilisations view
+  Ctrl-E              Open event history for the selected individual
+  Enter               Unpin the selected entry
 
   Tab 2 - Historical Figures
   --------------------------
-  Searchable list of all historical figures in the current world.
-  Columns: Name, Race, Civ, Status, Events (world-history event count).
+  Searchable list of all historical figures. Columns: Name, Race, Civ, Status,
+  Events. Detail pane shows ID, race, alive/dead status, civ, and positions.
 
-  A detail pane below the list shows the selected figure's ID, race,
-  alive/dead status, civilisation, site government, and held positions.
-
-  Type to search         Filter by name, race, or civilisation (incremental)
-  Enter                  Pin or unpin the selected figure
-  Ctrl-E                 Open event history popup for the selected figure
-  Ctrl-P                 Toggle "Pinned only" filter (Yes / No)
-  Ctrl-D                 Toggle "Show dead" filter (Yes / No)
-  Arrow keys             Move selection; detail pane updates automatically
-
-  Pinned figures appear with a green "pinned" status; dead figures are shown
-  in grey with a red "dead" status. Pinning a figure here adds it to the
-  Pinned tab and begins tracking the announcement events set for that pin.
+  Type to search      Filter by name, race, or civilisation
+  Enter               Pin or unpin the selected figure
+  Ctrl-E              Open event history for the selected figure
+  Ctrl-P              Toggle "Pinned only" filter
+  Ctrl-D              Toggle "Show dead" filter
 
   Tab 3 - Civilisations
   ---------------------
-  Searchable list of all civilisation-level entities in the world.
-  Columns: Name, Race, Sites (site count), Pop (alive historical figures).
+  Searchable list of all civilisation-level entities.
+  Columns: Name, Race, Sites, Pop (alive HF members).
 
-  Type to search         Filter by name or race (incremental)
-  Enter                  Pin or unpin the selected civilisation
-  Ctrl-P                 Toggle "Pinned only" filter (Yes / No)
-  Arrow keys             Move selection
+  Type to search      Filter by name or race
+  Enter               Pin or unpin the selected civilisation
+  Ctrl-P              Toggle "Pinned only" filter
 
-  Pinned civilisations appear with a green "pinned" status. Pinning a
-  civilisation enables tracking of its leadership positions (and other
-  categories once implemented) via the settings on the Pinned tab.
+  Event History Popup
+  -------------------
+  Chronological list of world-history events involving a figure. Opened via
+  Ctrl-E from the Pinned or Historical Figures tab. Also dumps the event list
+  to the DFHack console for debugging.
 
 Not intended for direct use.
 ]====]
