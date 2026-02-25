@@ -56,17 +56,18 @@ end
 
 local function announce_death(hf_id, dprint)
     local settings = pinned_hf_ids[hf_id]
+    local hf = df.historical_figure.find(hf_id)
+    local name = hf and dfhack.translation.translateName(hf.name, true) or tostring(hf_id)
     if not (settings and settings.death) then
+        dprint('ind-death: announcement suppressed for %s (id %d) — death setting is OFF', name, hf_id)
         announced_deaths[hf_id] = true  -- mark seen, suppress repeat
         return
     end
-    local hf = df.historical_figure.find(hf_id)
     if not hf then
         dprint('ind-death: no HF found for id %d', hf_id)
         return
     end
-    local name = dfhack.translation.translateName(hf.name, true)
-    dprint('ind-death: announcing death of %s (id %d)', name, hf_id)
+    dprint('ind-death: firing announcement for %s (id %d) — death setting is ON', name, hf_id)
     dfhack.gui.showAnnouncement(('[Herald] %s has died.'):format(name), COLOR_RED, true)
     announced_deaths[hf_id] = true
 end
@@ -75,9 +76,16 @@ local function handle_event(event, dprint)
     dprint = dprint or function() end
     local hf_id = event.victim_hf
     dprint('ind-death.event: HIST_FIGURE_DIED victim hf_id=%d', hf_id)
-    if pinned_hf_ids[hf_id] and not announced_deaths[hf_id] then
-        announce_death(hf_id, dprint)
+    if not pinned_hf_ids[hf_id] then
+        dprint('ind-death.event: hf_id=%d is not tracked, skipping', hf_id)
+        return
     end
+    if announced_deaths[hf_id] then
+        dprint('ind-death.event: hf_id=%d already announced, skipping', hf_id)
+        return
+    end
+    dprint('ind-death.event: hf_id=%d is tracked, checking settings', hf_id)
+    announce_death(hf_id, dprint)
 end
 
 local function handle_poll(dprint)
@@ -86,7 +94,7 @@ local function handle_poll(dprint)
         if not announced_deaths[hf_id] then
             local hf = df.historical_figure.find(hf_id)
             if hf and hf.died_year ~= -1 then
-                dprint('ind-death.poll: detected death of hf_id=%d via died_year', hf_id)
+                dprint('ind-death.poll: detected death of tracked hf_id=%d via died_year, checking settings', hf_id)
                 announce_death(hf_id, dprint)
             end
         end

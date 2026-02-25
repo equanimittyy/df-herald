@@ -135,9 +135,15 @@ function check(dprint)
         local entity_id  = entity.id
         local pin_settings = pinned_civ_ids[entity_id]
         -- Skip unpinned civs — only pinned civs fire announcements.
-        if not pin_settings then goto continue_entity end
+        if not pin_settings then
+            dprint('world-leaders: entity_id=%d is not tracked, skipping', entity_id)
+            goto continue_entity
+        end
 
-        if #entity.positions.assignments == 0 then goto continue_entity end
+        if #entity.positions.assignments == 0 then
+            dprint('world-leaders: entity_id=%d has no assignments, skipping', entity_id)
+            goto continue_entity
+        end
 
         local civ_name           = dfhack.translation.translateName(entity.name, true)
         local announce_positions = pin_settings.positions
@@ -163,9 +169,13 @@ function check(dprint)
             if not is_alive(hf) then
                 if prev and prev.hf_id == hf_id then
                     local hf_name = dfhack.translation.translateName(hf.name, true)
-                    dprint('world-leaders: death detected: %s, %s of %s', hf_name, tostring(pos_name), civ_name)
                     if announce_positions then
+                        dprint('world-leaders: death detected for %s (%s of %s) — firing announcement (positions ON)',
+                            hf_name, tostring(pos_name), civ_name)
                         dfhack.gui.showAnnouncement(fmt_death(hf_name, pos_name, civ_name), COLOR_RED, true)
+                    else
+                        dprint('world-leaders: death detected for %s (%s of %s) — announcement suppressed (positions OFF)',
+                            hf_name, tostring(pos_name), civ_name)
                     end
                 end
             else
@@ -180,9 +190,13 @@ function check(dprint)
 
                 if prev_entity and (prev == nil or prev.hf_id ~= hf_id) then
                     local hf_name = dfhack.translation.translateName(hf.name, true)
-                    dprint('world-leaders: appointment: %s as %s of %s', hf_name, tostring(pos_name), civ_name)
                     if announce_positions then
+                        dprint('world-leaders: appointment detected for %s (%s of %s) — firing announcement (positions ON)',
+                            hf_name, tostring(pos_name), civ_name)
                         dfhack.gui.showAnnouncement(fmt_appointment(hf_name, pos_name, civ_name), COLOR_YELLOW, true)
+                    else
+                        dprint('world-leaders: appointment detected for %s (%s of %s) — announcement suppressed (positions OFF)',
+                            hf_name, tostring(pos_name), civ_name)
                     end
                 end
             end
