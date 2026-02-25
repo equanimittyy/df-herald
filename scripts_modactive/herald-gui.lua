@@ -15,7 +15,7 @@ Tags: fort | gameplay
 
   Navigation
   ----------
-  Ctrl-T / Ctrl-Y     Cycle tabs forward / back
+  Ctrl-T              Cycle tabs forward
   Ctrl-J              Open the DFHack Journal
   Escape              Close the window
 
@@ -55,8 +55,9 @@ Tags: fort | gameplay
   Tab 3 - Civilisations
   ---------------------
   Searchable list of all civilisation-level entities in the world.
+  Columns: Name, Race, Sites (site count), Pop (alive historical figures).
 
-  Type to search         Filter by name (incremental)
+  Type to search         Filter by name or race (incremental)
   Enter                  Pin or unpin the selected civilisation
   Ctrl-P                 Toggle "Pinned only" filter (Yes / No)
   Arrow keys             Move selection
@@ -80,6 +81,13 @@ view = nil  -- module-level; prevents double-open
 local function get_race_name(hf)
     if not hf or hf.race < 0 then return '?' end
     local cr = df.creature_raw.find(hf.race)
+    if not cr then return '?' end
+    return cr.name[0] or '?'
+end
+
+local function get_entity_race_name(entity)
+    if not entity or entity.race < 0 then return '?' end
+    local cr = df.creature_raw.find(entity.race)
     if not cr then return '?' end
     return cr.name[0] or '?'
 end
@@ -211,7 +219,21 @@ local function build_choices(show_dead, show_pinned_only)
 end
 
 -- Build the choice list for the Civilisations FilteredList.
+-- Column widths: Name=26, Race=13, Sites=6, Pop=6, Status=remaining
 local function build_civ_choices(show_pinned_only)
+    -- Single pass: count alive HF members per entity
+    local alive_counts = {}
+    for _, hf in ipairs(df.global.world.history.figures) do
+        if hf.died_year == -1 then
+            for _, link in ipairs(hf.entity_links) do
+                if link:getType() == df.histfig_entity_link_type.MEMBER then
+                    local eid = link.entity_id
+                    alive_counts[eid] = (alive_counts[eid] or 0) + 1
+                end
+            end
+        end
+    end
+
     local choices = {}
     local pinned = wld_leaders.get_pinned_civs()
     for _, entity in ipairs(df.global.world.entities.all) do
@@ -222,7 +244,13 @@ local function build_civ_choices(show_pinned_only)
         if show_pinned_only and not is_pinned then goto continue end
 
         local name = dfhack.translation.translateName(entity.name, true)
-        if name == '' then name = '(unnamed)' end
+        if name == '' then goto continue end
+
+        local race = get_entity_race_name(entity)
+        if race == '?' then race = 'Unknown' end
+
+        local site_count = entity.site_links and #entity.site_links or 0
+        local pop_count  = alive_counts[entity_id] or 0
 
         local status_token = is_pinned
             and { text = 'pinned', pen = COLOR_GREEN }
@@ -230,10 +258,13 @@ local function build_civ_choices(show_pinned_only)
 
         table.insert(choices, {
             text = {
-                { text = ('%-42s'):format(name:sub(1, 42)), pen = nil },
+                { text = ('%-26s'):format(name:sub(1, 26)), pen = nil },
+                { text = ('%-13s'):format(race:sub(1, 12)), pen = COLOR_GREY },
+                { text = ('%5d '):format(site_count),       pen = COLOR_GREY },
+                { text = ('%5d '):format(pop_count),        pen = COLOR_GREY },
                 status_token,
             },
-            search_key   = name:lower(),
+            search_key   = (name .. ' ' .. race):lower(),
             entity_id    = entity_id,
             entity       = entity,
             display_name = name,
@@ -271,12 +302,12 @@ function FiguresPanel:init()
             on_select = function(idx, choice) self:update_detail(choice) end,
         },
         widgets.Label{
-            frame = { t = 30, l = 0, r = 0, h = 1 },
+            frame = { t = 27, l = 0, r = 0, h = 1 },
             text  = { { text = string.rep('\xc4', 74), pen = COLOR_GREY } },
         },
         widgets.List{
             view_id   = 'detail_panel',
-            frame     = { t = 31, b = 2, l = 1, r = 1 },
+            frame     = { t = 28, b = 2, l = 1, r = 1 },
             on_select = function() end,
         },
         widgets.HotkeyLabel{
@@ -298,6 +329,7 @@ function FiguresPanel:init()
                 return 'Pinned only: ' .. (self.show_pinned_only and 'Yes' or 'No ')
             end,
             auto_width  = true,
+            on_activate = function() self:toggle_pinned_only() end,
         },
         widgets.HotkeyLabel{
             view_id     = 'toggle_dead_btn',
@@ -307,6 +339,7 @@ function FiguresPanel:init()
                 return 'Show dead: ' .. (self.show_dead and 'Yes' or 'No ')
             end,
             auto_width  = true,
+            on_activate = function() self:toggle_dead() end,
         },
     }
 
@@ -619,16 +652,16 @@ function PinnedPanel:on_type_change(new_val)
     -- Update column header to match view type
     local list_header = self.subviews.list_header
     if is_ind then
-        list_header.text = {
+        list_header:setText({
             { text = ('%-20s'):format('Name'),  pen = COLOR_GREY },
             { text = ('%-12s'):format('Race'),  pen = COLOR_GREY },
             { text = 'Status',                  pen = COLOR_GREY },
-        }
+        })
     else
-        list_header.text = {
-            { text = ('%-32s'):format('Name'),  pen = COLOR_GREY },
-            { text = 'Status',                  pen = COLOR_GREY },
-        }
+        list_header:setText({
+            { text = ('%-30s'):format('Name'),  pen = COLOR_GREY },
+            { text = 'Race',                    pen = COLOR_GREY },
+        })
     end
 
     -- refresh_pinned_list auto-selects first item and calls _update_right_panel
@@ -679,15 +712,17 @@ function PinnedPanel:refresh_pinned_list()
             if entity then
                 local name = dfhack.translation.translateName(entity.name, true)
                 if name == '' then name = '(unnamed)' end
-                table.insert(civ_list, { entity_id = entity_id, name = name })
+                table.insert(civ_list, { entity_id = entity_id, name = name, entity = entity })
             end
         end
         table.sort(civ_list, function(a, b) return a.name < b.name end)
         for _, civ in ipairs(civ_list) do
+            local race = get_entity_race_name(civ.entity)
+            if race == '?' then race = 'Unknown' end
             table.insert(choices, {
                 text = {
-                    { text = ('%-32s'):format(civ.name:sub(1, 32)), pen = nil },
-                    { text = 'pinned', pen = COLOR_GREEN },
+                    { text = ('%-30s'):format(civ.name:sub(1, 30)), pen = nil },
+                    { text = ('%-16s'):format(race:sub(1, 16)),      pen = COLOR_GREY },
                 },
                 entity_id    = civ.entity_id,
                 display_name = civ.name,
@@ -741,8 +776,11 @@ function CivisationsPanel:init()
         widgets.Label{
             frame = { t = 0, l = 1 },
             text  = {
-                { text = ('%-42s'):format('Name'), pen = COLOR_GREY },
-                { text = 'Status',                 pen = COLOR_GREY },
+                { text = ('%-26s'):format('Name'),  pen = COLOR_GREY },
+                { text = ('%-13s'):format('Race'),  pen = COLOR_GREY },
+                { text = ('%-6s'):format('Sites'),  pen = COLOR_GREY },
+                { text = ('%-6s'):format('Pop'),    pen = COLOR_GREY },
+                { text = 'Status',                  pen = COLOR_GREY },
             },
         },
         widgets.FilteredList{
@@ -769,6 +807,7 @@ function CivisationsPanel:init()
                 return 'Pinned only: ' .. (self.show_pinned_only and 'Yes' or 'No ')
             end,
             auto_width  = true,
+            on_activate = function() self:toggle_pinned_only() end,
         },
     }
 
@@ -840,7 +879,6 @@ function HeraldWindow:init()
             frame  = { t = 0, l = 0 },
             labels = { 'Pinned', 'Historical Figures', 'Civilisations' },
             key          = 'CUSTOM_CTRL_T',
-            key_back     = 'CUSTOM_CTRL_Y',
             get_cur_page = function() return self.cur_tab end,
             on_select    = function(idx) self:switch_tab(idx) end,
         },
