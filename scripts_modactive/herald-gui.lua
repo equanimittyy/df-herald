@@ -138,8 +138,11 @@ local function get_positions(hf)
                     if asgn.histfig2 == hf.id then
                         local pos_id   = asgn.position_id
                         local pos_name = nil
-                        if entity.entity_raw then
-                            for _, pos in ipairs(entity.entity_raw.positions) do
+                        -- entity.positions.own is entity-specific; check it first so that
+                        -- nomadic/special groups show their actual title (e.g. "leader")
+                        -- rather than the generic one from the shared entity_raw ("king").
+                        if entity.positions and entity.positions.own then
+                            for _, pos in ipairs(entity.positions.own) do
                                 if pos.id == pos_id then
                                     local gendered = hf.sex == 1
                                         and name_str(pos.name_male)
@@ -149,8 +152,8 @@ local function get_positions(hf)
                                 end
                             end
                         end
-                        if not pos_name and entity.positions and entity.positions.own then
-                            for _, pos in ipairs(entity.positions.own) do
+                        if not pos_name and entity.entity_raw then
+                            for _, pos in ipairs(entity.entity_raw.positions) do
                                 if pos.id == pos_id then
                                     local gendered = hf.sex == 1
                                         and name_str(pos.name_male)

@@ -75,24 +75,27 @@ local function name_str(field)
 end
 
 -- Returns the gendered (or neutral) position title for an assignment.
--- Tries entity_raw.positions first; falls back to entity.positions.own for EVIL/PLAINS
--- civs whose entity_raw carries no positions.
+-- Checks entity.positions.own first (entity-specific; gives the correct title for nomadic
+-- or non-standard groups, e.g. "leader" rather than the generic "king" from entity_raw).
+-- Falls back to entity_raw.positions for types that leave own empty (e.g. EVIL/PLAINS).
 local function get_pos_name(entity, pos_id, hf)
     if not entity or pos_id == nil then return nil end
-
-    local entity_raw = entity.entity_raw
-    if entity_raw then
-        for _, pos in ipairs(entity_raw.positions) do
-            if pos.id == pos_id then
-                local gendered = hf.sex == 1 and name_str(pos.name_male) or name_str(pos.name_female)
-                return gendered or name_str(pos.name)
-            end
-        end
-    end
 
     local own = entity.positions and entity.positions.own
     if own then
         for _, pos in ipairs(own) do
+            if pos.id == pos_id then
+                local gendered = hf.sex == 1 and name_str(pos.name_male) or name_str(pos.name_female)
+                local result = gendered or name_str(pos.name)
+                if result then return result end
+                break  -- position matched but name is empty; fall through to entity_raw
+            end
+        end
+    end
+
+    local entity_raw = entity.entity_raw
+    if entity_raw then
+        for _, pos in ipairs(entity_raw.positions) do
             if pos.id == pos_id then
                 local gendered = hf.sex == 1 and name_str(pos.name_male) or name_str(pos.name_female)
                 return gendered or name_str(pos.name)
