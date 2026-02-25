@@ -625,7 +625,7 @@ function PinnedPanel:_update_right_panel(name, pin_id)
 
     -- Update name label (must use setText to invalidate the render cache)
     panel.subviews[label_id]:setText(
-        name and { { text = name, pen = COLOR_WHITE } }
+        name and { { text = name, pen = COLOR_GREEN } }
              or  { { text = '(none selected)', pen = COLOR_GREY } }
     )
 
