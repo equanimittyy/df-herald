@@ -1154,9 +1154,16 @@ function EventHistoryScreen:onDismiss()
     event_history_view = nil
 end
 
--- Exported: opens (or raises) the Event History popup for hf_id.
+-- Exported: opens the Event History popup for hf_id.
+-- If a window is already open for the same HF, raises it; if for a different HF, replaces it.
 function open_event_history(hf_id, hf_name)
-    event_history_view = event_history_view
-        and event_history_view:raise()
-        or  EventHistoryScreen{ hf_id = hf_id, hf_name = hf_name }:show()
+    if event_history_view then
+        if event_history_view.hf_id == hf_id then
+            event_history_view:raise()
+            return
+        end
+        event_history_view:dismiss()
+        event_history_view = nil
+    end
+    event_history_view = EventHistoryScreen{ hf_id = hf_id, hf_name = hf_name }:show()
 end

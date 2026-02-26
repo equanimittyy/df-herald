@@ -251,18 +251,42 @@ local function build_choices(show_dead, show_pinned_only)
 end
 
 -- Builds choice rows for the Civilisations tab FilteredList.
--- Population counts alive HF members (entity_links MEMBER); not the actual living
--- population, but a reasonable proxy for civ size.
+-- Builds choice rows for the Civilisations tab FilteredList.
+-- Sites: counted from world_data.sites via site.civ_id (direct parent-civ reference).
+-- Population: summed from world.entity_populations (global non-HF racial group list).
 -- Column widths: Name=26, Race=13, Sites=6, Pop=6, Status=remaining.
 local function build_civ_choices(show_pinned_only)
-    -- Single pass over all HFs to count alive members per entity.
-    local alive_counts = {}
-    for _, hf in ipairs(df.global.world.history.figures) do
-        if hf.died_year == -1 then
-            for _, link in ipairs(hf.entity_links) do
-                if link:getType() == df.histfig_entity_link_type.MEMBER then
-                    local eid = link.entity_id
-                    alive_counts[eid] = (alive_counts[eid] or 0) + 1
+    -- Site count: single pass over world sites using site.civ_id.
+    local site_counts = {}
+    local ok_wd, world_sites = pcall(function() return df.global.world.world_data.sites end)
+    if ok_wd and world_sites then
+        for _, site in ipairs(world_sites) do
+            local cid = site.civ_id
+            if not (type(cid) == 'number' and cid >= 0) then
+                cid = site.cur_owner_id
+            end
+            if type(cid) == 'number' and cid >= 0 then
+                site_counts[cid] = (site_counts[cid] or 0) + 1
+            end
+        end
+    end
+
+    -- Population: global entity_populations list. Each entry has parallel vectors
+    -- races/counts; sum counts[i] across all entries for a civ to get total population.
+    local pop_counts = {}
+    local ok_ep, ep_list = pcall(function() return df.global.world.entity_populations end)
+    if ok_ep and ep_list then
+        for _, ep in ipairs(ep_list) do
+            local cid = ep.civ_id
+            if type(cid) == 'number' and cid >= 0 then
+                local ok_c, counts = pcall(function() return ep.counts end)
+                if ok_c and counts then
+                    for i = 0, #counts - 1 do
+                        local cnt = counts[i]
+                        if type(cnt) == 'number' and cnt > 0 then
+                            pop_counts[cid] = (pop_counts[cid] or 0) + cnt
+                        end
+                    end
                 end
             end
         end
@@ -283,8 +307,8 @@ local function build_civ_choices(show_pinned_only)
         local race = util.get_entity_race_name(entity)
         if race == '?' then race = 'Unknown' end
 
-        local site_count = entity.site_links and #entity.site_links or 0
-        local pop_count  = alive_counts[entity_id] or 0
+        local site_count = site_counts[entity_id] or 0
+        local pop_count  = pop_counts[entity_id] or 0
 
         local status_token = is_pinned
             and { text = 'pinned', pen = COLOR_GREEN }

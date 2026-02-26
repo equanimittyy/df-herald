@@ -198,6 +198,22 @@ install mechanism (not `onLoad.init`). It registers `OVERLAY_WIDGETS = { button 
 
 ## Key API Paths
 
+## DFHack Console Debugging
+
+When the correct field name, struct layout, or viewscreen path is unknown, use the DFHack
+console to inspect live game data rather than guessing or searching documentation:
+
+- **Viewscreen focus string** (run while target screen is active):
+  `lua printall(dfhack.gui.getCurFocus())`
+  → e.g. `'world/NORMAL'` means viewscreen entry `'world/'`; `'dwarfmode'` prefix-matches all dwarfmode sub-screens.
+- **Struct fields** (inspect any live object):
+  `lua printall(<object>)` — e.g. `lua printall(df.global.world.entity_populations[0])`
+- **Overlay viewscreens confirmed**:
+  - Fort mode (all sub-screens): `'dwarfmode'` (prefix match; `'dwarfmode/'` is redundant)
+  - World map (fort mode overworld): `'world/'`
+
+## Key API Paths
+
 - Ticks: `df.global.cur_year_tick`
 - Events: `df.global.world.history.events`
 - Entities: `df.global.world.entities.all`
@@ -218,6 +234,8 @@ install mechanism (not `onLoad.init`). It registers `OVERLAY_WIDGETS = { button 
 - Name translation: `dfhack.translation.translateName(name_obj, true)`
 - Player civ: `df.global.plotinfo.civ_id`
 - Announcements: `dfhack.gui.showAnnouncement(msg, color, pause)`
+- World sites: `df.global.world.world_data.sites[i]` — `.civ_id` (parent civ), `.cur_owner_id` (may be SiteGovernment)
+- Entity populations (non-HF): `df.global.world.entity_populations[i]` — `.civ_id`, `.races` (vector), `.counts` (vector parallel to races; no `count_min`)
 
 ## Rules
 

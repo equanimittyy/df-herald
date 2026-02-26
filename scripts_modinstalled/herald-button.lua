@@ -75,7 +75,7 @@ HeraldButton = defclass(HeraldButton, overlay.OverlayWidget)
 HeraldButton.ATTRS{
     default_pos     = {x=10, y=1},
     default_enabled = true,
-    viewscreens     = {'dwarfmode'},
+    viewscreens     = {'dwarfmode', 'dwarfmode/', 'world/'},
     frame           = {w=LOGO_COLS, h=LOGO_ROWS},
 }
 
