@@ -112,6 +112,10 @@ local function merge_announcements(saved)
     return result
 end
 
+-- Config persistence ----------------------------------------------------------
+
+-- Reads dfhack-config/herald.json; returns (interval, debug, announcements).
+-- Falls back to defaults on any read/parse failure.
 local function load_config()
     local ok, data = pcall(function()
         local f = assert(io.open(CONFIG_PATH, 'r'))
@@ -127,6 +131,7 @@ local function load_config()
     return DEFAULT_INTERVAL, false, util.deepcopy(DEFAULT_ANNOUNCEMENTS)
 end
 
+-- Writes current tick_interval, DEBUG, and announcements to herald.json.
 local function save_config()
     local ok, err = pcall(function()
         local f = assert(io.open(CONFIG_PATH, 'w'))
@@ -142,6 +147,8 @@ local function save_config()
     end
 end
 
+-- Boot-time config load. The `or` guards keep values set by a prior load of this
+-- script in the same DFHack session (DFHack caches reqscript environments).
 do
     local saved_interval, saved_debug, saved_ann = load_config()
     tick_interval = tick_interval or saved_interval
@@ -149,6 +156,7 @@ do
     announcements = announcements or saved_ann
 end
 
+-- Exported so herald-gui can read/write the global announcement flags.
 function get_announcements()
     return announcements
 end
@@ -158,6 +166,8 @@ function save_announcements(new_ann)
     save_config()
 end
 
+-- Prints to console and (if map loaded) shows a cyan announcement.
+-- Only active when DEBUG = true.
 local function dprint(fmt, ...)
     if not DEBUG then return end
     local msg = ('[Herald DEBUG] ' .. fmt):format(...)
@@ -312,9 +322,11 @@ local function scan_events()
     scan_timer_id = dfhack.timeout(tick_interval, 'ticks', scan_events)
 end
 
+-- Watermarks last_event_id to the current end of history so only future events
+-- are processed, then loads pinned data and starts the scan timer.
 local function init_scan()
     if enabled then return end  -- guard against double-init
-    last_event_id = #df.global.world.history.events - 1  -- watermark: skip old history
+    last_event_id = #df.global.world.history.events - 1  -- skip all pre-existing history
     enabled = true
     dprint('init_scan: watermark set to event id %d', last_event_id)
     dfhack.reqscript('herald-ind-death').load_pinned()
@@ -324,13 +336,14 @@ local function init_scan()
     scan_timer_id = dfhack.timeout(tick_interval, 'ticks', scan_events)
 end
 
+-- Resets all scan state; called on world unload.
+-- 'ticks' timers are auto-cancelled by DFHack on unload; nil the handle anyway.
 local function cleanup()
-    -- 'ticks' timers are auto-cancelled on world unload; nil out the handle anyway
     dprint('cleanup: world unloaded, resetting state')
     scan_timer_id = nil
     last_event_id = -1
     enabled = false
-    handlers = nil  -- reset so enums are re-resolved on next load
+    handlers = nil  -- nil forces re-resolution of enums on next load
     if world_handlers then
         for key, handler in pairs(world_handlers) do
             dprint('cleanup: resetting world handler "%s"', key)
@@ -340,6 +353,8 @@ local function cleanup()
     end
 end
 
+-- Lifecycle hooks -------------------------------------------------------------
+
 dfhack.onStateChange[GLOBAL_KEY] = function(sc)
     if sc == SC_MAP_LOADED then
         init_scan()
@@ -348,12 +363,14 @@ dfhack.onStateChange[GLOBAL_KEY] = function(sc)
     end
 end
 
--- onLoad.init fires after SC_MAP_LOADED, so bootstrap immediately if map is already up
+-- onLoad.init fires after SC_MAP_LOADED; bootstrap immediately if already in a fort.
 if dfhack.isMapLoaded() then
     init_scan()
 end
 
--- Handle direct invocation: "herald-main debug [true|false]" / "herald-main interval"
+-- CLI argument handling -------------------------------------------------------
+-- "herald-main debug [true|false]" / "herald-main interval" / "herald-main gui"
+
 local args = {...}
 if args[1] == 'debug' then
     if args[2] == 'true' or args[2] == 'on' then

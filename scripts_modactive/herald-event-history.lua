@@ -65,9 +65,8 @@ function safe_get(obj, field)
     return ok and val or nil
 end
 
--- Event History helpers --------------------------------------------------------
-
--- Name helpers used by event describers.
+-- Name / text helpers ---------------------------------------------------------
+-- Returns the translated name of an HF, capitalised. Returns nil if unnamed.
 local function hf_name_by_id(hf_id)
     if not hf_id or hf_id < 0 then return nil end
     local hf = df.historical_figure.find(hf_id)
@@ -93,6 +92,7 @@ local function site_name_by_id(site_id)
     return n ~= '' and n or nil
 end
 
+-- Returns "a <s>" or "an <s>" depending on the first letter of s.
 local function article(s)
     if not s then return '' end
     return (s:match('^[AaEeIiOoUu]') and 'an ' or 'a ') .. s
@@ -140,11 +140,11 @@ local function clean_enum_name(s)
 end
 
 -- Per-type describers ---------------------------------------------------------
-
--- Per-type describers: { [event_type_int] = function(ev, focal_hf_id) -> string }
--- Each describer is called inside pcall; return nil to fall back to enum name.
--- Event description templates adapted from LegendsViewer-Next by Kromtec et al.
--- https://github.com/Kromtec/LegendsViewer-Next  (MIT License)
+-- EVENT_DESCRIBE: { [event_type_int] = fn(ev, focal_hf_id) -> string }
+-- focal_hf_id makes descriptions relative to one figure ("Slew X" vs "Slain by Y").
+-- Each fn is called inside pcall; return nil to suppress the event from the list.
+-- Adapted from LegendsViewer-Next by Kromtec et al. (MIT License)
+-- https://github.com/Kromtec/LegendsViewer-Next
 local EVENT_DESCRIBE = {}
 do
     local function add(type_name, fn)
@@ -1060,7 +1060,8 @@ function EventHistoryWindow:init()
         table.insert(event_choices, { text = 'No events found.' })
     end
 
-    -- Debug: dump event list to DFHack console whenever the popup opens.
+    -- Always dump events to the DFHack console when the popup opens (not gated by DEBUG).
+    -- Useful for mapping new event types; PROBE_FIELDS lists all known scalar fields.
     local PROBE_FIELDS = {
         'state', 'substate', 'mood', 'reason',
         'site', 'region', 'structure',

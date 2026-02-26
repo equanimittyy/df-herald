@@ -71,6 +71,7 @@ view = nil  -- module-level; prevents double-open
 
 -- HF / entity helpers ----------------------------------------------------------
 
+-- Returns the translated name of the first Civilisation the HF is a member of.
 local function get_civ_name(hf)
     for _, link in ipairs(hf.entity_links) do
         if link:getType() == df.histfig_entity_link_type.MEMBER then
@@ -116,7 +117,9 @@ local function get_positions(hf)
     return results
 end
 
--- Cached event counts: { [hf_id] = count }. Built once per module load.
+-- Event count cache for the "Events" column in the Figures list.
+-- Built once on first use; re-opening the GUI reuses the same cache.
+-- { [hf_id] = number_of_visible_events }
 local hf_event_counts_cache = nil
 
 local function build_hf_event_counts()
@@ -192,8 +195,11 @@ local function build_hf_event_counts()
     return counts
 end
 
--- Build the choice list for the Figures FilteredList.
--- Column widths: Name=22, Race=12, Civ=20, Status=7, Events=remaining
+-- List builders ---------------------------------------------------------------
+
+-- Builds choice rows for the Figures tab FilteredList.
+-- Each row carries hf_id, hf, is_dead, display_name for downstream use.
+-- Column widths: Name=22, Race=12, Civ=20, Status=7, Events=remaining.
 local function build_choices(show_dead, show_pinned_only)
     local choices = {}
     local pinned = ind_death.get_pinned()
@@ -244,10 +250,12 @@ local function build_choices(show_dead, show_pinned_only)
     return choices
 end
 
--- Build the choice list for the Civilisations FilteredList.
--- Column widths: Name=26, Race=13, Sites=6, Pop=6, Status=remaining
+-- Builds choice rows for the Civilisations tab FilteredList.
+-- Population counts alive HF members (entity_links MEMBER); not the actual living
+-- population, but a reasonable proxy for civ size.
+-- Column widths: Name=26, Race=13, Sites=6, Pop=6, Status=remaining.
 local function build_civ_choices(show_pinned_only)
-    -- Single pass: count alive HF members per entity
+    -- Single pass over all HFs to count alive members per entity.
     local alive_counts = {}
     for _, hf in ipairs(df.global.world.history.figures) do
         if hf.died_year == -1 then
@@ -382,6 +390,8 @@ function FiguresPanel:init()
 
     self:refresh_list()
 
+    -- Patch onFilterChange so the detail panel refreshes when the user types
+    -- in the search box (the default callback only updates the list, not the detail).
     local fl  = self.subviews.fig_list
     local pan = self
     local _orig_ofc = fl.onFilterChange
@@ -530,18 +540,19 @@ function PinnedPanel:init()
     self.view_type  = 'individuals'
     self.selected_id = nil  -- hf_id or entity_id of currently selected pin
 
-    -- Builds ToggleHotkeyLabel widgets for an announcement category.
-    -- on_change writes the new value to the selected pin's settings.
+    -- Builds one ToggleHotkeyLabel per entry for a pin's announcement settings.
+    -- Unimplemented categories get a " *" suffix and a no-op on_change.
+    -- `local e = entry` is necessary to correctly capture each loop iteration.
     local function make_toggle_views(entries, category)
         local views = {}
         for i, entry in ipairs(entries) do
-            local e = entry  -- capture loop variable
+            local e = entry  -- capture each loop variable by value
             local display_label = e.impl and e.label or (e.label .. ' *')
             table.insert(views, widgets.ToggleHotkeyLabel{
                 view_id        = 'toggle_' .. e.key,
                 frame          = { t = i, h = 1, l = 0, r = 0 },
                 label          = display_label,
-                initial_option = 2,  -- off until a pin is selected
+                initial_option = 2,  -- starts OFF; set correctly when a pin is selected
                 on_change      = e.impl and function(new_val)
                     if not self.selected_id then return end
                     if self.view_type == 'individuals' then
