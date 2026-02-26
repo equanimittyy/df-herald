@@ -1,8 +1,11 @@
 # To-do list:
 
+Note:
+Need to try fix up the UI first, needs to be as accurate as possible as I imagine users will use this screen the most to explore the history of their world.
+
 ## Fixes
 
--
+- Site count fixes
 
 ## Changes
 
