@@ -17,7 +17,8 @@ scripts_modactive/
 ├── herald-gui.lua               ← settings UI: tabbed window (Pinned / Historical Figures / Civilisations)
 ├── herald-event-history.lua     ← Event History popup subsystem (event collection, describers, UI)
 ├── herald-ind-death.lua         ← HIST_FIGURE_DIED + poll handler for pinned individuals [Individuals]
-└── herald-world-leaders.lua     ← poll-based world leader tracking [Civilisations]
+├── herald-world-leaders.lua     ← poll-based world leader tracking [Civilisations]
+└── herald-util.lua              ← shared utilities (announcement wrappers, position helpers, pin settings)
 
 scripts_modinstalled/
 ├── herald-button.lua            ← DFHack overlay widget; adds Herald button to the main DF screen
@@ -95,6 +96,41 @@ Runs alongside the event scan each cycle via `scan_world_state(dprint)`:
 `herald-world-leaders.lua` snapshots `{ [entity_id] = { [assignment_id] = { hf_id, pos_name,
 civ_name } } }` each cycle to detect position holder deaths and new appointments.
 
+### herald-util.lua
+
+Shared utility module required by all other herald scripts. All exports are non-local at module scope.
+
+**Announcement wrappers** (use these — never call `dfhack.gui.showAnnouncement` directly):
+- `announce_death(msg)` — red, pauses game (death of tracked individual or position holder)
+- `announce_appointment(msg)` — yellow, pauses (new position holder)
+- `announce_vacated(msg)` — white, no pause (living HF left a position)
+- `announce_info(msg)` — cyan, no pause (debug/informational)
+
+**Position helpers**:
+- `name_str(field)` — normalises a position name field to a plain Lua string or `nil`; handles both `stl-string` and `string[]` layouts
+- `get_pos_name(entity, pos_id, hf_sex)` — returns gendered (or neutral) position title; checks `entity.positions.own` first, falls back to `entity.entity_raw.positions`
+
+**HF / entity helpers**:
+- `is_alive(hf)` — true when `hf.died_year == -1 and hf.died_seconds == -1`
+- `get_race_name(hf)` — creature species name string for an HF
+- `get_entity_race_name(entity)` — same for a historical entity
+
+**Table utilities**:
+- `deepcopy(t)` — recursive deep copy of any Lua value
+
+**Pin settings** (defined here to avoid circular deps — handlers must not reqscript herald-main):
+- `INDIVIDUAL_SETTINGS_KEYS` — ordered list: `{ 'relationships', 'death', 'combat', 'legendary', 'positions', 'migration' }`
+- `CIVILISATION_SETTINGS_KEYS` — ordered list: `{ 'positions', 'diplomacy', 'warfare', 'raids', 'theft', 'kidnappings' }`
+- `default_pin_settings()` — returns defaults table (all `true`) for individual pins
+- `default_civ_pin_settings()` — returns defaults table (all `true`) for civ pins
+- `merge_pin_settings(saved)` / `merge_civ_pin_settings(saved)` — merges saved booleans over defaults; ignores unknown keys
+
+**Standalone inspection** (when run directly from the DFHack console):
+```
+herald-util inspect [TYPENAME]
+```
+Prints all fields of the first matching event collection via `printall`. Defaults to `DUEL`. Running without `inspect` lists valid type names.
+
 ### Debug Output
 
 When `DEBUG = true`, handlers emit verbose trace lines covering:
@@ -158,20 +194,20 @@ Ctrl-J (open DFHack Journal) and Escape (close).
   "debug": false,
   "announcements": {
     "individuals": {
+      "relationships": true,
       "death": true,
-      "marriage": false,
-      "children": false,
-      "migration": false,
-      "legendary": false,
-      "combat": false
+      "combat": true,
+      "legendary": true,
+      "positions": true,
+      "migration": true
     },
     "civilisations": {
       "positions": true,
-      "diplomacy": false,
-      "raids": false,
-      "theft": false,
-      "kidnappings": false,
-      "armies": false
+      "diplomacy": true,
+      "warfare": true,
+      "raids": true,
+      "theft": true,
+      "kidnappings": true
     }
   }
 }
@@ -179,9 +215,10 @@ Ctrl-J (open DFHack Journal) and Escape (close).
 
 **Per-save config** (`dfhack.persistent.getSiteData/saveSiteData`):
 
-- Individuals: key `herald_pinned_hf_ids`
-- Civilisations: key `herald_pinned_civ_ids`
+- Individuals: key `herald_pinned_hf_ids`; settings keys: `relationships`, `death`, `combat`, `legendary`, `positions`, `migration`
+- Civilisations: key `herald_pinned_civ_ids`; settings keys: `positions`, `diplomacy`, `warfare`, `raids`, `theft`, `kidnappings`
 - Schema: `{ "pins": [ { "id": <int>, "settings": { <key>: <bool>, ... } } ] }`
+- All defaults are `true`; old saves with missing keys are filled by `merge_pin_settings` / `merge_civ_pin_settings` in herald-util
 
 ### Overlay Button
 
@@ -255,7 +292,7 @@ console to inspect live game data rather than guessing or searching documentatio
 - HF alive: `hf.died_year == -1 and hf.died_seconds == -1`
 - Name translation: `dfhack.translation.translateName(name_obj, true)`
 - Player civ: `df.global.plotinfo.civ_id`
-- Announcements: `dfhack.gui.showAnnouncement(msg, color, pause)`
+- Announcements: use `herald-util` wrappers (`announce_death`, `announce_appointment`, `announce_vacated`, `announce_info`) — do not call `dfhack.gui.showAnnouncement` directly
 - World sites: `df.global.world.world_data.sites[i]` — `.civ_id` (parent civ), `.cur_owner_id` (may be SiteGovernment)
 - Entity populations (non-HF): `df.global.world.entity_populations[i]` — `.civ_id`, `.races` (vector), `.counts` (vector parallel to races; no `count_min`)
 
