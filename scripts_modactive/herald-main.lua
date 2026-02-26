@@ -22,7 +22,7 @@ Usage
    herald-main debug [true|false]
    herald-main interval
    herald-main gui
-
+   herald-main button
 
 Commands
 --------
