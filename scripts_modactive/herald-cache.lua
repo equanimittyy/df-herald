@@ -29,8 +29,13 @@ building    = false   -- true during build
 local hf_event_counts = nil   -- { [hf_id] = count }
 local hf_event_ids    = nil   -- { [hf_id] = {id, ...} }
 local hf_rel_counts   = nil   -- { [hf_id] = count }
+-- Watermark: tracks how far into the events array we've cached.
+-- last_cached_event_idx is an array INDEX into df.global.world.history.events (0-based),
+-- last_cached_event_id is the .id field of that event (used to validate the watermark
+-- hasn't shifted, e.g. after a different save is loaded).
 local last_cached_event_idx = -1
 local last_cached_event_id  = -1
+-- Relationship event watermarks (block store has different structure from regular events).
 local rel_blocks_scanned    = 0
 local rel_last_block_ne     = 0
 
@@ -132,7 +137,8 @@ function save_cache()
     dprint('save_cache: writing to persistence, watermark idx=%d id=%d',
         last_cached_event_idx, last_cached_event_id)
 
-    -- Convert integer keys to strings for JSON serialisation.
+    -- JSON requires string keys; Lua integer keys (hf_id -> count) would be lost
+    -- during encode/decode. Convert to string keys for storage, restore on load.
     local function stringify_keys(tbl)
         local out = {}
         for k, v in pairs(tbl) do out[tostring(k)] = v end

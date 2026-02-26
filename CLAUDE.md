@@ -281,19 +281,187 @@ console to inspect live game data rather than guessing or searching documentatio
   - Fort mode (all sub-screens): `'dwarfmode'` (prefix match; `'dwarfmode/'` is redundant)
   - World map (fort mode overworld): `'world/'`
 
-## Key API Paths
+## DF API Reference
 
-- Ticks: `df.global.cur_year_tick`
-- Events: `df.global.world.history.events` — array indexed by position (NOT by event ID; use `df.history_event.find(id)` for ID lookup)
-- Event collections: `df.global.world.history.event_collections.all` — `T_event_collections` struct; always index `.all`, never the struct itself
-  - Type: `df.history_event_collection_type[col:getType()]` — NEVER `.type` (not a field on concrete subtypes)
-  - Lookup by ID: `df.history_event_collection.find(id)`
-  - Child collections: `col.collections` (NOT `.child_collections`); `#col.collections` works
-  - Event IDs: `col.events[i]` — stores **event IDs**, not array positions; `#col.events` works; key index by `col.events[j]`, match against `ev.id`
-  - `parent_collection` field on all subtypes — WAR→BATTLE→DUEL nesting confirmed
-  - `col.name` (WAR and BATTLE only) — `language_name` struct; `dfhack.translation.translateName(col.name, true)`
-  - civ/entity fields use `attacker_civ`/`defender_civ` naming (NOT `attacking_entity`/`defending_entity`) across all types
-  - Per-type key fields (probe-verified, 250yr save):
+### Critical Conventions (Read First)
+
+**DF vectors are 0-indexed.** All DF data vectors use 0-based indexing. `#vec` returns the
+element count. Always iterate `for i = 0, #vec - 1 do ... vec[i] ... end`, or use
+`ipairs(vec)` which DFHack adapts to 0-based. Never assume `vec[1]` is the first element.
+
+**Virtual methods, not `.type` fields.** DFHack typed structs use virtual dispatch. Always call
+`:getType()` to read the type discriminator. Direct `.type` field access does NOT exist on most
+concrete subtypes and will error or return nil. Applies to: events (`ev:getType()`), entity
+links (`link:getType()`), event collections (`col:getType()`).
+
+**DFHack's `__index` raises on absent fields.** Accessing a field that doesn't exist on a typed
+DF struct throws an error (not nil). Use `pcall` / `safe_get(obj, field)` when the field might
+not exist on a given event subtype or across DFHack versions.
+
+**Sentinel value `-1` means "none/unset".** HF IDs, entity IDs, `died_year`, `died_seconds`,
+`histfig2`, site IDs, etc. all use `-1` to mean absent/unset. Always check `>= 0` before using
+as a valid reference. Never treat `-1` as a valid lookup key.
+
+**String fields come in two formats.** DF stores names as either:
+- `stl-string`: plain Lua string (e.g. `pos.name` in `entity.positions.own`)
+- `string[]`: 0-indexed array (e.g. `pos.name[0]` in `entity.entity_raw.positions`,
+  `cr.name[0]` in creature_raw)
+Use `herald-util.name_str(field)` to normalise either format to a plain string or nil.
+
+**`language_name` structs must be translated.** Entity, HF, and site names are `language_name`
+structs, not plain strings. Always call `dfhack.translation.translateName(obj.name, true)` to
+get the English translation. The second arg `true` = "in English" (vs the DF language).
+
+### Global Data Paths
+
+- **Ticks:** `df.global.cur_year_tick`
+- **Player civ:** `df.global.plotinfo.civ_id`
+- **All entities:** `df.global.world.entities.all` (vector of `historical_entity`)
+- **All HFs:** `df.global.world.history.figures` (vector of `historical_figure`)
+- **All events:** `df.global.world.history.events` (vector; indexed by **position**, NOT by event ID)
+- **Event by ID:** `df.history_event.find(id)` (slow linear search; avoid in loops)
+- **Relationship events:** `df.global.world.history.relationship_events` (block store; see below)
+- **World sites:** `df.global.world.world_data.sites` (vector of `world_site`)
+- **Entity populations:** `df.global.world.entity_populations` (vector; non-HF racial groups)
+
+### Historical Figure (HF) Struct
+
+```
+hf = df.historical_figure.find(hf_id)
+hf.id             -- unique ID (int)
+hf.name           -- language_name struct (use translateName)
+hf.sex            -- 1 = male, 0 = female
+hf.race           -- creature race ID (int); lookup: df.creature_raw.find(hf.race).name[0]
+hf.died_year      -- -1 if alive, else year of death
+hf.died_seconds   -- -1 if alive, else timestamp of death
+hf.entity_links   -- vector of histfig_entity_link (see Entity Links below)
+```
+
+**Alive check:** `hf.died_year == -1 and hf.died_seconds == -1` (use `herald-util.is_alive(hf)`)
+
+### HF Entity Links
+
+Each link is a polymorphic struct. Field access rules:
+```
+link = hf.entity_links[i]
+link:getType()     -- returns histfig_entity_link_type enum (MEMBER, POSITION, etc.)
+link.entity_id     -- the entity this link refers to
+
+-- WRONG: link.type         -- field does NOT exist on concrete subtypes
+-- WRONG: link.link_type    -- not a field
+```
+
+Link type enum: `df.histfig_entity_link_type.MEMBER`, `.POSITION`, etc.
+
+### Historical Entity Struct
+
+```
+entity = df.historical_entity.find(entity_id)
+entity.id          -- unique ID (int)
+entity.name        -- language_name struct
+entity.type        -- df.historical_entity_type (Civilization, SiteGovernment, etc.)
+entity.race        -- creature race ID (int)
+entity.positions   -- T_positions sub-struct (see below)
+entity.entity_raw  -- entity_raw (template data; may be nil)
+```
+
+### Position System
+
+**Two sources for position names** (check both in order):
+
+1. `entity.positions.own` - `entity_position` objects with plain stl-string name fields:
+   `pos.name`, `pos.name_male`, `pos.name_female`. Preferred source.
+   **Empty for EVIL/PLAINS entity types.**
+
+2. `entity.entity_raw.positions` - `entity_position_raw` objects with `string[]` name fields:
+   `pos.name[0]`, `pos.name_male[0]`, `pos.name_female[0]`. Fallback for EVIL/PLAINS.
+
+Use `herald-util.get_pos_name(entity, pos_id, hf_sex)` which handles both sources.
+
+**Position assignments:**
+```
+asgn = entity.positions.assignments[i]
+asgn.id           -- assignment ID (stable across cycles; used as snapshot key)
+asgn.position_id  -- references pos.id in entity.positions.own / entity.entity_raw.positions
+asgn.histfig2     -- HF ID of the current holder (-1 if vacant)
+
+-- WRONG: asgn.histfig      -- not the holder field
+-- WRONG: asgn.hf_id        -- not a field
+-- WRONG: asgn.holder       -- not a field
+```
+
+### History Events
+
+Events are indexed by **array position** in `df.global.world.history.events`, NOT by their `.id`
+field. Event IDs are non-contiguous; always use `df.history_event.find(id)` for ID-based lookup
+outside of sequential scans.
+
+```
+ev = events[i]
+ev.id              -- unique event ID (int; NOT equal to array index)
+ev:getType()       -- returns df.history_event_type enum
+ev.year            -- year the event occurred
+ev.seconds         -- timestamp within the year
+
+-- WRONG: ev.type            -- not a field; use :getType()
+-- WRONG: events[event_id]   -- events are NOT indexed by ID
+```
+
+**Per-event-type fields** (field names vary by event subtype):
+- `HIST_FIGURE_DIED`: `ev.victim_hf`, `ev.slayer_hf`, `ev.death_cause`, `ev.site`
+- `HF_SIMPLE_BATTLE_EVENT`: `ev.group1` (vector), `ev.group2` (vector), `ev.subtype`
+- `COMPETITION`: `ev.competitor_hf` (vector), `ev.winner_hf` (vector)
+- `CHANGE_HF_STATE`: `ev.hfid`, `ev.state`, `ev.substate`, `ev.reason`, `ev.site`
+- `CHANGE_HF_JOB`: `ev.hfid`, `ev.old_job`, `ev.new_job`, `ev.site`
+- `ADD_HF_ENTITY_LINK`: `ev.histfig`, `ev.civ`, `ev.link_type`, `ev.position_id`
+- `HF_DOES_INTERACTION`: `ev.doer`, `ev.target`, `ev.interaction_action`
+- `HIST_FIGURE_ABDUCTED`: `ev.snatcher`, `ev.target`
+- `MASTERPIECE_CREATED_*`: `ev.maker`, `ev.maker_entity`, `ev.item_type`, `ev.item_subtype`
+- `ARTIFACT_CREATED`: `ev.creator_hfid`
+- `CREATED_SITE`/`CREATED_STRUCTURE`: `ev.builder_hf`
+
+For a full mapping see `TYPE_HF_FIELDS` in `herald-event-history.lua`. When the field name is
+uncertain, always use `safe_get(ev, field)` (pcall-guarded) rather than direct access.
+
+**DFHack version aliases:** Some event types have multiple names across versions:
+- `HF_SIMPLE_BATTLE_EVENT` / `HIST_FIGURE_SIMPLE_BATTLE_EVENT` - always check both
+
+### Relationship Events (Block Store)
+
+`df.global.world.history.relationship_events` is NOT a simple vector - it's a block store with
+a different access pattern:
+```
+rel_evs = df.global.world.history.relationship_events
+block = rel_evs[block_idx]
+block.next_element             -- number of valid entries in this block
+block.source_hf[k]            -- parallel array: source HF ID
+block.target_hf[k]            -- parallel array: target HF ID
+block.relationship[k]         -- parallel array: relationship type enum
+block.year[k]                 -- parallel array: year of relationship event
+```
+
+Iterate: outer loop over blocks `0..#rel_evs-1`, inner loop `0..block.next_element-1`.
+All field accesses should be pcall-guarded as the struct layout varies across DFHack versions.
+
+### Event Collections
+
+```
+all = df.global.world.history.event_collections.all   -- ALWAYS index .all, never the struct itself
+col = all[i]
+col:getType()                  -- df.history_event_collection_type enum
+col.events[j]                  -- stores EVENT IDs (not array positions); match against ev.id
+col.collections                -- child collection IDs (NOT .child_collections)
+col.parent_collection          -- parent collection ID; WAR->BATTLE->DUEL nesting
+col.name                       -- language_name (WAR and BATTLE only)
+
+-- WRONG: col.type             -- use :getType()
+-- WRONG: col.child_collections -- field is named .collections
+-- WRONG: event_collections[i] -- must go through .all
+```
+
+**Collection by ID:** `df.history_event_collection.find(id)`
+
+**Per-type key fields** (probe-verified, 250yr save):
 
 | Type | Key fields | Notes |
 |---|---|---|
@@ -309,26 +477,40 @@ console to inspect live game data rather than guessing or searching documentatio
 | OCCASION/COMPETITION/PERFORMANCE/PROCESSION/CEREMONY | `civ` scalar, no `site` | |
 | RAID/THEFT/INSURRECTION/PURGE | fields unverified (absent from test save) | use `safe_get` guards |
 
-- Entities: `df.global.world.entities.all`
-- Historical figure: `df.historical_figure.find(hf_id)`
-- HF entity links: `hf.entity_links[i]:getType()` / `.entity_id`; link type enum:
-  `df.histfig_entity_link_type.POSITION` — use `:getType()` (virtual method), NOT `.type`
-  (not a field on concrete subtypes like `histfig_entity_link_memberst`)
-- Entity resolution: `df.historical_entity.find(entity_id)`
-- Position assignments: `entity.positions.assignments[i]` — `.id`, `.histfig2` (HF holder),
-  `.position_id`
-- Position names — two sources, check both:
-  - `entity.entity_raw.positions` — `entity_position_raw`; name fields `string[]`:
-    `pos.name[0]`, `pos.name_male[0]`, `pos.name_female[0]`. **Empty for EVIL/PLAINS types.**
-  - `entity.positions.own` — `entity_position`; name fields plain `stl-string`: `pos.name`,
-    `pos.name_male`, `pos.name_female`. Fallback for EVIL/PLAINS.
-- HF sex: `hf.sex` — `1`=male, `0`=female; use for gendered position name selection
-- HF alive: `hf.died_year == -1 and hf.died_seconds == -1`
-- Name translation: `dfhack.translation.translateName(name_obj, true)`
-- Player civ: `df.global.plotinfo.civ_id`
-- Announcements: use `herald-util` wrappers (`announce_death`, `announce_appointment`, `announce_vacated`, `announce_info`) — do not call `dfhack.gui.showAnnouncement` directly
-- World sites: `df.global.world.world_data.sites[i]` — `.civ_id` (parent civ), `.cur_owner_id` (may be SiteGovernment)
-- Entity populations (non-HF): `df.global.world.entity_populations[i]` — `.civ_id`, `.races` (vector), `.counts` (vector parallel to races; no `count_min`)
+Civ/entity fields use `attacker_civ`/`defender_civ` naming (NOT `attacking_entity`/`defending_entity`)
+across all collection types.
+
+### World Sites
+
+```
+site = df.global.world.world_data.sites[i]
+site.civ_id        -- original owning civ (may be stale after conquest)
+site.cur_owner_id  -- current owner entity ID (may be a SiteGovernment, not a Civ)
+site.name          -- language_name struct
+```
+
+`cur_owner_id` may point to a SiteGovernment. To resolve to the parent Civilisation, find a
+position holder HF in the SiteGovernment and follow their MEMBER entity link to a Civilization
+entity. See `build_civ_choices()` in `herald-gui.lua` for the resolution pattern.
+
+### Entity Populations
+
+```
+ep = df.global.world.entity_populations[i]
+ep.civ_id          -- parent civilisation entity ID
+ep.races           -- vector of creature race IDs (parallel to ep.counts)
+ep.counts          -- vector of population counts (0-indexed; NO count_min field)
+```
+
+Sum `ep.counts[j]` across all entries matching a civ_id for total population.
+
+### Announcements
+
+Use `herald-util` wrappers - never call `dfhack.gui.showAnnouncement` directly:
+- `announce_death(msg)` - red, pauses game
+- `announce_appointment(msg)` - yellow, pauses game
+- `announce_vacated(msg)` - white, no pause
+- `announce_info(msg)` - cyan, no pause
 
 ## Rules
 

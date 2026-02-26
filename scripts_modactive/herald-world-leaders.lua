@@ -77,6 +77,11 @@ function check(dprint)
     local dbg_civs = 0
 
     -- Iterate only pinned civs; look up each entity directly instead of scanning all entities.
+    -- Key struct fields used below:
+    --   entity.positions.assignments[i] - vector of position assignment structs
+    --   asgn.histfig2    - HF ID of the current holder (-1 if vacant)
+    --   asgn.position_id - references pos.id in the position definition lists
+    --   asgn.id          - stable assignment ID (used as snapshot key across cycles)
     for entity_id, pin_settings in pairs(pinned_civ_ids) do
         local entity = df.historical_entity.find(entity_id)
         if not entity then

@@ -93,7 +93,10 @@ local widgets = require('gui.widgets')
 local util    = dfhack.reqscript('herald-util')
 
 -- Scan state; reset on each world load.
-local last_event_id = -1      -- ID of last processed event; -1 = uninitialised
+-- NOTE: last_event_id is actually an array INDEX into df.global.world.history.events,
+-- not an event ID. Events are indexed by position (0-based), not by their .id field.
+-- The name is historical. It tracks how far we've scanned so far.
+local last_event_id = -1      -- array index of last processed event; -1 = uninitialised
 local scan_timer_id = nil     -- handle returned by dfhack.timeout
 enabled = enabled or false    -- top-level var; DFHack enable/disable convention
 
@@ -314,6 +317,8 @@ local function scan_events()
     dprint('Loop triggered at tick %d; scanning from event id %d',
         df.global.cur_year_tick, last_event_id + 1)
 
+    -- events is a 0-indexed DF vector; #events gives count, events[i] is positional.
+    -- ev:getType() is a virtual method - NEVER use ev.type (doesn't exist on subtypes).
     local events = df.global.world.history.events
     local h = get_handlers()
     local scanned = 0
@@ -335,8 +340,8 @@ local function scan_events()
     scan_timer_id = dfhack.timeout(tick_interval, 'ticks', scan_events)
 end
 
--- Watermarks last_event_id to the current end of history so only future events
--- are processed, then loads pinned data and starts the scan timer.
+-- Watermarks last_event_id to the current end of the events array so only future
+-- events are processed, then loads pinned data and starts the scan timer.
 local function init_scan()
     if enabled then return end  -- guard against double-init
     last_event_id = #df.global.world.history.events - 1  -- skip all pre-existing history

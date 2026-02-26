@@ -54,6 +54,8 @@ end
 
 local function handle_event(event, dprint)
     dprint = dprint or function() end
+    -- HIST_FIGURE_DIED event: victim_hf is the HF ID of the deceased (not pcall-guarded
+    -- because this handler only receives events of the correct type from the dispatcher).
     local hf_id = event.victim_hf
     dprint('ind-death.event: HIST_FIGURE_DIED victim hf_id=%d', hf_id)
     if not pinned_hf_ids[hf_id] then

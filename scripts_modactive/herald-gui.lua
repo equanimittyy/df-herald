@@ -73,6 +73,8 @@ view = nil  -- module-level; prevents double-open
 -- HF / entity helpers ----------------------------------------------------------
 
 -- Returns the translated name of the first Civilisation the HF is a member of.
+-- Entity links use virtual dispatch: link:getType() not link.type.
+-- link.entity_id gives the referenced entity; resolve via df.historical_entity.find().
 local function get_civ_name(hf)
     for _, link in ipairs(hf.entity_links) do
         if link:getType() == df.histfig_entity_link_type.MEMBER then
@@ -99,6 +101,8 @@ local function get_site_gov(hf)
 end
 
 -- Returns { {pos_name, civ_name}, ... } for all POSITION entity links of an HF.
+-- asgn.histfig2 is the HF ID of the current position holder (-1 if vacant).
+-- asgn.position_id references pos.id in entity.positions.own / entity.entity_raw.positions.
 local function get_positions(hf)
     local results = {}
     for _, link in ipairs(hf.entity_links) do
@@ -243,8 +247,9 @@ local function build_civ_choices(show_pinned_only)
         end
     end
 
-    -- Population: global entity_populations list. Each entry has parallel vectors
-    -- races/counts; sum counts[i] across all entries for a civ to get total population.
+    -- Population: global entity_populations list. Each entry has parallel 0-indexed
+    -- DF vectors races/counts; sum counts[i] across all entries for a civ.
+    -- Note: no count_min field exists on this struct (verified via printall).
     local pop_counts = {}
     local ok_ep, ep_list = pcall(function() return df.global.world.entity_populations end)
     if ok_ep and ep_list then

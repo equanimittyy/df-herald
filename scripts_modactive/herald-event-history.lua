@@ -59,7 +59,10 @@ HF_FIELDS = {
     'maker', 'builder', 'figure', 'member', 'initiator_hf', 'mover_hf', 'moved_hf',
 }
 
--- DFHack's __index raises on absent fields for typed structs; use pcall.
+-- DFHack's __index raises an error (not nil) when accessing a field that doesn't
+-- exist on a typed DF struct. Event subtypes have different fields, so direct
+-- access like ev.victim_hf will crash on non-DIED events. Use safe_get for any
+-- field that may not exist on the event's concrete subtype.
 function safe_get(obj, field)
     local ok, val = pcall(function() return obj[field] end)
     return ok and val or nil
@@ -881,7 +884,10 @@ local function format_event(ev, focal_hf_id)
     return ('In the year %s, %s'):format(year, desc:sub(1,1):lower() .. desc:sub(2))
 end
 
--- Returns true if any element of a stl-vector field on ev equals hf_id.
+-- Returns true if any element of a DF vector field on ev equals hf_id.
+-- Triple-pcall pattern: (1) field may not exist on this event subtype,
+-- (2) #vec may fail if not a real vector, (3) vec[i] may fail on bad index.
+-- Used for battle events (group1/group2) and competition events (competitor_hf/winner_hf).
 local function vec_has(ev, field, hf_id)
     local ok, vec = pcall(function() return ev[field] end)
     if not ok or not vec then return false end
