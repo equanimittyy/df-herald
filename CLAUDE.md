@@ -196,8 +196,6 @@ install mechanism (not `onLoad.init`). It registers `OVERLAY_WIDGETS = { button 
   Left half of the PNG = normal state; right half = hover/highlighted state.
 - If the PNG fails to load, falls back to a plain `widgets.TextButton` labelled "Herald".
 
-## Key API Paths
-
 ## DFHack Console Debugging
 
 When the correct field name, struct layout, or viewscreen path is unknown, use the DFHack
@@ -215,7 +213,31 @@ console to inspect live game data rather than guessing or searching documentatio
 ## Key API Paths
 
 - Ticks: `df.global.cur_year_tick`
-- Events: `df.global.world.history.events`
+- Events: `df.global.world.history.events` — array indexed by position (NOT by event ID; use `df.history_event.find(id)` for ID lookup)
+- Event collections: `df.global.world.history.event_collections.all` — `T_event_collections` struct; always index `.all`, never the struct itself
+  - Type: `df.history_event_collection_type[col:getType()]` — NEVER `.type` (not a field on concrete subtypes)
+  - Lookup by ID: `df.history_event_collection.find(id)`
+  - Child collections: `col.collections` (NOT `.child_collections`); `#col.collections` works
+  - Event IDs: `col.events[i]` — stores **event IDs**, not array positions; `#col.events` works; key index by `col.events[j]`, match against `ev.id`
+  - `parent_collection` field on all subtypes — WAR→BATTLE→DUEL nesting confirmed
+  - `col.name` (WAR and BATTLE only) — `language_name` struct; `dfhack.translation.translateName(col.name, true)`
+  - civ/entity fields use `attacker_civ`/`defender_civ` naming (NOT `attacking_entity`/`defending_entity`) across all types
+  - Per-type key fields (probe-verified, 250yr save):
+
+| Type | Key fields | Notes |
+|---|---|---|
+| DUEL | `attacker_hf` scalar, `defender_hf` scalar, `site` scalar | |
+| BEAST_ATTACK | `attacker_hf` **vector** `[0]`, `site` scalar | |
+| ABDUCTION | `snatcher_hf` **vector**, `victim_hf` **vector**, `attacker_civ` scalar, `site` scalar | NOT `attacker_hf`/`target_hf` |
+| BATTLE | `name`, `attacker_civ` **vector** (may be empty), `defender_civ` **vector**, `site` scalar | |
+| SITE_CONQUERED | `attacker_civ` **vector**, `defender_civ` **vector**, `site` scalar | no `new_civ_id` |
+| WAR | `name`, `attacker_civ` **vector**, `defender_civ` **vector** | no `site` |
+| PERSECUTION | `entity` scalar (persecutor), `site` scalar | |
+| ENTITY_OVERTHROWN | `entity` scalar (overthrown), `site` scalar | |
+| JOURNEY | `traveler_hf` **vector**, no `site` | |
+| OCCASION/COMPETITION/PERFORMANCE/PROCESSION/CEREMONY | `civ` scalar, no `site` | |
+| RAID/THEFT/INSURRECTION/PURGE | fields unverified (absent from test save) | use `safe_get` guards |
+
 - Entities: `df.global.world.entities.all`
 - Historical figure: `df.historical_figure.find(hf_id)`
 - HF entity links: `hf.entity_links[i]:getType()` / `.entity_id`; link type enum:
