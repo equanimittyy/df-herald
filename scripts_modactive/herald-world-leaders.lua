@@ -57,31 +57,26 @@ local function fmt_appointment(hf_name, pos_name, civ_name)
 end
 
 -- Poll handler ----------------------------------------------------------------
--- Called every scan cycle. Walks all Civilisation entities, compares current
--- position assignments against the previous snapshot, and fires announcements
+-- Called every scan cycle. Walks pinned civs, compares current position
+-- assignments against the previous snapshot, and fires announcements
 -- when a pinned civ gains or loses a position holder.
 
 function check(dprint)
     dprint = dprint or function() end
 
-    dprint('world-leaders.check: scanning entity position assignments')
+    dprint('world-leaders.check: scanning pinned entity position assignments')
 
     local new_snapshot = {}
     local dbg_civs = 0
 
-    for _, entity in ipairs(df.global.world.entities.all) do
-        -- Only track civilisation-layer entities; guilds, religions, animal herds, etc.
-        -- are irrelevant to wars, raids, and succession tracking.
-        if entity.type ~= df.historical_entity_type.Civilization then goto continue_entity end
-        dbg_civs = dbg_civs + 1
-
-        local entity_id  = entity.id
-        local pin_settings = pinned_civ_ids[entity_id]
-        -- Skip unpinned civs - only pinned civs fire announcements.
-        if not pin_settings then
-            dprint('world-leaders: entity_id=%d is not tracked, skipping', entity_id)
+    -- Iterate only pinned civs; look up each entity directly instead of scanning all entities.
+    for entity_id, pin_settings in pairs(pinned_civ_ids) do
+        local entity = df.historical_entity.find(entity_id)
+        if not entity then
+            dprint('world-leaders: entity_id=%d not found, skipping', entity_id)
             goto continue_entity
         end
+        dbg_civs = dbg_civs + 1
 
         if #entity.positions.assignments == 0 then
             dprint('world-leaders: entity_id=%d has no assignments, skipping', entity_id)

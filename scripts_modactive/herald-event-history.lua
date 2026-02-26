@@ -981,17 +981,19 @@ local function get_hf_events(hf_id)
             local ok_ne, ne = pcall(function() return block.next_element end)
             if not ok_ne then break end
             for k = 0, ne - 1 do
-                local ok_s, src = pcall(function() return block.source_hf[k] end)
-                local ok_t, tgt = pcall(function() return block.target_hf[k] end)
-                if (ok_s and src == hf_id) or (ok_t and tgt == hf_id) then
-                    local ok_rt, rtype = pcall(function() return block.relationship[k] end)
-                    local ok_yr, yr    = pcall(function() return block.year[k] end)
+                -- One pcall covers all four parallel array reads for this element.
+                local ok, src, tgt, rtype, yr = pcall(function()
+                    return block.source_hf[k], block.target_hf[k],
+                           block.relationship[k], block.year[k]
+                end)
+                if not ok then break end
+                if src == hf_id or tgt == hf_id then
                     table.insert(results, {
                         _relationship = true,
-                        year          = ok_yr and yr or -1,
-                        source_hf     = ok_s and src or -1,
-                        target_hf     = ok_t and tgt or -1,
-                        rel_type      = ok_rt and rtype or -1,
+                        year      = yr    or -1,
+                        source_hf = src   or -1,
+                        target_hf = tgt   or -1,
+                        rel_type  = rtype or -1,
                     })
                 end
             end

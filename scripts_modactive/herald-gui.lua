@@ -180,12 +180,14 @@ local function build_hf_event_counts()
             local ok_ne, ne = pcall(function() return block.next_element end)
             if not ok_ne then break end
             for k = 0, ne - 1 do
-                local ok_s, src = pcall(function() return block.source_hf[k] end)
-                local ok_t, tgt = pcall(function() return block.target_hf[k] end)
-                if ok_s and type(src) == 'number' and src >= 0 then
+                local ok, src, tgt = pcall(function()
+                    return block.source_hf[k], block.target_hf[k]
+                end)
+                if not ok then break end
+                if type(src) == 'number' and src >= 0 then
                     counts[src] = (counts[src] or 0) + 1
                 end
-                if ok_t and type(tgt) == 'number' and tgt >= 0 then
+                if type(tgt) == 'number' and tgt >= 0 then
                     counts[tgt] = (counts[tgt] or 0) + 1
                 end
             end
@@ -279,8 +281,8 @@ local function build_civ_choices(show_pinned_only)
         for _, ep in ipairs(ep_list) do
             local cid = ep.civ_id
             if type(cid) == 'number' and cid >= 0 then
-                local ok_c, counts = pcall(function() return ep.counts end)
-                if ok_c and counts then
+                local counts = ep.counts
+                if counts then
                     for i = 0, #counts - 1 do
                         local cnt = counts[i]
                         if type(cnt) == 'number' and cnt > 0 then
@@ -1072,5 +1074,7 @@ function HeraldGuiScreen:onDismiss()
 end
 
 function open_gui()
+    -- Invalidate the event count cache so a fresh open reflects current world state.
+    hf_event_counts_cache = nil
     view = view and view:raise() or HeraldGuiScreen{}:show()
 end

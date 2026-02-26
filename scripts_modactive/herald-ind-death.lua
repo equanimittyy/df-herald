@@ -77,8 +77,8 @@ local function handle_poll(dprint)
     for hf_id in pairs(pinned_hf_ids) do
         if not announced_deaths[hf_id] then
             local hf = df.historical_figure.find(hf_id)
-            if hf and hf.died_year ~= -1 then
-                dprint('ind-death.poll: detected death of tracked hf_id=%d via died_year', hf_id)
+            if hf and not util.is_alive(hf) then
+                dprint('ind-death.poll: detected death of tracked hf_id=%d', hf_id)
                 announce_death(hf_id, dprint)
             end
         end

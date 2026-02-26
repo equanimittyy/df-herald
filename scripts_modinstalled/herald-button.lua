@@ -20,16 +20,18 @@ local PNG_COLS      = 8   -- total tile columns across the full PNG
 -- SCRIPT_PATH is not set for overlay modules; derive directory from source info.
 local _DIR = debug.getinfo(1, 'S').source:match('^@(.*[/\\])') or ''
 
-local normal_pens = nil  -- false = load attempted and failed
+local logo_state  = 'unloaded'  -- 'unloaded' | 'ok' | 'failed'
+local normal_pens = nil
 local hover_pens  = nil
 
 local function load_logo_pens()
-    if normal_pens ~= nil then return normal_pens, hover_pens end
+    if logo_state == 'ok'     then return normal_pens, hover_pens end
+    if logo_state == 'failed' then return nil end
     local path = _DIR .. 'herald-logo.png'
     local ok, handles = pcall(dfhack.textures.loadTileset, path, TILE_W, TILE_H, true)
     if not ok or not handles or #handles == 0 then
-        normal_pens = false
-        return normal_pens
+        logo_state = 'failed'
+        return nil
     end
     normal_pens, hover_pens = {}, {}
     for row = 0, LOGO_ROWS - 1 do
@@ -42,6 +44,7 @@ local function load_logo_pens()
                 dfhack.pen.parse{tile=dfhack.textures.getTexposByHandle(handles[hi]), ch=32}
         end
     end
+    logo_state = 'ok'
     return normal_pens, hover_pens
 end
 
