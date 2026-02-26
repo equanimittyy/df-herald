@@ -118,12 +118,16 @@ local function get_positions(hf)
 end
 
 -- Event count cache for the "Events" column in the Figures list.
--- Built once on first use; re-opening the GUI reuses the same cache.
+-- Validated by event list length: rebuilt only when new events have been added.
 -- { [hf_id] = number_of_visible_events }
 local hf_event_counts_cache = nil
+local hf_event_counts_ev_len = 0
 
 local function build_hf_event_counts()
-    if hf_event_counts_cache then return hf_event_counts_cache end
+    local cur_len = #df.global.world.history.events
+    if hf_event_counts_cache and cur_len == hf_event_counts_ev_len then
+        return hf_event_counts_cache
+    end
     local counts = {}
     local BATTLE_TYPES = {}
     for _, name in ipairs({'HF_SIMPLE_BATTLE_EVENT', 'HIST_FIGURE_SIMPLE_BATTLE_EVENT'}) do
@@ -193,7 +197,8 @@ local function build_hf_event_counts()
             end
         end
     end
-    hf_event_counts_cache = counts
+    hf_event_counts_ev_len = cur_len
+    hf_event_counts_cache  = counts
     return counts
 end
 
@@ -253,23 +258,67 @@ local function build_choices(show_dead, show_pinned_only)
 end
 
 -- Builds choice rows for the Civilisations tab FilteredList.
--- Builds choice rows for the Civilisations tab FilteredList.
--- Sites: counted from world_data.sites via site.civ_id (direct parent-civ reference).
+-- Sites: counted from world_data.sites via cur_owner_id (current holder).
+-- SiteGovernments are resolved to their parent Civilization in two phases.
 -- Population: summed from world.entity_populations (global non-HF racial group list).
 -- Column widths: Name=26, Race=13, Sites=6, Pop=6, Status=remaining.
 local function build_civ_choices(show_pinned_only)
-    -- Site count: single pass over world sites using site.civ_id.
+    -- Build civ_set: Civilization entity IDs for fast O(1) lookup.
+    local civ_set = {}
+    for _, entity in ipairs(df.global.world.entities.all) do
+        if entity.type == df.historical_entity_type.Civilization then
+            civ_set[entity.id] = true
+        end
+    end
+
+    -- Site count: use cur_owner_id (current holder). Direct Civ owners are counted
+    -- immediately; non-Civ owners (SiteGovernments) are resolved to their parent Civ
+    -- by finding a position-holder HF and following their MEMBER entity links.
+    -- site.civ_id is intentionally not used — it reflects original ownership, not current.
     local site_counts = {}
     local ok_wd, world_sites = pcall(function() return df.global.world.world_data.sites end)
     if ok_wd and world_sites then
+        -- Collect unique non-Civ owner IDs that need resolving.
+        local sg_to_civ = {}
+        local to_resolve = {}
         for _, site in ipairs(world_sites) do
-            local cid = site.civ_id
-            if not (type(cid) == 'number' and cid >= 0) then
-                cid = site.cur_owner_id
+            local owner = site.cur_owner_id
+            if type(owner) == 'number' and owner >= 0
+               and not civ_set[owner] and not to_resolve[owner] then
+                to_resolve[owner] = true
             end
-            if type(cid) == 'number' and cid >= 0 then
+        end
+        -- Resolve each non-Civ owner to its parent Civ via HF position holders.
+        for owner_id in pairs(to_resolve) do
+            local ok_ent, ent = pcall(df.historical_entity.find, owner_id)
+            if not ok_ent or not ent then goto ue_cont end
+            local ok_asgns, asgns = pcall(function() return ent.positions.assignments end)
+            if not ok_asgns or not asgns then goto ue_cont end
+            for _, asgn in ipairs(asgns) do
+                local hf_id = asgn.histfig2
+                if not (type(hf_id) == 'number' and hf_id >= 0) then goto asgn_cont end
+                local hf = df.historical_figure.find(hf_id)
+                if not hf then goto asgn_cont end
+                for _, link in ipairs(hf.entity_links) do
+                    if link:getType() == df.histfig_entity_link_type.MEMBER
+                       and civ_set[link.entity_id] then
+                        sg_to_civ[owner_id] = link.entity_id
+                        break
+                    end
+                end
+                if sg_to_civ[owner_id] then break end
+                ::asgn_cont::
+            end
+            ::ue_cont::
+        end
+        for _, site in ipairs(world_sites) do
+            local owner = site.cur_owner_id
+            if not (type(owner) == 'number' and owner >= 0) then goto sc_cont end
+            local cid = (civ_set[owner] and owner) or sg_to_civ[owner]
+            if cid then
                 site_counts[cid] = (site_counts[cid] or 0) + 1
             end
+            ::sc_cont::
         end
     end
 
@@ -343,8 +392,9 @@ FiguresPanel.ATTRS {
 }
 
 function FiguresPanel:init()
-    self.show_dead       = false
+    self.show_dead        = false
     self.show_pinned_only = false
+    self._loaded          = false  -- set true in switch_tab on first visit
 
     self:addviews{
         widgets.Label{
@@ -414,7 +464,7 @@ function FiguresPanel:init()
         },
     }
 
-    self:refresh_list()
+    -- refresh_list() is intentionally NOT called here; data loads on first tab visit.
 
     -- Patch onFilterChange so the detail panel refreshes when the user types
     -- in the search box (the default callback only updates the list, not the detail).
@@ -863,11 +913,14 @@ function PinnedPanel:unpin_selected()
     if self.view_type == 'individuals' then
         if not choice.hf_id then return end
         ind_death.set_pinned(choice.hf_id, nil)
-        self.parent_view.subviews.figures_panel:refresh_list()
+        -- Only refresh if the panel has already loaded its data.
+        local fp = self.parent_view.subviews.figures_panel
+        if fp and fp._loaded then fp:refresh_list() end
     else
         if not choice.entity_id then return end
         wld_leaders.set_pinned_civ(choice.entity_id, nil)
-        self.parent_view.subviews.civs_panel:refresh_list()
+        local cp = self.parent_view.subviews.civs_panel
+        if cp and cp._loaded then cp:refresh_list() end
     end
     self:refresh_pinned_list()
 end
@@ -881,6 +934,7 @@ CivisationsPanel.ATTRS {
 
 function CivisationsPanel:init()
     self.show_pinned_only = false
+    self._loaded          = false  -- set true in switch_tab on first visit
 
     self:addviews{
         widgets.Label{
@@ -921,7 +975,7 @@ function CivisationsPanel:init()
         },
     }
 
-    self:refresh_list()
+    -- refresh_list() is intentionally NOT called here; data loads on first tab visit.
 end
 
 function CivisationsPanel:onInput(keys)
@@ -971,19 +1025,9 @@ HeraldWindow.ATTRS {
 function HeraldWindow:init()
     self.cur_tab = 1
 
-    local pinned_panel = PinnedPanel{
-        view_id = 'pinned_panel',
-        visible = true,
-    }
-    local figures_panel = FiguresPanel{
-        view_id = 'figures_panel',
-        visible = false,
-    }
-    local civs_panel = CivisationsPanel{
-        view_id = 'civs_panel',
-        visible = false,
-    }
-
+    -- All three panels are created upfront so layout works correctly.
+    -- FiguresPanel and CivisationsPanel skip refresh_list() in init() and load
+    -- their data lazily on first tab visit (see switch_tab / _loaded flag).
     self:addviews{
         widgets.TabBar{
             frame  = { t = 0, l = 0 },
@@ -992,9 +1036,9 @@ function HeraldWindow:init()
             get_cur_page = function() return self.cur_tab end,
             on_select    = function(idx) self:switch_tab(idx) end,
         },
-        pinned_panel,
-        figures_panel,
-        civs_panel,
+        PinnedPanel{    view_id = 'pinned_panel',  visible = true  },
+        FiguresPanel{   view_id = 'figures_panel', visible = false },
+        CivisationsPanel{ view_id = 'civs_panel',  visible = false },
         widgets.HotkeyLabel{
             frame       = { b = 0, l = 1 },
             key         = 'CUSTOM_CTRL_J',
@@ -1023,6 +1067,17 @@ function HeraldWindow:switch_tab(idx)
     self.subviews.pinned_panel.visible  = (idx == 1)
     self.subviews.figures_panel.visible = (idx == 2)
     self.subviews.civs_panel.visible    = (idx == 3)
+
+    -- Load data on first visit — deferred from init() to avoid the expensive
+    -- build_hf_event_counts() / build_civ_choices() scans at GUI open time.
+    if idx == 2 and not self.subviews.figures_panel._loaded then
+        self.subviews.figures_panel._loaded = true
+        self.subviews.figures_panel:refresh_list()
+    end
+    if idx == 3 and not self.subviews.civs_panel._loaded then
+        self.subviews.civs_panel._loaded = true
+        self.subviews.civs_panel:refresh_list()
+    end
 end
 
 function HeraldWindow:onInput(keys)
@@ -1074,7 +1129,5 @@ function HeraldGuiScreen:onDismiss()
 end
 
 function open_gui()
-    -- Invalidate the event count cache so a fresh open reflects current world state.
-    hf_event_counts_cache = nil
     view = view and view:raise() or HeraldGuiScreen{}:show()
 end
