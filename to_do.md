@@ -2,19 +2,11 @@
 
 ## Fixes
 
-- ~~Settings button should show on map menu of fort-mode~~
-- ~~Check if civilisation number of sites and population is correct (site number is confirmed wrong, and pop number tracks Historical Figures but I want to try track the ACTUAL population including non-essential entities)~~
-- ~~Trying to open the event window for a hf whilst having the event window of another hf open doesn't change the window to the new individual and displays the other hf's events until the window is closed~~
+-
 
 ## Changes
 
-- ~~Refactor main code to make herald-util.lua~~
-- ~~Add neat human readable comments to code so it's easier to follow~~
-
-- ~~Announcements should be restructured(in order, top to bottom):~~
-  - ~~Individuals: Relationships, Death, Combat, Legendary, Positions, Migration~~
-  - ~~Civilisations: Positions, Diplomacy, Warfare, Raids, Theft, Kidnappings~~
-    ~~The default for all announcements is ON instead of OFF~~
+- Optimisation: caching the loaded data in the user's save file and then applying delta processing when scanning for new events
 - Change event window for:
   - CREATED_BUILDING: specify building name
   - ARTIFACT_CREATED: specify artifact name
@@ -35,7 +27,6 @@
 
     Overall, the idea is to make as many references to other characters/proper names as possible to give the player a sense of a connected world instead of "made an artifact" or "fought x/y"
 
-- ~~Make herald-button have a toggle "hide/show button" in the DFHack launcher~~
 - MAJOR: Add an event window for civilisations (you can re-use the existing one)
   - Need to track: Positions, Diplomacy, Warfare (so wars that have started and battles), Raids, Theft, Kidnappings
     NOTE: There is a similar context type "WAR" that contains a number of related battles within it
