@@ -537,21 +537,21 @@ end
 -- PinnedPanel ------------------------------------------------------------------
 
 local INDIVIDUALS_ANN = {
-    { key = 'death',     label = 'Death',     impl = true  },
-    { key = 'marriage',  label = 'Marriage',  impl = false },
-    { key = 'children',  label = 'Children',  impl = false },
-    { key = 'migration', label = 'Migration', impl = false },
-    { key = 'legendary', label = 'Legendary', impl = false },
-    { key = 'combat',    label = 'Combat',    impl = false },
+    { key = 'relationships', label = 'Relationships', caption = 'HF bonds',  impl = false },
+    { key = 'death',         label = 'Death',         caption = 'Pinned HF dies',       impl = true  },
+    { key = 'combat',        label = 'Combat',        caption = 'Battles, duels etc.',      impl = false },
+    { key = 'legendary',     label = 'Legendary',     caption = 'Attained Legendary',     impl = false },
+    { key = 'positions',     label = 'Positions',     caption = 'Title gained/lost',    impl = false },
+    { key = 'migration',     label = 'Migration',     caption = 'Moves settlement',     impl = false },
 }
 
 local CIVILISATIONS_ANN = {
-    { key = 'positions',   label = 'Positions',   impl = true  },
-    { key = 'diplomacy',   label = 'Diplomacy',   impl = false },
-    { key = 'raids',       label = 'Raids',       impl = false },
-    { key = 'theft',       label = 'Theft',       impl = false },
-    { key = 'kidnappings', label = 'Kidnappings', impl = false },
-    { key = 'armies',      label = 'Armies',      impl = false },
+    { key = 'positions',   label = 'Positions',   caption = 'Leader changes',   impl = true  },
+    { key = 'diplomacy',   label = 'Diplomacy',   caption = 'Alliances & pacts', impl = false },
+    { key = 'warfare',     label = 'Warfare',     caption = 'Wars & armies',   impl = false },
+    { key = 'raids',       label = 'Raids',       caption = 'Raids on sites',   impl = false },
+    { key = 'theft',       label = 'Theft',       caption = 'Artifacts stolen', impl = false },
+    { key = 'kidnappings', label = 'Kidnappings', caption = 'Abductions',      impl = false },
 }
 
 local PinnedPanel = defclass(PinnedPanel, widgets.Panel)
@@ -570,13 +570,14 @@ function PinnedPanel:init()
     local function make_toggle_views(entries, category)
         local views = {}
         for i, entry in ipairs(entries) do
-            local e = entry  -- capture each loop variable by value
+            local e   = entry  -- capture each loop variable by value
+            local row = (i - 1) * 3 + 1  -- 3 rows per entry: toggle + caption + blank
             local display_label = e.impl and e.label or (e.label .. ' *')
             table.insert(views, widgets.ToggleHotkeyLabel{
                 view_id        = 'toggle_' .. e.key,
-                frame          = { t = i, h = 1, l = 0, r = 0 },
+                frame          = { t = row, h = 1, l = 0, r = 0 },
                 label          = display_label,
-                initial_option = 2,  -- starts OFF; set correctly when a pin is selected
+                initial_option = 1,  -- starts ON; overridden when a pin is selected
                 on_change      = e.impl and function(new_val)
                     if not self.selected_id then return end
                     if self.view_type == 'individuals' then
@@ -585,6 +586,10 @@ function PinnedPanel:init()
                         wld_leaders.set_civ_pin_setting(self.selected_id, e.key, new_val)
                     end
                 end or function() end,
+            })
+            table.insert(views, widgets.Label{
+                frame = { t = row + 1, h = 1, l = 2, r = 0 },
+                text  = { { text = e.caption, pen = COLOR_GREY } },
             })
         end
         return views

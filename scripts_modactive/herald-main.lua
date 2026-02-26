@@ -94,10 +94,10 @@ DEBUG = DEBUG or false
 -- Global announcement feature flags (distinct from per-pin settings).
 -- These control whether an event category is tracked at all.
 local DEFAULT_ANNOUNCEMENTS = {
-    individuals   = { death = true,  marriage = false, children = false,
-                      migration = false, legendary = false, combat = false },
-    civilisations = { positions = true, diplomacy = false, raids = false,
-                      theft = false, kidnappings = false, armies = false },
+    individuals   = { relationships = true, death = true, combat = true,
+                      legendary = true, positions = true, migration = true },
+    civilisations = { positions = true, diplomacy = true, warfare = true,
+                      raids = true, theft = true, kidnappings = true },
 }
 
 -- Merges saved announcement config over defaults; fills any missing keys.

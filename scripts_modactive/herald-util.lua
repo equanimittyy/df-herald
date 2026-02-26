@@ -101,28 +101,28 @@ end
 -- reqscript-ing herald-main, which would create a circular dependency.
 
 -- Ordered key lists; used when merging a saved settings table over defaults.
-INDIVIDUAL_SETTINGS_KEYS    = { 'death', 'marriage', 'children', 'migration', 'legendary', 'combat' }
-CIVILISATION_SETTINGS_KEYS  = { 'positions', 'diplomacy', 'raids', 'theft', 'kidnappings', 'armies' }
+INDIVIDUAL_SETTINGS_KEYS    = { 'relationships', 'death', 'combat', 'legendary', 'positions', 'migration' }
+CIVILISATION_SETTINGS_KEYS  = { 'positions', 'diplomacy', 'warfare', 'raids', 'theft', 'kidnappings' }
 
 function default_pin_settings()
     return {
-        death     = true,
-        marriage  = false,
-        children  = false,
-        migration = false,
-        legendary = false,
-        combat    = false,
+        relationships = true,
+        death         = true,
+        combat        = true,
+        legendary     = true,
+        positions     = true,
+        migration     = true,
     }
 end
 
 function default_civ_pin_settings()
     return {
         positions   = true,
-        diplomacy   = false,
-        raids       = false,
-        theft       = false,
-        kidnappings = false,
-        armies      = false,
+        diplomacy   = true,
+        warfare     = true,
+        raids       = true,
+        theft       = true,
+        kidnappings = true,
     }
 end
 
