@@ -23,6 +23,7 @@ Usage
    herald-main interval
    herald-main gui
    herald-main button
+   herald-main cache-rebuild
 
 Commands
 --------
@@ -51,6 +52,10 @@ Commands
 "herald-main button"
    Toggle the Herald overlay button on or off. Persisted by DFHack's overlay
    system so the preference survives restarts.
+
+"herald-main cache-rebuild"
+   Invalidate the event cache and instruct the user to reopen the Herald GUI
+   to trigger a full rebuild. Use if the cache appears stale or corrupted.
 
 "herald-main test"
    Fire one sample announcement of each style (death, appointment, vacated,
@@ -341,6 +346,9 @@ local function init_scan()
     dprint('init_scan: pinned HF list loaded')
     dfhack.reqscript('herald-world-leaders').load_pinned_civs()
     dprint('init_scan: pinned civ list loaded')
+    dfhack.reqscript('herald-cache').load_cache()
+    dprint('init_scan: event cache loaded (ready=%s)',
+        tostring(dfhack.reqscript('herald-cache').cache_ready))
     scan_timer_id = dfhack.timeout(tick_interval, 'ticks', scan_events)
 end
 
@@ -359,6 +367,8 @@ local function cleanup()
         end
         world_handlers = nil
     end
+    dfhack.reqscript('herald-cache').reset()
+    dprint('cleanup: event cache reset')
 end
 
 -- Lifecycle hooks -------------------------------------------------------------
@@ -407,6 +417,13 @@ elseif args[1] == 'test' then
         util.announce_vacated('[Herald] TEST - Vacated announcement (white, no pause)')
         util.announce_info('[Herald] TEST - Info announcement (cyan, no pause)')
         print('[Herald] Test announcements fired.')
+    end
+elseif args[1] == 'cache-rebuild' then
+    if not dfhack.isMapLoaded() then
+        dfhack.printerr('[Herald] A fort must be loaded to rebuild the cache.')
+    else
+        dfhack.reqscript('herald-cache').invalidate_cache()
+        print('[Herald] Cache cleared. Reopen the Herald GUI to rebuild.')
     end
 elseif args[1] == 'button' then
     -- Read current enabled state from DFHack's overlay config, then toggle.

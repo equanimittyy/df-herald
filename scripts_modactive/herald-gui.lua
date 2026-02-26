@@ -66,6 +66,7 @@ local util        = dfhack.reqscript('herald-util')
 local ind_death   = dfhack.reqscript('herald-ind-death')
 local wld_leaders = dfhack.reqscript('herald-world-leaders')
 local ev_hist     = dfhack.reqscript('herald-event-history')
+local cache       = dfhack.reqscript('herald-cache')
 
 view = nil  -- module-level; prevents double-open
 
@@ -117,89 +118,9 @@ local function get_positions(hf)
     return results
 end
 
--- Event count cache for the "Events" column in the Figures list.
--- Validated by event list length: rebuilt only when new events have been added.
--- { [hf_id] = number_of_visible_events }
-local hf_event_counts_cache = nil
-local hf_event_counts_ev_len = 0
-
+-- Event counts for the "Events" column. Delegates to herald-cache.
 local function build_hf_event_counts()
-    local cur_len = #df.global.world.history.events
-    if hf_event_counts_cache and cur_len == hf_event_counts_ev_len then
-        return hf_event_counts_cache
-    end
-    local counts = {}
-    local BATTLE_TYPES = {}
-    for _, name in ipairs({'HF_SIMPLE_BATTLE_EVENT', 'HIST_FIGURE_SIMPLE_BATTLE_EVENT'}) do
-        local v = df.history_event_type[name]
-        if v ~= nil then BATTLE_TYPES[v] = true end
-    end
-    local COMP_TYPE = df.history_event_type['COMPETITION']
-
-    local function count_vec(ev, field, seen)
-        local ok, vec = pcall(function() return ev[field] end)
-        if not ok or not vec then return end
-        local ok2, n = pcall(function() return #vec end)
-        if not ok2 then return end
-        for i = 0, n - 1 do
-            local ok3, v = pcall(function() return vec[i] end)
-            if ok3 and type(v) == 'number' and v >= 0 and not seen[v] then
-                seen[v] = true
-                counts[v] = (counts[v] or 0) + 1
-            end
-        end
-    end
-
-    for _, ev in ipairs(df.global.world.history.events) do
-        if not ev_hist.event_will_be_shown(ev) then goto skip_ev end
-        local seen = {}
-        for _, field in ipairs(ev_hist.HF_FIELDS) do
-            local val = ev_hist.safe_get(ev, field)
-            if type(val) == 'number' and val >= 0 and not seen[val] then
-                seen[val] = true
-                counts[val] = (counts[val] or 0) + 1
-            end
-        end
-        -- HF_SIMPLE_BATTLE_EVENT: participants in group1/group2 vectors.
-        if BATTLE_TYPES[ev:getType()] then
-            count_vec(ev, 'group1', seen)
-            count_vec(ev, 'group2', seen)
-        end
-        -- COMPETITION: competitor_hf and winner_hf vectors.
-        if COMP_TYPE and ev:getType() == COMP_TYPE then
-            count_vec(ev, 'competitor_hf', seen)
-            count_vec(ev, 'winner_hf', seen)
-        end
-        ::skip_ev::
-    end
-    -- Also count vague relationship events; these live in a separate block store,
-    -- not in world.history.events (hence why they appear in legends_plus.xml only).
-    local ok_re, rel_evs = pcall(function()
-        return df.global.world.history.relationship_events
-    end)
-    if ok_re and rel_evs then
-        for i = 0, #rel_evs - 1 do
-            local ok_b, block = pcall(function() return rel_evs[i] end)
-            if not ok_b then break end
-            local ok_ne, ne = pcall(function() return block.next_element end)
-            if not ok_ne then break end
-            for k = 0, ne - 1 do
-                local ok, src, tgt = pcall(function()
-                    return block.source_hf[k], block.target_hf[k]
-                end)
-                if not ok then break end
-                if type(src) == 'number' and src >= 0 then
-                    counts[src] = (counts[src] or 0) + 1
-                end
-                if type(tgt) == 'number' and tgt >= 0 then
-                    counts[tgt] = (counts[tgt] or 0) + 1
-                end
-            end
-        end
-    end
-    hf_event_counts_ev_len = cur_len
-    hf_event_counts_cache  = counts
-    return counts
+    return cache.get_all_hf_event_counts()
 end
 
 -- List builders ---------------------------------------------------------------
@@ -573,7 +494,7 @@ function FiguresPanel:toggle_pinned(choice)
     local filter_text = fl.edit.text
     self:refresh_list()
     fl:setFilter(filter_text)
-    self.parent_view.subviews.pinned_panel:refresh_pinned_list()
+    self.parent_view:on_pin_changed(now_pinned and 'individual_pinned' or 'individual_unpinned')
 end
 
 function FiguresPanel:toggle_dead()
@@ -913,16 +834,14 @@ function PinnedPanel:unpin_selected()
     if self.view_type == 'individuals' then
         if not choice.hf_id then return end
         ind_death.set_pinned(choice.hf_id, nil)
-        -- Only refresh if the panel has already loaded its data.
-        local fp = self.parent_view.subviews.figures_panel
-        if fp and fp._loaded then fp:refresh_list() end
     else
         if not choice.entity_id then return end
         wld_leaders.set_pinned_civ(choice.entity_id, nil)
-        local cp = self.parent_view.subviews.civs_panel
-        if cp and cp._loaded then cp:refresh_list() end
     end
     self:refresh_pinned_list()
+    local change_type = self.view_type == 'individuals'
+        and 'individual_unpinned' or 'civ_unpinned'
+    self.parent_view:on_pin_changed(change_type)
 end
 
 -- CivisationsPanel -------------------------------------------------------------
@@ -997,15 +916,16 @@ function CivisationsPanel:toggle_pinned(choice)
     local entity_id = choice.entity_id
     local pinned    = wld_leaders.get_pinned_civs()
     local is_pinned = pinned[entity_id]
-    wld_leaders.set_pinned_civ(entity_id, not is_pinned)
+    local now_pinned = not is_pinned
+    wld_leaders.set_pinned_civ(entity_id, now_pinned)
     local name = choice.display_name or '?'
     print(('[Herald] %s (id %d) is %s pinned.'):format(
-        name, entity_id, not is_pinned and 'now' or 'no longer'))
+        name, entity_id, now_pinned and 'now' or 'no longer'))
     local fl = self.subviews.civ_list
     local filter_text = fl.edit.text
     self:refresh_list()
     fl:setFilter(filter_text)
-    self.parent_view.subviews.pinned_panel:refresh_pinned_list()
+    self.parent_view:on_pin_changed(now_pinned and 'civ_pinned' or 'civ_unpinned')
 end
 
 function CivisationsPanel:toggle_pinned_only()
@@ -1053,6 +973,13 @@ function HeraldWindow:init()
             auto_width = true,
         },
         widgets.HotkeyLabel{
+            frame       = { b = 0, l = 42 },
+            key         = 'CUSTOM_CTRL_C',
+            label       = 'Refresh',
+            auto_width  = true,
+            on_activate = function() self:refresh_cache() end,
+        },
+        widgets.HotkeyLabel{
             frame       = { b = 0, r = 1 },
             key         = 'LEAVESCREEN',
             label       = 'Close',
@@ -1080,6 +1007,37 @@ function HeraldWindow:switch_tab(idx)
     end
 end
 
+-- Ctrl-R: delta-process new events and refresh the active panel.
+function HeraldWindow:refresh_cache()
+    local n = cache.build_delta()
+    print(('[Herald] Cache refreshed - %d new event(s) processed'):format(n))
+    -- Refresh whichever panel is active.
+    if self.cur_tab == 1 then
+        self.subviews.pinned_panel:refresh_pinned_list()
+    elseif self.cur_tab == 2 and self.subviews.figures_panel._loaded then
+        self.subviews.figures_panel:refresh_list()
+    elseif self.cur_tab == 3 and self.subviews.civs_panel._loaded then
+        self.subviews.civs_panel:refresh_list()
+    end
+end
+
+-- Centralised cross-panel refresh after a pin change.
+-- change_type: 'individual_pinned', 'individual_unpinned',
+--              'civ_pinned', 'civ_unpinned'
+function HeraldWindow:on_pin_changed(change_type)
+    if change_type == 'individual_pinned' or change_type == 'individual_unpinned' then
+        self.subviews.pinned_panel:refresh_pinned_list()
+        if self.subviews.figures_panel._loaded then
+            self.subviews.figures_panel:refresh_list()
+        end
+    elseif change_type == 'civ_pinned' or change_type == 'civ_unpinned' then
+        self.subviews.pinned_panel:refresh_pinned_list()
+        if self.subviews.civs_panel._loaded then
+            self.subviews.civs_panel:refresh_list()
+        end
+    end
+end
+
 function HeraldWindow:onInput(keys)
     -- Debounce Ctrl-T: DFHack queues all pending key events and flushes them
     -- synchronously in one tick. Rapid Ctrl-T spam fires switch_tab dozens of
@@ -1091,6 +1049,11 @@ function HeraldWindow:onInput(keys)
             return true
         end
         self._last_tab_t = now
+    end
+    -- Ctrl-R: refresh cache (handled at window level, applies to all tabs).
+    if keys.CUSTOM_CTRL_C then
+        self:refresh_cache()
+        return true
     end
     -- Route Ctrl-E to pinned panel (individuals) when on tab 1
     if self.cur_tab == 1 then
@@ -1128,6 +1091,67 @@ function HeraldGuiScreen:onDismiss()
     view = nil
 end
 
+-- First-time cache build warning dialog.
+local CacheBuildWindow = defclass(CacheBuildWindow, widgets.Window)
+CacheBuildWindow.ATTRS {
+    frame_title = 'Herald: First-Time Setup',
+    frame       = { w = 52, h = 12 },
+    resizable   = false,
+}
+
+function CacheBuildWindow:init()
+    self:addviews{
+        widgets.Label{
+            frame = { t = 0, l = 1, r = 1 },
+            text  = {
+                'Herald needs to scan world history to build\n',
+                'an event cache. This only happens once per\n',
+                'save and may briefly freeze the game.\n',
+                '\n',
+                { text = 'Proceed?', pen = COLOR_YELLOW },
+            },
+        },
+        widgets.HotkeyLabel{
+            frame       = { b = 0, l = 1 },
+            key         = 'SELECT',
+            label       = 'Build Now',
+            auto_width  = true,
+            on_activate = function()
+                self.parent_view:dismiss()
+                local n = cache.build_full()
+                print(('[Herald] Cache built - %d event(s) processed'):format(n))
+                view = HeraldGuiScreen{}:show()
+            end,
+        },
+        widgets.HotkeyLabel{
+            frame       = { b = 0, r = 1 },
+            key         = 'LEAVESCREEN',
+            label       = 'Cancel',
+            auto_width  = true,
+            on_activate = function() self.parent_view:dismiss() end,
+        },
+    }
+end
+
+local CacheBuildWarning = defclass(CacheBuildWarning, gui.ZScreen)
+CacheBuildWarning.ATTRS {
+    focus_path = 'herald/cache-warning',
+}
+
+function CacheBuildWarning:init()
+    self:addviews{ CacheBuildWindow{} }
+end
+
 function open_gui()
-    view = view and view:raise() or HeraldGuiScreen{}:show()
+    if view then
+        view:raise()
+        return
+    end
+    if cache.needs_build() then
+        CacheBuildWarning{}:show()
+        return
+    end
+    -- Cache is ready; delta-process new events then open.
+    cache.build_delta()
+    view = HeraldGuiScreen{}:show()
 end

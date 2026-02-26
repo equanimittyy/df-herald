@@ -907,11 +907,11 @@ local _WAR_BATTLE_TYPE = df.history_event_type['WAR_FIELD_BATTLE']
 -- Reduces safe_get calls per event from ~28 to 1-4 for known types.
 -- Types with vector HF fields (BATTLE_TYPES, COMPETITION) are handled separately.
 -- Unknown types fall back to full HF_FIELDS scan.
-local _TYPE_HF_FIELDS = {}
+TYPE_HF_FIELDS = {}
 do
     local function map(name, fields)
         local v = df.history_event_type[name]
-        if v ~= nil then _TYPE_HF_FIELDS[v] = fields end
+        if v ~= nil then TYPE_HF_FIELDS[v] = fields end
     end
     map('HIST_FIGURE_DIED',    {'victim_hf', 'slayer_hf'})
     map('CHANGE_HF_STATE',     {'hfid'})
@@ -947,67 +947,84 @@ end
 -- TODO: battle participation events are not yet showing in HF event history.
 -- The two approaches below (BATTLE_TYPES vector check and contextual WAR_FIELD_BATTLE
 -- aggregation) are implemented but not confirmed working; needs in-game verification.
-local function get_hf_events(hf_id)
-    local results      = {}
-    local battle_index = {}  -- { ['site:year'] = { ev, ... } }
-    local added_ids    = {}  -- event.id -> true; prevents duplicates
 
-    -- Single pass: collect direct HF events and build WAR_FIELD_BATTLE index.
-    for _, ev in ipairs(df.global.world.history.events) do
-        local ev_type = ev:getType()
+-- Fast path: look up cached event IDs and resolve to event objects.
+-- Falls back to full scan if cache not ready.
+local function get_hf_events_cached(hf_id)
+    local cache = dfhack.reqscript('herald-cache')
+    local id_list = cache.get_hf_event_ids(hf_id)
+    if not id_list then return nil end  -- cache miss -> full scan
 
-        -- Battle index for contextual aggregation (step 2).
-        if _WAR_BATTLE_TYPE and ev_type == _WAR_BATTLE_TYPE then
-            local site = safe_get(ev, 'site')
-            local year = safe_get(ev, 'year')
-            if site and site >= 0 and year and year >= 0 then
-                local key = site .. ':' .. year
-                if not battle_index[key] then battle_index[key] = {} end
-                table.insert(battle_index[key], ev)
-            end
+    local results   = {}
+    local added_ids = {}
+    for _, ev_id in ipairs(id_list) do
+        local ev = df.history_event.find(ev_id)
+        if ev then
+            added_ids[ev_id] = true
+            table.insert(results, ev)
         end
+    end
+    return results, added_ids
+end
 
-        -- HF matching: vector check for battle/competition, scalar dispatch for others.
-        if _BATTLE_TYPES[ev_type] then
-            -- HF_SIMPLE_BATTLE_EVENT: participants in group1/group2 vectors.
-            if vec_has(ev, 'group1', hf_id) or vec_has(ev, 'group2', hf_id) then
-                added_ids[ev.id] = true
-                table.insert(results, ev)
+local function get_hf_events(hf_id)
+    -- Try cached path first.
+    local results, added_ids = get_hf_events_cached(hf_id)
+    if not results then
+        -- Full scan fallback.
+        results    = {}
+        added_ids  = {}
+        local battle_index = {}
+
+        for _, ev in ipairs(df.global.world.history.events) do
+            local ev_type = ev:getType()
+
+            if _WAR_BATTLE_TYPE and ev_type == _WAR_BATTLE_TYPE then
+                local site = safe_get(ev, 'site')
+                local year = safe_get(ev, 'year')
+                if site and site >= 0 and year and year >= 0 then
+                    local key = site .. ':' .. year
+                    if not battle_index[key] then battle_index[key] = {} end
+                    table.insert(battle_index[key], ev)
+                end
             end
-        elseif _COMP_TYPE and ev_type == _COMP_TYPE then
-            -- COMPETITION: competitor_hf and winner_hf are vectors.
-            if vec_has(ev, 'competitor_hf', hf_id) or vec_has(ev, 'winner_hf', hf_id) then
-                added_ids[ev.id] = true
-                table.insert(results, ev)
-            end
-        else
-            -- Scalar check: use type-specific fields if known, full HF_FIELDS otherwise.
-            local fields = _TYPE_HF_FIELDS[ev_type] or HF_FIELDS
-            for _, field in ipairs(fields) do
-                if safe_get(ev, field) == hf_id then
+
+            if _BATTLE_TYPES[ev_type] then
+                if vec_has(ev, 'group1', hf_id) or vec_has(ev, 'group2', hf_id) then
                     added_ids[ev.id] = true
                     table.insert(results, ev)
-                    break
+                end
+            elseif _COMP_TYPE and ev_type == _COMP_TYPE then
+                if vec_has(ev, 'competitor_hf', hf_id) or vec_has(ev, 'winner_hf', hf_id) then
+                    added_ids[ev.id] = true
+                    table.insert(results, ev)
+                end
+            else
+                local fields = TYPE_HF_FIELDS[ev_type] or HF_FIELDS
+                for _, field in ipairs(fields) do
+                    if safe_get(ev, field) == hf_id then
+                        added_ids[ev.id] = true
+                        table.insert(results, ev)
+                        break
+                    end
                 end
             end
         end
-    end
 
-    -- Step 2: contextual WAR_FIELD_BATTLE aggregation.
-    -- If a direct HF event (death, abduction, etc.) shares site+year with a battle,
-    -- include the battle. Only iterates direct results to avoid chaining.
-    local direct_count = #results
-    for i = 1, direct_count do
-        local ev   = results[i]
-        local site = safe_get(ev, 'site')
-        local year = safe_get(ev, 'year')
-        if site and site >= 0 and year and year >= 0 then
-            local battles = battle_index[site .. ':' .. year]
-            if battles then
-                for _, bev in ipairs(battles) do
-                    if not added_ids[bev.id] then
-                        added_ids[bev.id] = true
-                        table.insert(results, bev)
+        -- Contextual WAR_FIELD_BATTLE aggregation.
+        local direct_count = #results
+        for i = 1, direct_count do
+            local ev   = results[i]
+            local site = safe_get(ev, 'site')
+            local year = safe_get(ev, 'year')
+            if site and site >= 0 and year and year >= 0 then
+                local battles = battle_index[site .. ':' .. year]
+                if battles then
+                    for _, bev in ipairs(battles) do
+                        if not added_ids[bev.id] then
+                            added_ids[bev.id] = true
+                            table.insert(results, bev)
+                        end
                     end
                 end
             end
@@ -1106,51 +1123,52 @@ function EventHistoryWindow:init()
         table.insert(event_choices, { text = 'No events found.' })
     end
 
-    -- Always dump events to the DFHack console when the popup opens (not gated by DEBUG).
-    -- Useful for mapping new event types; PROBE_FIELDS lists all known scalar fields.
-    local PROBE_FIELDS = {
-        'state', 'substate', 'mood', 'reason',
-        'site', 'region', 'structure',
-        'link_type', 'death_cause',
-        'old_job', 'new_job',
-        'civ', 'entity_id', 'entity',
-        'attacker_civ', 'defender_civ',
-        'attacker_general_hf', 'defender_general_hf',
-        'position_id', 'assignment_id',
-        'artifact_id', 'artifact_record',
-        'histfig', 'histfig1', 'histfig2', 'hfid', 'hfid1', 'hfid2',
-        'hf', 'hf_target', 'victim_hf', 'slayer_hf',
-        'doer', 'target', 'snatcher',
-        'seeker_hf',
-        'corruptor_hf',
-        'changee', 'changer', 'old_race', 'new_race',
-        'woundee', 'wounder',
-        'builder_hf', 'creator_hfid',
-        'maker', 'maker_entity', 'item_type', 'item_subtype',
-    }
     print(('[Herald] EventHistory: %s (hf_id=%d) - %d event(s)'):format(
         hf_name, self.hf_id or -1, #events))
-    for _, ev in ipairs(events) do
-        local yr  = (ev.year and ev.year ~= -1) and tostring(ev.year) or '???'
-        local fmt = format_event(ev, self.hf_id)
-        if type(ev) == 'table' then
-            local rtype = ev.rel_type
-            local rname = rtype and rtype >= 0
-                and (df.vague_relationship_type[rtype] or tostring(rtype)):lower():gsub('_', ' ')
-                or '?'
-            print(('  [yr%s] RELATIONSHIP(%s) -> %s'):format(yr, rname, fmt or '(omitted)'))
-        else
-            local raw = df.history_event_type[ev:getType()] or tostring(ev:getType())
-            print(('  [yr%s] %s -> %s'):format(yr, raw, fmt or '(omitted)'))
-            local parts = {}
-            for _, field in ipairs(PROBE_FIELDS) do
-                local val = safe_get(ev, field)
-                if val ~= nil and val ~= -1 then
-                    table.insert(parts, field .. '=' .. tostring(val))
+    -- Detailed per-event field dump for mapping new event types; gated behind DEBUG.
+    if dfhack.reqscript('herald-main').DEBUG then
+        local PROBE_FIELDS = {
+            'state', 'substate', 'mood', 'reason',
+            'site', 'region', 'structure',
+            'link_type', 'death_cause',
+            'old_job', 'new_job',
+            'civ', 'entity_id', 'entity',
+            'attacker_civ', 'defender_civ',
+            'attacker_general_hf', 'defender_general_hf',
+            'position_id', 'assignment_id',
+            'artifact_id', 'artifact_record',
+            'histfig', 'histfig1', 'histfig2', 'hfid', 'hfid1', 'hfid2',
+            'hf', 'hf_target', 'victim_hf', 'slayer_hf',
+            'doer', 'target', 'snatcher',
+            'seeker_hf',
+            'corruptor_hf',
+            'changee', 'changer', 'old_race', 'new_race',
+            'woundee', 'wounder',
+            'builder_hf', 'creator_hfid',
+            'maker', 'maker_entity', 'item_type', 'item_subtype',
+        }
+        for _, ev in ipairs(events) do
+            local yr  = (ev.year and ev.year ~= -1) and tostring(ev.year) or '???'
+            local fmt = format_event(ev, self.hf_id)
+            if type(ev) == 'table' then
+                local rtype = ev.rel_type
+                local rname = rtype and rtype >= 0
+                    and (df.vague_relationship_type[rtype] or tostring(rtype)):lower():gsub('_', ' ')
+                    or '?'
+                print(('  [yr%s] RELATIONSHIP(%s) -> %s'):format(yr, rname, fmt or '(omitted)'))
+            else
+                local raw = df.history_event_type[ev:getType()] or tostring(ev:getType())
+                print(('  [yr%s] %s -> %s'):format(yr, raw, fmt or '(omitted)'))
+                local parts = {}
+                for _, field in ipairs(PROBE_FIELDS) do
+                    local val = safe_get(ev, field)
+                    if val ~= nil and val ~= -1 then
+                        table.insert(parts, field .. '=' .. tostring(val))
+                    end
                 end
-            end
-            if #parts > 0 then
-                print('    fields: ' .. table.concat(parts, ', '))
+                if #parts > 0 then
+                    print('    fields: ' .. table.concat(parts, ', '))
+                end
             end
         end
     end

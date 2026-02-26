@@ -16,6 +16,7 @@ scripts_modactive/
 ├── herald-main.lua              ← event loop, dispatcher; add new event types here
 ├── herald-gui.lua               ← settings UI: tabbed window (Pinned / Historical Figures / Civilisations)
 ├── herald-event-history.lua     ← Event History popup subsystem (event collection, describers, UI)
+├── herald-cache.lua             ← persistent event cache (HF event counts + IDs, delta processing)
 ├── herald-ind-death.lua         ← HIST_FIGURE_DIED + poll handler for pinned individuals [Individuals]
 ├── herald-world-leaders.lua     ← poll-based world leader tracking [Civilisations]
 └── herald-util.lua              ← shared utilities (announcement wrappers, position helpers, pin settings)
@@ -148,11 +149,14 @@ When `DEBUG = true`, handlers emit verbose trace lines covering:
 Exports (non-local at module scope):
 
 - **`HF_FIELDS`** — ordered list of scalar HF ID field names (e.g. `victim_hf`, `attacker_general_hf`).
-  Iterated for both `build_hf_event_counts` (in herald-gui) and `get_hf_events`.
+  Fallback for unknown event types in `get_hf_events` and `herald-cache`.
+- **`TYPE_HF_FIELDS`** — `{ [event_type_int] = {field, ...} }` dispatch table mapping event types
+  to 1-4 relevant HF fields. Reduces `safe_get` calls from ~28 to 1-4 for known types.
+  Used by `herald-cache` and `get_hf_events`.
 - **`safe_get(obj, field)`** — pcall-guarded field accessor; used by event describers and
-  `build_hf_event_counts`.
+  `herald-cache`.
 - **`event_will_be_shown(ev)`** — calls the describer with `focal=-1`; returns false if the result
-  is nil. Used by `build_hf_event_counts` in herald-gui to exclude noise events from the count.
+  is nil. Used by `herald-cache` to exclude noise events from counts.
 - **`open_event_history(hf_id, hf_name)`** — opens (or raises) the EventHistory popup. Called via
   `ev_hist.open_event_history(...)` from `FiguresPanel` and `PinnedPanel`.
 
@@ -162,10 +166,10 @@ Internal (local) components:
   `do` block via `add(type_name, fn)`, which silently skips unknown type names (handles DFHack
   version differences). Describers return verb-first text when focal matches a participant;
   return `nil` to suppress the event entirely.
-- **`get_hf_events(hf_id)`** — full event collection for the popup. Scalar `HF_FIELDS` scan,
-  `group1`/`group2` vectors (BATTLE_TYPES set), `competitor_hf`/`winner_hf` vectors (COMPETITION),
-  contextual `WAR_FIELD_BATTLE` aggregation (battles indexed by `site:year`), and
-  `world.history.relationship_events` block store.
+- **`get_hf_events(hf_id)`** — event collection for the popup. Uses `herald-cache` event IDs
+  when available (O(n) lookups per HF); falls back to full world scan if cache not ready.
+  Relationship events always scanned from block store. Contextual `WAR_FIELD_BATTLE`
+  aggregation only runs in fallback path.
   **Note:** battle participation via contextual aggregation is implemented but unconfirmed —
   see the TODO comment above `get_hf_events`.
 - **`format_event(ev, focal_hf_id)`** — renders `"In the year NNN, ..."` using `EVENT_DESCRIBE`
@@ -174,10 +178,40 @@ Internal (local) components:
   resolve `HF_SIMPLE_BATTLE_EVENT` / `HIST_FIGURE_SIMPLE_BATTLE_EVENT` across DFHack versions.
   Always use a set (`{ [v] = true }`) not a single value with `or`.
 
+### Event Cache (`herald-cache.lua`)
+
+Persistent cache layer that maps events to HF IDs. Eliminates the O(n * 28) pcall scan
+on every GUI open by caching results in the save file via `dfhack.persistent.saveSiteData`.
+
+**Persist key:** `herald_event_cache`
+
+**Exports (non-local at module scope):**
+- `cache_ready` — boolean; true once loaded/built
+- `building` — boolean; true during full build
+- `load_cache()` — read from persistence, validate watermark
+- `save_cache()` — write to persistence
+- `invalidate_cache()` — clear all, force rebuild
+- `build_full(on_done)` — full scan of all events; calls `on_done()` when complete
+- `build_delta()` — incremental from watermark; returns count of new events
+- `needs_build()` — true if cache is empty/invalid
+- `get_all_hf_event_counts()` — `{ [hf_id] = count }` (events + relationships merged)
+- `get_hf_event_ids(hf_id)` — sorted event ID list for Event History popup
+- `get_hf_total_count(hf_id)` — events + relationships for a single HF
+- `reset()` — cleanup on world unload
+
+**Dependencies:** Requires `herald-event-history` only (for `HF_FIELDS`, `TYPE_HF_FIELDS`,
+`safe_get`, `event_will_be_shown`). Does NOT require `herald-main` or any handler module.
+
+**Lifecycle:** `load_cache()` called in `herald-main.init_scan()`; `reset()` called in
+`herald-main.cleanup()`. GUI calls `build_delta()` on open, or shows a warning dialog
+and calls `build_full()` if cache is not ready.
+
+**CLI:** `herald-main cache-rebuild` invalidates the cache; next GUI open triggers rebuild.
+
 ### Settings & Persistence
 
 Settings screen (`herald-gui.lua`): 3-tab window — Ctrl-T to cycle tabs. Footer always shows
-Ctrl-J (open DFHack Journal) and Escape (close).
+Ctrl-J (open DFHack Journal), Ctrl-C (refresh cache), and Escape (close).
 
 - **Pinned** (tab 1): left list of pinned individuals or civs; Ctrl-I toggles Individuals/
   Civilisations view. Right panel shows per-pin announcement toggles (unimplemented categories
