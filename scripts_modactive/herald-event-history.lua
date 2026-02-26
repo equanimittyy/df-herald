@@ -15,19 +15,9 @@ Not intended for direct use.
 
 local gui     = require('gui')
 local widgets = require('gui.widgets')
+local util    = dfhack.reqscript('herald-util')
 
 local event_history_view = nil  -- prevents double-open
-
--- Helpers ---------------------------------------------------------------------
-
--- Normalises a position name field: entity_position_raw uses string[] (name[0]),
--- entity_position (entity.positions.own) uses plain stl-string.
-local function name_str(field)
-    if not field then return nil end
-    if type(field) == 'string' then return field ~= '' and field or nil end
-    local s = field[0]
-    return (s and s ~= '') and s or nil
-end
 
 -- HF reference field names checked when counting / finding events per HF.
 -- Field names verified against df-structures/df.history-events.xml:
@@ -117,28 +107,14 @@ local function creature_name(race_id)
     return n:sub(1,1):upper() .. n:sub(2):lower()
 end
 
--- Look up a position name from an entity + position_id, respecting HF sex.
--- Reuses the same two-source logic as get_positions() in herald-gui.
+-- Look up a position name from an entity_id + position_id, respecting HF sex.
+-- Delegates to util.get_pos_name after resolving the entity object.
 local function pos_name_for(entity_id, position_id, hf_sex)
     if not entity_id or entity_id < 0 then return nil end
     if not position_id or position_id < 0 then return nil end
     local entity = df.historical_entity.find(entity_id)
     if not entity then return nil end
-    local function pick(pos)
-        local g = hf_sex == 1 and name_str(pos.name_male) or name_str(pos.name_female)
-        return g or name_str(pos.name)
-    end
-    if entity.positions and entity.positions.own then
-        for _, pos in ipairs(entity.positions.own) do
-            if pos.id == position_id then return pick(pos) end
-        end
-    end
-    if entity.entity_raw then
-        for _, pos in ipairs(entity.entity_raw.positions) do
-            if pos.id == position_id then return pick(pos) end
-        end
-    end
-    return nil
+    return util.get_pos_name(entity, position_id, hf_sex)
 end
 
 -- Convert an ALL_CAPS_ENUM_NAME to "All Caps Enum Name".

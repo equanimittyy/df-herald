@@ -16,42 +16,19 @@ Not intended for direct use.
 
 ]====]
 
+local util = dfhack.reqscript('herald-util')
+
 local PERSIST_CIVS_KEY = 'herald_pinned_civ_ids'
 
--- { [entity_id] = { positions=bool, diplomacy=bool, raids=bool,
---                   theft=bool, kidnappings=bool, armies=bool } }
--- Absent key = not pinned.
+-- { [entity_id] = settings_table }; absent key = not pinned.
 local pinned_civ_ids = {}
 
--- tracked_leaders: { [entity_id] = { [assignment_id] = { hf_id, pos_name, civ_name } } }
+-- Snapshot of active position holders per civ; rebuilt each scan cycle to
+-- detect deaths and new appointments by comparing against the previous cycle.
+-- Schema: { [entity_id] = { [assignment_id] = { hf_id, pos_name, civ_name } } }
 local tracked_leaders = {}
 
-local CIV_SETTINGS_KEYS = { 'positions', 'diplomacy', 'raids', 'theft', 'kidnappings', 'armies' }
-
--- Hardcoded defaults match DEFAULT_ANNOUNCEMENTS in herald-main.lua.
--- Not using reqscript('herald-main') here to avoid circular dep at load time.
-local function default_civ_pin_settings()
-    return {
-        positions   = true,
-        diplomacy   = false,
-        raids       = false,
-        theft       = false,
-        kidnappings = false,
-        armies      = false,
-    }
-end
-
--- Merges a saved settings table with current defaults; fills missing keys.
-local function merge_civ_pin_settings(saved)
-    local defaults = default_civ_pin_settings()
-    if type(saved) ~= 'table' then return defaults end
-    for _, k in ipairs(CIV_SETTINGS_KEYS) do
-        if type(saved[k]) == 'boolean' then
-            defaults[k] = saved[k]
-        end
-    end
-    return defaults
-end
+-- Persistence -----------------------------------------------------------------
 
 local function save_pinned_civs()
     local pins = {}
@@ -61,52 +38,10 @@ local function save_pinned_civs()
     dfhack.persistent.saveSiteData(PERSIST_CIVS_KEY, { pins = pins })
 end
 
-local function is_alive(hf)
-    return hf.died_year == -1 and hf.died_seconds == -1
-end
+-- Announcement formatting -----------------------------------------------------
+-- pos_name may be nil when util.get_pos_name can't resolve a title; the
+-- fallback messages still name the civ so the player has useful context.
 
--- Normalises a position name field: entity_position_raw uses string[] (name[0]),
--- entity_position (entity.positions.own) uses plain stl-string.
-local function name_str(field)
-    if not field then return nil end
-    if type(field) == 'string' then return field ~= '' and field or nil end
-    local s = field[0]
-    return (s and s ~= '') and s or nil
-end
-
--- Returns the gendered (or neutral) position title for an assignment.
--- Checks entity.positions.own first (entity-specific; gives the correct title for nomadic
--- or non-standard groups, e.g. "leader" rather than the generic "king" from entity_raw).
--- Falls back to entity_raw.positions for types that leave own empty (e.g. EVIL/PLAINS).
-local function get_pos_name(entity, pos_id, hf)
-    if not entity or pos_id == nil then return nil end
-
-    local own = entity.positions and entity.positions.own
-    if own then
-        for _, pos in ipairs(own) do
-            if pos.id == pos_id then
-                local gendered = hf.sex == 1 and name_str(pos.name_male) or name_str(pos.name_female)
-                local result = gendered or name_str(pos.name)
-                if result then return result end
-                break  -- position matched but name is empty; fall through to entity_raw
-            end
-        end
-    end
-
-    local entity_raw = entity.entity_raw
-    if entity_raw then
-        for _, pos in ipairs(entity_raw.positions) do
-            if pos.id == pos_id then
-                local gendered = hf.sex == 1 and name_str(pos.name_male) or name_str(pos.name_female)
-                return gendered or name_str(pos.name)
-            end
-        end
-    end
-
-    return nil
-end
-
--- Formats an announcement string, omitting the position clause when pos_name is nil.
 local function fmt_death(hf_name, pos_name, civ_name)
     if pos_name then
         return ('[Herald] %s, %s of %s, has died.'):format(hf_name, pos_name, civ_name)
@@ -120,6 +55,11 @@ local function fmt_appointment(hf_name, pos_name, civ_name)
     end
     return ('[Herald] %s has been appointed to a position in %s.'):format(hf_name, civ_name)
 end
+
+-- Poll handler ----------------------------------------------------------------
+-- Called every scan cycle. Walks all Civilisation entities, compares current
+-- position assignments against the previous snapshot, and fires announcements
+-- when a pinned civ gains or loses a position holder.
 
 function check(dprint)
     dprint = dprint or function() end
@@ -161,15 +101,15 @@ function check(dprint)
             if not hf then goto continue_assignment end
 
             local pos_id   = assignment.position_id
-            local pos_name = get_pos_name(entity, pos_id, hf)
+            local pos_name = util.get_pos_name(entity, pos_id, hf.sex)
 
             dprint('world-leaders:   hf=%s pos=%s alive=%s',
-                dfhack.translation.translateName(hf.name, true), tostring(pos_name), tostring(is_alive(hf)))
+                dfhack.translation.translateName(hf.name, true), tostring(pos_name), tostring(util.is_alive(hf)))
 
             local prev_entity  = tracked_leaders[entity_id]
             local prev         = prev_entity and prev_entity[assignment.id]
 
-            if not is_alive(hf) then
+            if not util.is_alive(hf) then
                 if prev and prev.hf_id == hf_id then
                     local hf_name = dfhack.translation.translateName(hf.name, true)
                     if announce_positions then
@@ -216,6 +156,8 @@ function check(dprint)
         (function() local n=0 for _ in pairs(tracked_leaders) do n=n+1 end return n end)())
 end
 
+-- Public interface ------------------------------------------------------------
+
 -- Loads pinned civs from persistence; drops stale entity entries.
 function load_pinned_civs()
     local data = dfhack.persistent.getSiteData(PERSIST_CIVS_KEY, {})
@@ -223,7 +165,7 @@ function load_pinned_civs()
     if type(data.pins) == 'table' then
         for _, entry in ipairs(data.pins) do
             if type(entry.id) == 'number' and df.historical_entity.find(entry.id) then
-                pinned_civ_ids[entry.id] = merge_civ_pin_settings(entry.settings)
+                pinned_civ_ids[entry.id] = util.merge_civ_pin_settings(entry.settings)
             end
         end
     end
@@ -237,7 +179,7 @@ end
 -- Pins (truthy value) or unpins (nil/false) a civilisation.
 function set_pinned_civ(entity_id, value)
     if value then
-        pinned_civ_ids[entity_id] = default_civ_pin_settings()
+        pinned_civ_ids[entity_id] = util.default_civ_pin_settings()
     else
         pinned_civ_ids[entity_id] = nil
     end
@@ -257,7 +199,7 @@ function set_civ_pin_setting(entity_id, key, value)
     end
 end
 
+-- Clears per-session snapshot on world unload (pinned list is reloaded on next load).
 function reset()
     tracked_leaders = {}
-    -- pinned_civ_ids is per-save config; reloaded by load_pinned_civs() on SC_MAP_LOADED
 end

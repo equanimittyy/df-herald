@@ -11,8 +11,7 @@ Command: "herald-main"
 
   Scans world history for significant events and notifies the player in-game.
 
-Announces leader deaths, succession changes, and other notable events as they happen, without requiring the player to check the 
-legends screen.
+Announces leader deaths, succession changes, and other notable events as they happen, without requiring the player to check the legends screen.
 
 
 Usage
@@ -78,7 +77,9 @@ local DEFAULT_INTERVAL = 1200  -- 1 dwarf day
 local json    = require('json')
 local gui     = require('gui')
 local widgets = require('gui.widgets')
+local util    = dfhack.reqscript('herald-util')
 
+-- Scan state; reset on each world load.
 local last_event_id = -1      -- ID of last processed event; -1 = uninitialised
 local scan_timer_id = nil     -- handle returned by dfhack.timeout
 enabled = enabled or false    -- top-level var; DFHack enable/disable convention
@@ -86,6 +87,8 @@ enabled = enabled or false    -- top-level var; DFHack enable/disable convention
 -- Named DEBUG (not debug) to avoid shadowing Lua's built-in debug library.
 DEBUG = DEBUG or false
 
+-- Global announcement feature flags (distinct from per-pin settings).
+-- These control whether an event category is tracked at all.
 local DEFAULT_ANNOUNCEMENTS = {
     individuals   = { death = true,  marriage = false, children = false,
                       migration = false, legendary = false, combat = false },
@@ -93,16 +96,9 @@ local DEFAULT_ANNOUNCEMENTS = {
                       theft = false, kidnappings = false, armies = false },
 }
 
-local function deepcopy(t)
-    if type(t) ~= 'table' then return t end
-    local copy = {}
-    for k, v in pairs(t) do copy[k] = deepcopy(v) end
-    return copy
-end
-
 -- Merges saved announcement config over defaults; fills any missing keys.
 local function merge_announcements(saved)
-    local result = deepcopy(DEFAULT_ANNOUNCEMENTS)
+    local result = util.deepcopy(DEFAULT_ANNOUNCEMENTS)
     if type(saved) ~= 'table' then return result end
     for cat, defaults in pairs(DEFAULT_ANNOUNCEMENTS) do
         if type(saved[cat]) == 'table' then
@@ -128,7 +124,7 @@ local function load_config()
             or  DEFAULT_INTERVAL
         return interval, data.debug == true, merge_announcements(data.announcements)
     end
-    return DEFAULT_INTERVAL, false, deepcopy(DEFAULT_ANNOUNCEMENTS)
+    return DEFAULT_INTERVAL, false, util.deepcopy(DEFAULT_ANNOUNCEMENTS)
 end
 
 local function save_config()
@@ -175,7 +171,7 @@ function isEnabled()
     return enabled
 end
 
--- Interval editor dialog -------------------------------------------------------
+-- Interval editor dialog ------------------------------------------------------
 
 local IntervalEditor = defclass(IntervalEditor, widgets.Window)
 IntervalEditor.ATTRS {
@@ -247,10 +243,13 @@ function IntervalScreen:onDismiss()
     view = nil
 end
 
--- Event loop -------------------------------------------------------------------
+-- Event loop ------------------------------------------------------------------
+-- Handlers are initialised lazily (after world load) so DF enums are available.
+-- To add a new event type: create herald-<type>.lua and register it in get_handlers().
+-- To add a new poll-based tracker: register it in get_world_handlers().
 
--- add new event-type handlers here (e.g. herald-battle.lua)
-local handlers -- initialised lazily after world load so enums are available
+local handlers       -- event-driven: { [event_type_enum] = handler_module }
+local world_handlers -- poll-based:   { [key_string] = handler_module }
 
 local function get_handlers()
     if handlers then return handlers end
@@ -261,8 +260,6 @@ local function get_handlers()
     dprint('  HIST_FIGURE_DIED -> herald-ind-death')
     return handlers
 end
-
-local world_handlers -- initialised lazily
 
 local function get_world_handlers()
     if world_handlers then return world_handlers end
@@ -276,6 +273,7 @@ local function get_world_handlers()
     return world_handlers
 end
 
+-- Calls check(dprint) on every poll-based world handler.
 local function scan_world_state(dprint)
     local wh = get_world_handlers()
     for key, handler in pairs(wh) do
@@ -284,6 +282,9 @@ local function scan_world_state(dprint)
     end
 end
 
+-- Main scan loop: processes new history events then runs all world-state polls.
+-- Must reschedule itself at the end; dfhack.timeout fires once only.
+-- Any early return would permanently kill the loop, so only return after rescheduling.
 local function scan_events()
     if not dfhack.isMapLoaded() then return end
 

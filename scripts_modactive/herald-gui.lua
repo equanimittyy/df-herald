@@ -62,27 +62,14 @@ Not intended for direct use.
 
 local gui         = require('gui')
 local widgets     = require('gui.widgets')
+local util        = dfhack.reqscript('herald-util')
 local ind_death   = dfhack.reqscript('herald-ind-death')
 local wld_leaders = dfhack.reqscript('herald-world-leaders')
 local ev_hist     = dfhack.reqscript('herald-event-history')
 
 view = nil  -- module-level; prevents double-open
 
--- Helpers ----------------------------------------------------------------------
-
-local function get_race_name(hf)
-    if not hf or hf.race < 0 then return '?' end
-    local cr = df.creature_raw.find(hf.race)
-    if not cr then return '?' end
-    return cr.name[0] or '?'
-end
-
-local function get_entity_race_name(entity)
-    if not entity or entity.race < 0 then return '?' end
-    local cr = df.creature_raw.find(entity.race)
-    if not cr then return '?' end
-    return cr.name[0] or '?'
-end
+-- HF / entity helpers ----------------------------------------------------------
 
 local function get_civ_name(hf)
     for _, link in ipairs(hf.entity_links) do
@@ -94,15 +81,6 @@ local function get_civ_name(hf)
         end
     end
     return ''
-end
-
--- Normalises a position name field: entity_position_raw uses string[] (name[0]),
--- entity_position (entity.positions.own) uses plain stl-string.
-local function name_str(field)
-    if not field then return nil end
-    if type(field) == 'string' then return field ~= '' and field or nil end
-    local s = field[0]
-    return (s and s ~= '') and s or nil
 end
 
 -- Returns the name of the SiteGovernment entity the hf is a member of, or nil.
@@ -118,7 +96,7 @@ local function get_site_gov(hf)
     return nil
 end
 
--- Returns { {pos_name, civ_name}, ... } for all position links of hf.
+-- Returns { {pos_name, civ_name}, ... } for all POSITION entity links of an HF.
 local function get_positions(hf)
     local results = {}
     for _, link in ipairs(hf.entity_links) do
@@ -128,33 +106,7 @@ local function get_positions(hf)
                 local civ_name = dfhack.translation.translateName(entity.name, true)
                 for _, asgn in ipairs(entity.positions.assignments) do
                     if asgn.histfig2 == hf.id then
-                        local pos_id   = asgn.position_id
-                        local pos_name = nil
-                        -- entity.positions.own is entity-specific; check it first so that
-                        -- nomadic/special groups show their actual title (e.g. "leader")
-                        -- rather than the generic one from the shared entity_raw ("king").
-                        if entity.positions and entity.positions.own then
-                            for _, pos in ipairs(entity.positions.own) do
-                                if pos.id == pos_id then
-                                    local gendered = hf.sex == 1
-                                        and name_str(pos.name_male)
-                                        or  name_str(pos.name_female)
-                                    pos_name = gendered or name_str(pos.name)
-                                    break
-                                end
-                            end
-                        end
-                        if not pos_name and entity.entity_raw then
-                            for _, pos in ipairs(entity.entity_raw.positions) do
-                                if pos.id == pos_id then
-                                    local gendered = hf.sex == 1
-                                        and name_str(pos.name_male)
-                                        or  name_str(pos.name_female)
-                                    pos_name = gendered or name_str(pos.name)
-                                    break
-                                end
-                            end
-                        end
+                        local pos_name = util.get_pos_name(entity, asgn.position_id, hf.sex)
                         table.insert(results, { pos_name = pos_name, civ_name = civ_name })
                     end
                 end
@@ -253,7 +205,7 @@ local function build_choices(show_dead, show_pinned_only)
 
         local name     = dfhack.translation.translateName(hf.name, true)
         if name == '' then name = '(unnamed)' end
-        local race     = get_race_name(hf)
+        local race     = util.get_race_name(hf)
         if race == '?' then race = 'Unknown' end
         local civ_full = get_civ_name(hf)
         local is_pinned = pinned[hf.id]
@@ -320,7 +272,7 @@ local function build_civ_choices(show_pinned_only)
         local name = dfhack.translation.translateName(entity.name, true)
         if name == '' then goto continue end
 
-        local race = get_entity_race_name(entity)
+        local race = util.get_entity_race_name(entity)
         if race == '?' then race = 'Unknown' end
 
         local site_count = entity.site_links and #entity.site_links or 0
@@ -476,7 +428,7 @@ function FiguresPanel:update_detail(choice)
     local pinned  = ind_death.get_pinned()
     local name    = dfhack.translation.translateName(hf.name, true)
     if name == '' then name = '(unnamed)' end
-    local race    = get_race_name(hf)
+    local race    = util.get_race_name(hf)
     if race == '?' then race = 'Unknown' end
     local civ       = get_civ_name(hf)
     local gov       = get_site_gov(hf)
@@ -802,7 +754,7 @@ function PinnedPanel:refresh_pinned_list()
             local is_dead = hf.died_year ~= -1
             local name    = dfhack.translation.translateName(hf.name, true)
             if name == '' then name = '(unnamed)' end
-            local race    = get_race_name(hf)
+            local race    = util.get_race_name(hf)
             if race == '?' then race = 'Unknown' end
             local status_token = is_dead
                 and { text = 'dead', pen = COLOR_RED }
@@ -833,7 +785,7 @@ function PinnedPanel:refresh_pinned_list()
         end
         table.sort(civ_list, function(a, b) return a.name < b.name end)
         for _, civ in ipairs(civ_list) do
-            local race = get_entity_race_name(civ.entity)
+            local race = util.get_entity_race_name(civ.entity)
             if race == '?' then race = 'Unknown' end
             table.insert(choices, {
                 text = {

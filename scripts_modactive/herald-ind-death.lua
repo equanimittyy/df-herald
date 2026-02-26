@@ -16,50 +16,28 @@ Not intended for direct use.
 
 ]====]
 
+local util = dfhack.reqscript('herald-util')
+
 local PERSIST_KEY = 'herald_pinned_hf_ids'
 
--- { [hf_id] = { death=bool, marriage=bool, children=bool,
---               migration=bool, legendary=bool, combat=bool } }
--- Absent key = not pinned; settings table is truthy so `if pinned[hf_id]` still works.
+-- { [hf_id] = settings_table }
+-- Absent key = not pinned. The settings table is truthy, so `if pinned[hf_id]` still works.
 local pinned_hf_ids = {}
 
--- HF IDs already announced this session (prevents event+poll double-fire)
+-- HF IDs announced this session; prevents double-fire when both event and poll paths fire.
 local announced_deaths = {}  -- set: { [hf_id] = true }
 
-local SETTINGS_KEYS = { 'death', 'marriage', 'children', 'migration', 'legendary', 'combat' }
+-- Announcement ----------------------------------------------------------------
 
--- Hardcoded defaults match DEFAULT_ANNOUNCEMENTS in herald-main.lua.
--- Not using reqscript('herald-main') here to avoid circular dep at load time.
-local function default_pin_settings()
-    return {
-        death     = true,
-        marriage  = false,
-        children  = false,
-        migration = false,
-        legendary = false,
-        combat    = false,
-    }
-end
-
--- Merges a saved settings table with current defaults; fills missing keys.
-local function merge_pin_settings(saved)
-    local defaults = default_pin_settings()
-    if type(saved) ~= 'table' then return defaults end
-    for _, k in ipairs(SETTINGS_KEYS) do
-        if type(saved[k]) == 'boolean' then
-            defaults[k] = saved[k]
-        end
-    end
-    return defaults
-end
-
+-- Fires (or suppresses) a death announcement based on the pin's death setting.
+-- Always marks hf_id in announced_deaths so the other path doesn't re-fire.
 local function announce_death(hf_id, dprint)
     local settings = pinned_hf_ids[hf_id]
     local hf = df.historical_figure.find(hf_id)
     local name = hf and dfhack.translation.translateName(hf.name, true) or tostring(hf_id)
     if not (settings and settings.death) then
-        dprint('ind-death: announcement suppressed for %s (id %d) — death setting is OFF', name, hf_id)
-        announced_deaths[hf_id] = true  -- mark seen, suppress repeat
+        dprint('ind-death: announcement suppressed for %s (id %d) - death setting is OFF', name, hf_id)
+        announced_deaths[hf_id] = true
         return
     end
     if not hf then
@@ -70,6 +48,9 @@ local function announce_death(hf_id, dprint)
     dfhack.gui.showAnnouncement(('[Herald] %s has died.'):format(name), COLOR_RED, true)
     announced_deaths[hf_id] = true
 end
+
+-- Event handler (in-fort path) ------------------------------------------------
+-- Called by herald-main when a HIST_FIGURE_DIED event is dispatched.
 
 local function handle_event(event, dprint)
     dprint = dprint or function() end
@@ -87,28 +68,37 @@ local function handle_event(event, dprint)
     announce_death(hf_id, dprint)
 end
 
+-- Poll handler (off-screen path) ----------------------------------------------
+-- Called each scan cycle. Catches deaths the game applies directly to hf.died_year
+-- without emitting a history event (common for off-screen/out-of-fort deaths).
+
 local function handle_poll(dprint)
     dprint = dprint or function() end
     for hf_id in pairs(pinned_hf_ids) do
         if not announced_deaths[hf_id] then
             local hf = df.historical_figure.find(hf_id)
             if hf and hf.died_year ~= -1 then
-                dprint('ind-death.poll: detected death of tracked hf_id=%d via died_year, checking settings', hf_id)
+                dprint('ind-death.poll: detected death of tracked hf_id=%d via died_year', hf_id)
                 announce_death(hf_id, dprint)
             end
         end
     end
 end
 
+-- Public interface ------------------------------------------------------------
+
+-- Dispatches to event or poll path depending on call signature:
+--   check(event, dprint)  -> event-driven (HIST_FIGURE_DIED)
+--   check(dprint)         -> poll-based (each scan cycle)
 function check(event_or_dprint, dprint_or_nil)
     if dprint_or_nil ~= nil then
-        -- event mode: called as check(event, dprint)
         handle_event(event_or_dprint, dprint_or_nil)
     else
-        -- poll mode: called as check(dprint)
         handle_poll(event_or_dprint)
     end
 end
+
+-- Persistence -----------------------------------------------------------------
 
 function load_pinned()
     local data = dfhack.persistent.getSiteData(PERSIST_KEY, {})
@@ -116,7 +106,7 @@ function load_pinned()
     if type(data.pins) == 'table' then
         for _, entry in ipairs(data.pins) do
             if type(entry.id) == 'number' then
-                pinned_hf_ids[entry.id] = merge_pin_settings(entry.settings)
+                pinned_hf_ids[entry.id] = util.merge_pin_settings(entry.settings)
             end
         end
     end
@@ -130,13 +120,16 @@ function save_pinned()
     dfhack.persistent.saveSiteData(PERSIST_KEY, { pins = pins })
 end
 
+-- Pin management --------------------------------------------------------------
+
 function get_pinned()
     return pinned_hf_ids
 end
 
+-- Pins (true) or unpins (nil/false) an HF; persists immediately.
 function set_pinned(hf_id, value)
     if value then
-        pinned_hf_ids[hf_id] = default_pin_settings()
+        pinned_hf_ids[hf_id] = util.default_pin_settings()
     else
         pinned_hf_ids[hf_id] = nil
     end
@@ -156,7 +149,7 @@ function set_pin_setting(hf_id, key, value)
     end
 end
 
+-- Clears per-session state on world unload (pinned list is reloaded on next load).
 function reset()
     announced_deaths = {}
-    -- pinned_hf_ids is per-save config; reloaded by load_pinned() on SC_MAP_LOADED
 end
