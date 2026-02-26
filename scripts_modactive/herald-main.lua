@@ -48,6 +48,10 @@ Commands
 "herald-main gui"
    Open the Herald settings window (requires a loaded world).
 
+"herald-main button"
+   Toggle the Herald overlay button on or off. Persisted by DFHack's overlay
+   system so the preference survives restarts.
+
 
 Examples
 --------
@@ -389,5 +393,27 @@ elseif args[1] == 'gui' then
         dfhack.printerr('[Herald] A fort must be loaded to open the settings UI.')
     else
         dfhack.reqscript('herald-gui').open_gui()
+    end
+elseif args[1] == 'button' then
+    -- Read current enabled state from DFHack's overlay config, then toggle.
+    local WIDGET_ID = 'herald-button.button'
+    local currently_enabled = true
+    local ok, data = pcall(function()
+        local f = assert(io.open('dfhack-config/overlay.json', 'r'))
+        local s = f:read('*a'); f:close()
+        return json.decode(s)
+    end)
+    if ok and type(data) == 'table' then
+        local entry = data[WIDGET_ID]
+        if type(entry) == 'table' and type(entry.enabled) == 'boolean' then
+            currently_enabled = entry.enabled
+        end
+    end
+    if currently_enabled then
+        dfhack.run_command('overlay', 'disable', WIDGET_ID)
+        print('[Herald] Button hidden. Run "herald-main button" again to show it.')
+    else
+        dfhack.run_command('overlay', 'enable', WIDGET_ID)
+        print('[Herald] Button shown.')
     end
 end
