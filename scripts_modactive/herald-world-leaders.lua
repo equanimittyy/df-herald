@@ -56,6 +56,13 @@ local function fmt_appointment(hf_name, pos_name, civ_name)
     return ('[Herald] %s has been appointed to a position in %s.'):format(hf_name, civ_name)
 end
 
+local function fmt_vacated(hf_name, pos_name, civ_name)
+    if pos_name then
+        return ('[Herald] %s is no longer %s of %s.'):format(hf_name, pos_name, civ_name)
+    end
+    return ('[Herald] %s is no longer a position holder in %s.'):format(hf_name, civ_name)
+end
+
 -- Poll handler ----------------------------------------------------------------
 -- Called every scan cycle. Walks pinned civs, compares current position
 -- assignments against the previous snapshot, and fires announcements
@@ -143,6 +150,35 @@ function check(dprint)
         end
 
         ::continue_entity::
+    end
+
+    -- Detect vacated positions: was in previous snapshot, alive, but gone or replaced this cycle.
+    for entity_id, prev_assignments in pairs(tracked_leaders) do
+        local pin_settings = pinned_civ_ids[entity_id]
+        if not pin_settings then goto continue_vacate_entity end
+
+        local entity   = df.historical_entity.find(entity_id)
+        local civ_name = entity and dfhack.translation.translateName(entity.name, true) or tostring(entity_id)
+
+        for assignment_id, prev in pairs(prev_assignments) do
+            local new_assign = new_snapshot[entity_id] and new_snapshot[entity_id][assignment_id]
+            if not new_assign or new_assign.hf_id ~= prev.hf_id then
+                local old_hf = df.historical_figure.find(prev.hf_id)
+                if old_hf and util.is_alive(old_hf) then
+                    local hf_name = dfhack.translation.translateName(old_hf.name, true)
+                    if pin_settings.positions then
+                        dprint('world-leaders: vacated detected for %s (%s of %s) - firing announcement (positions ON)',
+                            hf_name, tostring(prev.pos_name), civ_name)
+                        dfhack.gui.showAnnouncement(fmt_vacated(hf_name, prev.pos_name, civ_name), COLOR_WHITE, false)
+                    else
+                        dprint('world-leaders: vacated detected for %s (%s of %s) - announcement suppressed (positions OFF)',
+                            hf_name, tostring(prev.pos_name), civ_name)
+                    end
+                end
+            end
+        end
+
+        ::continue_vacate_entity::
     end
 
     tracked_leaders = new_snapshot
