@@ -230,6 +230,7 @@ install mechanism (not `onLoad.init`). It registers `OVERLAY_WIDGETS = { button 
   `debug = debug or false` always truthy and permanently enabling debug output
 - Do not use em-dashes (`—`) in any string printed to the user (announcements,
   debug output, or console `print`); DF cannot render them. Use `-` instead.
+- When creating comments, ensure they are logical, human-readable and are as lean as possible to minimise token usage and clutter.
 
 ## Future (on request only)
 
