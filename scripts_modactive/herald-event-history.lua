@@ -894,26 +894,70 @@ local function vec_has(ev, field, hf_id)
     return false
 end
 
+-- Pre-compute event-type integers once at module load.
+local _BATTLE_TYPES = {}
+for _, name in ipairs({'HF_SIMPLE_BATTLE_EVENT', 'HIST_FIGURE_SIMPLE_BATTLE_EVENT'}) do
+    local v = df.history_event_type[name]
+    if v ~= nil then _BATTLE_TYPES[v] = true end
+end
+local _COMP_TYPE       = df.history_event_type['COMPETITION']
+local _WAR_BATTLE_TYPE = df.history_event_type['WAR_FIELD_BATTLE']
+
+-- Dispatch table: event type integer -> scalar HF field names to check.
+-- Reduces safe_get calls per event from ~28 to 1-4 for known types.
+-- Types with vector HF fields (BATTLE_TYPES, COMPETITION) are handled separately.
+-- Unknown types fall back to full HF_FIELDS scan.
+local _TYPE_HF_FIELDS = {}
+do
+    local function map(name, fields)
+        local v = df.history_event_type[name]
+        if v ~= nil then _TYPE_HF_FIELDS[v] = fields end
+    end
+    map('HIST_FIGURE_DIED',    {'victim_hf', 'slayer_hf'})
+    map('CHANGE_HF_STATE',     {'hfid'})
+    map('CHANGE_HF_JOB',       {'hfid'})
+    map('ADD_HF_ENTITY_LINK',  {'histfig'})
+    map('REMOVE_HF_ENTITY_LINK', {'histfig'})
+    map('ADD_HF_SITE_LINK',    {'histfig'})
+    map('REMOVE_HF_SITE_LINK', {'histfig'})
+    map('ADD_HF_HF_LINK',      {'hf', 'hf_target'})
+    map('REMOVE_HF_HF_LINK',   {'hf', 'hf_target'})
+    map('HF_DOES_INTERACTION',  {'doer', 'target'})
+    map('HF_ABDUCTED',          {'snatcher', 'target'})
+    map('HIST_FIGURE_ABDUCTED', {'snatcher', 'target'})
+    map('HF_ATTACKED_SITE',    {'attacker_hf'})
+    map('HF_DESTROYED_SITE',   {'attacker_hf'})
+    map('HFS_FORMED_REPUTATION_RELATIONSHIP', {'histfig1', 'histfig2', 'hfid1', 'hfid2'})
+    map('HFS_FORMED_INTRIGUE_RELATIONSHIP',   {'corruptor_hf', 'target_hf'})
+    map('HF_RELATIONSHIP_DENIED', {'seeker_hf', 'target_hf'})
+    map('CHANGE_CREATURE_TYPE',   {'changee', 'changer'})
+    map('HIST_FIGURE_WOUNDED',    {'woundee_hfid', 'wounder_hfid'})
+    map('HF_WOUNDED',             {'woundee', 'wounder'})
+    map('CREATED_SITE',           {'builder_hf'})
+    map('CREATED_BUILDING',       {'builder_hf'})
+    map('CREATED_STRUCTURE',      {'builder_hf'})
+    map('ARTIFACT_CREATED',       {'creator_hfid'})
+    map('WAR_FIELD_BATTLE',       {'attacker_general_hf', 'defender_general_hf'})
+    map('WAR_ATTACKED_SITE',      {'attacker_general_hf', 'defender_general_hf', 'attacker_hf'})
+    map('MASTERPIECE_CREATED_ITEM', {'maker', 'hfid'})
+    map('ARTIFACT_STORED',          {'histfig', 'hfid', 'maker'})
+    map('CREATE_ENTITY_POSITION',   {'histfig', 'hfid'})
+end
+
 -- TODO: battle participation events are not yet showing in HF event history.
 -- The two approaches below (BATTLE_TYPES vector check and contextual WAR_FIELD_BATTLE
 -- aggregation) are implemented but not confirmed working; needs in-game verification.
 local function get_hf_events(hf_id)
-    local results = {}
-    -- Set of enum integers for simple battle events; covers both DFHack naming variants.
-    local BATTLE_TYPES = {}
-    for _, name in ipairs({'HF_SIMPLE_BATTLE_EVENT', 'HIST_FIGURE_SIMPLE_BATTLE_EVENT'}) do
-        local v = df.history_event_type[name]
-        if v ~= nil then BATTLE_TYPES[v] = true end
-    end
-    local COMP_TYPE       = df.history_event_type['COMPETITION']
-    local WAR_BATTLE_TYPE = df.history_event_type['WAR_FIELD_BATTLE']
-
-    -- Single pass: collect direct HF events and build a WAR_FIELD_BATTLE index by
-    -- site+year. The index is used in step 2 (contextual aggregation) below.
+    local results      = {}
     local battle_index = {}  -- { ['site:year'] = { ev, ... } }
     local added_ids    = {}  -- event.id -> true; prevents duplicates
+
+    -- Single pass: collect direct HF events and build WAR_FIELD_BATTLE index.
     for _, ev in ipairs(df.global.world.history.events) do
-        if WAR_BATTLE_TYPE and ev:getType() == WAR_BATTLE_TYPE then
+        local ev_type = ev:getType()
+
+        -- Battle index for contextual aggregation (step 2).
+        if _WAR_BATTLE_TYPE and ev_type == _WAR_BATTLE_TYPE then
             local site = safe_get(ev, 'site')
             local year = safe_get(ev, 'year')
             if site and site >= 0 and year and year >= 0 then
@@ -923,28 +967,28 @@ local function get_hf_events(hf_id)
             end
         end
 
-        local found = false
-        for _, field in ipairs(HF_FIELDS) do
-            if safe_get(ev, field) == hf_id then
-                added_ids[ev.id] = true
-                table.insert(results, ev)
-                found = true
-                break
-            end
-        end
-        -- HF_SIMPLE_BATTLE_EVENT: participants are in group1/group2 vectors, not scalars.
-        if not found and BATTLE_TYPES[ev:getType()] then
+        -- HF matching: vector check for battle/competition, scalar dispatch for others.
+        if _BATTLE_TYPES[ev_type] then
+            -- HF_SIMPLE_BATTLE_EVENT: participants in group1/group2 vectors.
             if vec_has(ev, 'group1', hf_id) or vec_has(ev, 'group2', hf_id) then
                 added_ids[ev.id] = true
                 table.insert(results, ev)
-                found = true
             end
-        end
-        -- COMPETITION: competitor_hf and winner_hf are vectors.
-        if not found and COMP_TYPE and ev:getType() == COMP_TYPE then
+        elseif _COMP_TYPE and ev_type == _COMP_TYPE then
+            -- COMPETITION: competitor_hf and winner_hf are vectors.
             if vec_has(ev, 'competitor_hf', hf_id) or vec_has(ev, 'winner_hf', hf_id) then
                 added_ids[ev.id] = true
                 table.insert(results, ev)
+            end
+        else
+            -- Scalar check: use type-specific fields if known, full HF_FIELDS otherwise.
+            local fields = _TYPE_HF_FIELDS[ev_type] or HF_FIELDS
+            for _, field in ipairs(fields) do
+                if safe_get(ev, field) == hf_id then
+                    added_ids[ev.id] = true
+                    table.insert(results, ev)
+                    break
+                end
             end
         end
     end
