@@ -52,6 +52,10 @@ Commands
    Toggle the Herald overlay button on or off. Persisted by DFHack's overlay
    system so the preference survives restarts.
 
+"herald-main test"
+   Fire one sample announcement of each style (death, appointment, vacated,
+   info) so you can preview colours and pause behaviour in-game.
+
 
 Examples
 --------
@@ -177,7 +181,7 @@ local function dprint(fmt, ...)
     local msg = ('[Herald DEBUG] ' .. fmt):format(...)
     print(msg)
     if dfhack.isMapLoaded() then
-        dfhack.gui.showAnnouncement(msg, COLOR_LIGHTCYAN)
+        util.announce_info(msg)
     end
 end
 
@@ -393,6 +397,16 @@ elseif args[1] == 'gui' then
         dfhack.printerr('[Herald] A fort must be loaded to open the settings UI.')
     else
         dfhack.reqscript('herald-gui').open_gui()
+    end
+elseif args[1] == 'test' then
+    if not dfhack.isMapLoaded() then
+        dfhack.printerr('[Herald] A fort must be loaded to test announcements.')
+    else
+        util.announce_death('[Herald] TEST - Death announcement (red, pauses)')
+        util.announce_appointment('[Herald] TEST - Appointment announcement (yellow, pauses)')
+        util.announce_vacated('[Herald] TEST - Vacated announcement (white, no pause)')
+        util.announce_info('[Herald] TEST - Info announcement (cyan, no pause)')
+        print('[Herald] Test announcements fired.')
     end
 elseif args[1] == 'button' then
     -- Read current enabled state from DFHack's overlay config, then toggle.

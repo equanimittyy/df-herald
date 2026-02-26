@@ -117,7 +117,7 @@ function check(dprint)
                     if announce_positions then
                         dprint('world-leaders: death detected for %s (%s of %s) - firing announcement (positions ON)',
                             hf_name, tostring(pos_name), civ_name)
-                        dfhack.gui.showAnnouncement(fmt_death(hf_name, pos_name, civ_name), COLOR_RED, true)
+                        util.announce_death(fmt_death(hf_name, pos_name, civ_name))
                     else
                         dprint('world-leaders: death detected for %s (%s of %s) - announcement suppressed (positions OFF)',
                             hf_name, tostring(pos_name), civ_name)
@@ -138,7 +138,7 @@ function check(dprint)
                     if announce_positions then
                         dprint('world-leaders: appointment detected for %s (%s of %s) - firing announcement (positions ON)',
                             hf_name, tostring(pos_name), civ_name)
-                        dfhack.gui.showAnnouncement(fmt_appointment(hf_name, pos_name, civ_name), COLOR_YELLOW, true)
+                        util.announce_appointment(fmt_appointment(hf_name, pos_name, civ_name))
                     else
                         dprint('world-leaders: appointment detected for %s (%s of %s) - announcement suppressed (positions OFF)',
                             hf_name, tostring(pos_name), civ_name)
@@ -169,7 +169,7 @@ function check(dprint)
                     if pin_settings.positions then
                         dprint('world-leaders: vacated detected for %s (%s of %s) - firing announcement (positions ON)',
                             hf_name, tostring(prev.pos_name), civ_name)
-                        dfhack.gui.showAnnouncement(fmt_vacated(hf_name, prev.pos_name, civ_name), COLOR_WHITE, false)
+                        util.announce_vacated(fmt_vacated(hf_name, prev.pos_name, civ_name))
                     else
                         dprint('world-leaders: vacated detected for %s (%s of %s) - announcement suppressed (positions OFF)',
                             hf_name, tostring(prev.pos_name), civ_name)

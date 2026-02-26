@@ -12,6 +12,29 @@ Tags: fort | gameplay
 Not intended for direct use.
 ]====]
 
+-- Announcement helpers --------------------------------------------------------
+-- Centralised wrappers so callers don't hardcode colours or pause flags.
+
+-- Death of a tracked individual or position holder (red, pauses game).
+function announce_death(msg)
+    dfhack.gui.showAnnouncement(msg, COLOR_RED, true)
+end
+
+-- New appointment to a position (yellow, pauses game).
+function announce_appointment(msg)
+    dfhack.gui.showAnnouncement(msg, COLOR_YELLOW, true)
+end
+
+-- Position vacated by a living HF (white, no pause).
+function announce_vacated(msg)
+    dfhack.gui.showAnnouncement(msg, COLOR_WHITE, false)
+end
+
+-- General informational message (cyan, no pause).
+function announce_info(msg)
+    dfhack.gui.showAnnouncement(msg, COLOR_LIGHTCYAN, false)
+end
+
 -- Position name helpers -------------------------------------------------------
 -- DF stores position names in two different formats depending on the source:
 --   entity.positions.own      -> plain stl-string  (pos.name is a Lua string)
