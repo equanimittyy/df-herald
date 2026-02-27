@@ -120,6 +120,34 @@ local function pos_name_for(entity_id, position_id, hf_sex)
     return util.get_pos_name(entity, position_id, hf_sex)
 end
 
+-- Resolve an artifact ID to its translated name, or nil.
+local function artifact_name_by_id(art_id)
+    if not art_id or art_id < 0 then return nil end
+    local ok, art = pcall(function() return df.artifact_record.find(art_id) end)
+    if not ok or not art then return nil end
+    local ok2, n = pcall(function() return dfhack.translation.translateName(art.name, true) end)
+    if not ok2 or not n or n == '' then return nil end
+    return n
+end
+
+-- Resolve a structure within a site to its translated building name, or nil.
+local function building_name_at_site(site_id, structure_id)
+    if not site_id or site_id < 0 or not structure_id or structure_id < 0 then return nil end
+    local site = df.world_site.find(site_id)
+    if not site then return nil end
+    local ok, buildings = pcall(function() return site.buildings end)
+    if not ok or not buildings then return nil end
+    for i = 0, #buildings - 1 do
+        local b = buildings[i]
+        if b.id == structure_id then
+            local ok2, n = pcall(function() return dfhack.translation.translateName(b.name, true) end)
+            if ok2 and n and n ~= '' then return n end
+            return nil
+        end
+    end
+    return nil
+end
+
 -- Convert an ALL_CAPS_ENUM_NAME to "All Caps Enum Name".
 local function title_case(s)
     return (s:lower():gsub('_', ' '):gsub('(%a)([%w]*)', function(a, b)
@@ -628,7 +656,10 @@ do
 
     add('ARTIFACT_STORED', function(ev, focal)
         local site_n = site_name_by_id(safe_get(ev, 'site'))
-        return 'stored an artifact' .. (site_n and (' in ' .. site_n) or '')
+        local art_id = safe_get(ev, 'artifact_id') or safe_get(ev, 'artifact_record')
+        local art_n  = artifact_name_by_id(art_id)
+        local what   = art_n and ('the artifact ' .. art_n) or 'an artifact'
+        return 'Stored ' .. what .. (site_n and (' in ' .. site_n) or '')
     end)
 
     add('CREATE_ENTITY_POSITION', function(ev, focal)
@@ -646,6 +677,38 @@ do
     add('COMPETITION', function(ev, focal)
         local site_n = site_name_by_id(safe_get(ev, 'site'))
         local loc    = site_n and (' in ' .. site_n) or ''
+        -- Collect all unique participants excluding focal (from both lists).
+        local others, seen = {}, {}
+        local function collect(field)
+            local ok, list = pcall(function() return ev[field] end)
+            if not ok or not list then return end
+            local ok_n, n = pcall(function() return #list end)
+            if not ok_n then return end
+            for i = 0, n - 1 do
+                local ok2, v = pcall(function() return list[i] end)
+                if ok2 and v ~= focal and not seen[v] then
+                    seen[v] = true
+                    table.insert(others, v)
+                end
+            end
+        end
+        collect('competitor_hf')
+        collect('winner_hf')
+        local function participants_sfx()
+            if #others == 0 then return '' end
+            local MAX_NAMES = 3
+            local names = {}
+            for i = 1, math.min(#others, MAX_NAMES) do
+                table.insert(names, hf_name_by_id(others[i]) or 'someone')
+            end
+            local remaining = #others - MAX_NAMES
+            local text = ' against ' .. table.concat(names, ', ')
+            if remaining > 0 then
+                text = text .. ' and ' .. remaining .. ' other' .. (remaining > 1 and 's' or '')
+            end
+            return text
+        end
+        -- Check if focal is a winner.
         local ok_w, wlist = pcall(function() return ev.winner_hf end)
         if ok_w and wlist then
             local ok_n, n = pcall(function() return #wlist end)
@@ -653,22 +716,24 @@ do
                 for i = 0, n - 1 do
                     local ok2, v = pcall(function() return wlist[i] end)
                     if ok2 and v == focal then
-                        return 'Won a competition' .. loc
+                        return 'Won a competition' .. participants_sfx() .. loc
                     end
                 end
             end
         end
-        local ok_c, clist = pcall(function() return ev.competitor_hf end)
-        if ok_c and clist then
+        -- Check if focal is a competitor.
+        if seen[focal] or (function()
+            local ok_c, clist = pcall(function() return ev.competitor_hf end)
+            if not ok_c or not clist then return false end
             local ok_n, n = pcall(function() return #clist end)
-            if ok_n then
-                for i = 0, n - 1 do
-                    local ok2, v = pcall(function() return clist[i] end)
-                    if ok2 and v == focal then
-                        return 'Competed in a competition' .. loc
-                    end
-                end
+            if not ok_n then return false end
+            for i = 0, n - 1 do
+                local ok2, v = pcall(function() return clist[i] end)
+                if ok2 and v == focal then return true end
             end
+            return false
+        end)() then
+            return 'Competed in a competition' .. participants_sfx() .. loc
         end
         return 'A competition was held' .. loc
     end)
@@ -714,13 +779,13 @@ do
         local att_hf  = safe_get(ev, 'attacker_hf')
         local def_civ = ent_name_by_id(safe_get(ev, 'defender_civ'))
         local site_n  = site_name_by_id(safe_get(ev, 'site'))
-        local loc     = site_n and (' on ' .. site_n) or ' on a site'
+        local loc     = site_n or 'a site'
+        local vs      = def_civ and (', defended by ' .. def_civ) or ''
         if focal == att_hf then
-            local vs = def_civ and (' against ' .. def_civ) or ''
-            return 'Attacked' .. loc .. vs
+            return 'Attacked ' .. loc .. vs
         end
         local att = hf_name_by_id(att_hf) or 'someone'
-        return att .. ' attacked' .. loc
+        return att .. ' attacked ' .. loc .. vs
     end)
 
     add('HF_DESTROYED_SITE', function(ev, focal)
@@ -813,7 +878,10 @@ do
     add('ARTIFACT_CREATED', function(ev, focal)
         local site_n = site_name_by_id(safe_get(ev, 'site'))
         local loc    = site_n and (' in ' .. site_n) or ''
-        return 'Created an artifact' .. loc
+        local art_id = safe_get(ev, 'artifact_id') or safe_get(ev, 'artifact_record')
+        local art_n  = artifact_name_by_id(art_id)
+        local what   = art_n and ('the artifact ' .. art_n) or 'an artifact'
+        return 'Created ' .. what .. loc
     end)
 
     add('CREATED_SITE', function(ev, focal)
@@ -823,12 +891,236 @@ do
     end)
 
     local function created_structure_fn(ev, focal)
-        local site_n = site_name_by_id(safe_get(ev, 'site'))
-        local loc    = site_n and (' in ' .. site_n) or ''
+        local site_id = safe_get(ev, 'site')
+        local site_n  = site_name_by_id(site_id)
+        local loc     = site_n and (' in ' .. site_n) or ''
+        local str_id  = safe_get(ev, 'structure')
+        local bname   = building_name_at_site(site_id, str_id)
+        if bname then return 'Constructed ' .. bname .. loc end
         return 'Constructed a structure' .. loc
     end
     add('CREATED_BUILDING',  created_structure_fn)
     add('CREATED_STRUCTURE', created_structure_fn)
+end
+
+-- Event collection context --------------------------------------------------
+-- Maps collection type enums to priority (lower = more specific context).
+local COLLECTION_PRIORITY = {}
+do
+    local P = {
+        DUEL=1, BEAST_ATTACK=2, ABDUCTION=3, PURGE=4, THEFT=5,
+        BATTLE=6, INSURRECTION=6, RAID=7, PERSECUTION=8,
+        SITE_CONQUERED=9, ENTITY_OVERTHROWN=9, WAR=10,
+        JOURNEY=11, COMPETITION=12, PERFORMANCE=12,
+        OCCASION=12, PROCESSION=13, CEREMONY=13,
+    }
+    for name, pri in pairs(P) do
+        local ok, v = pcall(function()
+            return df.history_event_collection_type[name]
+        end)
+        if ok and v ~= nil then COLLECTION_PRIORITY[v] = pri end
+    end
+end
+
+-- Scan all event collections and build { [event_id] = best_collection } map.
+-- Keeps the highest-priority (lowest number) collection per event.
+local function build_event_to_collection()
+    local ok_all, all = pcall(function()
+        return df.global.world.history.event_collections.all
+    end)
+    if not ok_all or not all then return {} end
+    local ctx_map = {}
+    for ci = 0, #all - 1 do
+        local col = all[ci]
+        local pri = COLLECTION_PRIORITY[col:getType()] or 99
+        local ok_n, n = pcall(function() return #col.events end)
+        if ok_n then
+            for j = 0, n - 1 do
+                local eid = col.events[j]
+                local existing = ctx_map[eid]
+                if existing then
+                    local ex_pri = COLLECTION_PRIORITY[existing:getType()] or 99
+                    if pri < ex_pri then ctx_map[eid] = col end
+                else
+                    ctx_map[eid] = col
+                end
+            end
+        end
+    end
+    return ctx_map
+end
+
+-- Returns a human-readable context suffix for a collection, or nil.
+-- skip_site=true avoids duplicating site info already in the base description.
+local function describe_collection(col, skip_site)
+    if not col then return nil end
+    local ok, ctype = pcall(function()
+        return df.history_event_collection_type[col:getType()]
+    end)
+    if not ok or not ctype then return nil end
+
+    if ctype == 'DUEL' then
+        local a    = hf_name_by_id(safe_get(col, 'attacker_hf')) or 'someone'
+        local d    = hf_name_by_id(safe_get(col, 'defender_hf')) or 'someone'
+        local site = not skip_site and site_name_by_id(safe_get(col, 'site'))
+        local loc  = site and (' at ' .. site) or ''
+        return 'as part of a duel between ' .. a .. ' and ' .. d .. loc
+
+    elseif ctype == 'BEAST_ATTACK' then
+        -- attacker_hf is a vector (confirmed via probe)
+        local ok_b, bv = pcall(function() return col.attacker_hf end)
+        local beast = (ok_b and #bv > 0) and hf_name_by_id(bv[0]) or 'a beast'
+        local site  = not skip_site and site_name_by_id(safe_get(col, 'site'))
+        local loc   = site and (' on ' .. site) or ''
+        return 'during the rampage' .. loc .. ' by ' .. beast
+
+    elseif ctype == 'ABDUCTION' then
+        -- snatcher_hf/victim_hf are vectors; attacker_civ is scalar
+        local ok_v, vv = pcall(function() return col.victim_hf end)
+        local victim = (ok_v and #vv > 0) and hf_name_by_id(vv[0]) or 'someone'
+        local civ    = ent_name_by_id(safe_get(col, 'attacker_civ'))
+        local site   = not skip_site and site_name_by_id(safe_get(col, 'site'))
+        local loc    = site and (' from ' .. site) or ''
+        local by     = civ and (', ordered by ' .. civ) or ''
+        return 'as part of the abduction of ' .. victim .. loc .. by
+
+    elseif ctype == 'BATTLE' then
+        -- name is language_name; attacker_civ/defender_civ are vectors (may be empty)
+        local site = not skip_site and site_name_by_id(safe_get(col, 'site'))
+        local ok_n, bname = pcall(function()
+            return dfhack.translation.translateName(col.name, true)
+        end)
+        if ok_n and bname and bname ~= '' then
+            local loc = site and (' at ' .. site) or ''
+            return 'during ' .. bname .. loc
+        end
+        local ok_ac, acv = pcall(function() return col.attacker_civ end)
+        local ok_dc, dcv = pcall(function() return col.defender_civ end)
+        local ac = (ok_ac and #acv > 0) and ent_name_by_id(acv[0]) or nil
+        local dc = (ok_dc and #dcv > 0) and ent_name_by_id(dcv[0]) or nil
+        local loc = site and (' at ' .. site) or ''
+        if ac and dc then
+            return 'during the battle' .. loc .. ' between ' .. ac .. ' and ' .. dc
+        end
+        return 'during a battle' .. loc
+
+    elseif ctype == 'RAID' then
+        -- Unverified (0 instances in test save); field names guarded with safe_get
+        local site = not skip_site and site_name_by_id(safe_get(col, 'site'))
+        local ac   = ent_name_by_id(safe_get(col, 'attacking_entity'))
+        local loc  = site and (' on ' .. site) or ''
+        local by   = ac and (' by ' .. ac) or ''
+        return 'during a raid' .. loc .. by
+
+    elseif ctype == 'SITE_CONQUERED' then
+        -- attacker_civ/defender_civ are vectors
+        local site = not skip_site and site_name_by_id(safe_get(col, 'site'))
+        local ok_ac, acv = pcall(function() return col.attacker_civ end)
+        local ac = (ok_ac and #acv > 0) and ent_name_by_id(acv[0]) or nil
+        local loc = site and (' of ' .. site) or ''
+        local by  = ac and (' by ' .. ac) or ''
+        return 'during the conquest' .. loc .. by
+
+    elseif ctype == 'WAR' then
+        -- name is language_name; attacker_civ/defender_civ are vectors
+        local ok_n, war_name = pcall(function()
+            return dfhack.translation.translateName(col.name, true)
+        end)
+        if ok_n and war_name and war_name ~= '' then
+            return 'during ' .. war_name
+        end
+        local ok_ac, acv = pcall(function() return col.attacker_civ end)
+        local ok_dc, dcv = pcall(function() return col.defender_civ end)
+        local ac = (ok_ac and #acv > 0) and ent_name_by_id(acv[0]) or nil
+        local dc = (ok_dc and #dcv > 0) and ent_name_by_id(dcv[0]) or nil
+        if ac and dc then
+            return 'as part of the war between ' .. ac .. ' and ' .. dc
+        end
+        return nil
+
+    elseif ctype == 'PERSECUTION' then
+        -- entity is scalar (persecutor); site is scalar
+        local ent  = ent_name_by_id(safe_get(col, 'entity'))
+        local site = not skip_site and site_name_by_id(safe_get(col, 'site'))
+        local by   = ent and (' by ' .. ent) or ''
+        local loc  = site and (' at ' .. site) or ''
+        return 'during a persecution' .. by .. loc
+
+    elseif ctype == 'ENTITY_OVERTHROWN' then
+        -- entity is scalar (overthrown entity); site is scalar
+        local ent  = ent_name_by_id(safe_get(col, 'entity'))
+        local site = not skip_site and site_name_by_id(safe_get(col, 'site'))
+        local of_  = ent and (' of ' .. ent) or ''
+        local loc  = site and (' at ' .. site) or ''
+        return 'during the overthrow' .. of_ .. loc
+
+    elseif ctype == 'JOURNEY' then
+        return 'during a journey'
+
+    elseif ctype == 'OCCASION' or ctype == 'COMPETITION' or ctype == 'PERFORMANCE'
+        or ctype == 'PROCESSION' or ctype == 'CEREMONY' then
+        -- civ is scalar entity ID; no site field
+        local labels = {
+            OCCASION='a gathering', COMPETITION='a competition',
+            PERFORMANCE='a performance', PROCESSION='a procession',
+            CEREMONY='a ceremony',
+        }
+        local civ = ent_name_by_id(safe_get(col, 'civ'))
+        local by  = civ and (' by ' .. civ) or ''
+        return 'during ' .. labels[ctype] .. by
+
+    elseif ctype == 'THEFT' then
+        -- Unverified (0 instances in test save)
+        local site = not skip_site and site_name_by_id(safe_get(col, 'site'))
+        local ac   = ent_name_by_id(safe_get(col, 'attacking_entity'))
+        local loc  = site and (' from ' .. site) or ''
+        local by   = ac and (' by ' .. ac) or ''
+        return 'during a theft' .. loc .. by
+
+    elseif ctype == 'INSURRECTION' then
+        -- Unverified (0 instances in test save)
+        local ent  = ent_name_by_id(safe_get(col, 'target_entity'))
+        local site = not skip_site and site_name_by_id(safe_get(col, 'site'))
+        local vs   = ent and (' against ' .. ent) or ''
+        local loc  = site and (' at ' .. site) or ''
+        return 'during an insurrection' .. vs .. loc
+
+    elseif ctype == 'PURGE' then
+        -- Unverified (0 instances in test save)
+        local ent  = ent_name_by_id(safe_get(col, 'entity'))
+        local site = not skip_site and site_name_by_id(safe_get(col, 'site'))
+        local of_  = ent and (' of ' .. ent) or ''
+        local loc  = site and (' at ' .. site) or ''
+        return 'during the purge' .. of_ .. loc
+    end
+
+    return nil
+end
+
+-- Event types that receive collection context appended to their description.
+-- Value is a function(ev) -> boolean: true = skip site in context suffix.
+local CTX_TYPES = {}
+do
+    local function add_ctx(type_name, skip_site_fn)
+        local v = df.history_event_type[type_name]
+        if v ~= nil then CTX_TYPES[v] = skip_site_fn end
+    end
+    local function has_site(ev)
+        return site_name_by_id(safe_get(ev, 'site')) ~= nil
+    end
+    local function always_true() return true end
+    local function always_false() return false end
+    add_ctx('HF_SIMPLE_BATTLE_EVENT',         always_false)
+    add_ctx('HIST_FIGURE_SIMPLE_BATTLE_EVENT', always_false)
+    add_ctx('HIST_FIGURE_WOUNDED',             has_site)
+    add_ctx('HF_WOUNDED',                      has_site)
+    add_ctx('HIST_FIGURE_DIED',                has_site)
+    add_ctx('HF_ABDUCTED',                     has_site)
+    add_ctx('HIST_FIGURE_ABDUCTED',            has_site)
+    add_ctx('HF_ATTACKED_SITE',                always_true)
+    add_ctx('HF_DESTROYED_SITE',               always_true)
+    add_ctx('WAR_ATTACKED_SITE',               always_true)
+    add_ctx('WAR_FIELD_BATTLE',                has_site)
 end
 
 -- Exported: returns true if this event will produce visible text.
@@ -845,7 +1137,8 @@ end
 
 -- format_event: returns "In the year NNN, Description" for the popup list.
 -- focal_hf_id contextualises text (e.g. "Slew X" vs "Slain by Y").
-local function format_event(ev, focal_hf_id)
+-- ctx_map (optional): { [event_id] = collection } for appending collection context.
+local function format_event(ev, focal_hf_id, ctx_map)
     -- Synthetic relationship events from world.history.relationship_events.
     if type(ev) == 'table' then
         local yr    = (ev.year and ev.year ~= -1) and tostring(ev.year) or '???'
@@ -869,6 +1162,15 @@ local function format_event(ev, focal_hf_id)
         local ok, result = pcall(describer, ev, focal_hf_id)
         if ok then
             if result then
+                -- Append collection context for qualifying event types.
+                if ctx_map then
+                    local col = ctx_map[ev.id]
+                    local skip_fn = col and CTX_TYPES[ev_type]
+                    if skip_fn then
+                        local ctx = describe_collection(col, skip_fn(ev))
+                        if ctx then result = result .. ', ' .. ctx end
+                    end
+                end
                 desc = result
             else
                 return nil  -- describer explicitly said: omit this event
@@ -1076,7 +1378,8 @@ local function get_hf_events(hf_id)
         local ib = safe_get(b, 'id') or -1
         return ia < ib
     end)
-    return results
+    local ctx_map = build_event_to_collection()
+    return results, ctx_map
 end
 
 -- EventHistory popup ----------------------------------------------------------
@@ -1113,16 +1416,17 @@ function EventHistoryWindow:init()
         return #lines > 0 and lines or {text}
     end
 
-    local events = get_hf_events(self.hf_id)
+    local events, ctx_map = get_hf_events(self.hf_id)
     local event_choices = {}
     for _, ev in ipairs(events) do
-        local formatted = format_event(ev, self.hf_id)
+        local formatted = format_event(ev, self.hf_id, ctx_map)
         if formatted then
             local lines = wrap_text(formatted)
             table.insert(event_choices, { text = lines[1] })
             for i = 2, #lines do
                 table.insert(event_choices, { text = '    ' .. lines[i] })
             end
+            table.insert(event_choices, { text = '' })
         end
     end
     if #event_choices == 0 then
@@ -1155,7 +1459,7 @@ function EventHistoryWindow:init()
         }
         for _, ev in ipairs(events) do
             local yr  = (ev.year and ev.year ~= -1) and tostring(ev.year) or '???'
-            local fmt = format_event(ev, self.hf_id)
+            local fmt = format_event(ev, self.hf_id, ctx_map)
             if type(ev) == 'table' then
                 local rtype = ev.rel_type
                 local rname = rtype and rtype >= 0

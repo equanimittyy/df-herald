@@ -173,17 +173,40 @@ Internal (local) components:
   `do` block via `add(type_name, fn)`, which silently skips unknown type names (handles DFHack
   version differences). Describers return verb-first text when focal matches a participant;
   return `nil` to suppress the event entirely.
+- **`artifact_name_by_id(art_id)`** — resolves an artifact ID to its translated name via
+  `df.artifact_record.find`. pcall-guarded, returns nil on failure.
+- **`building_name_at_site(site_id, structure_id)`** — resolves a structure within a site to its
+  translated building name by scanning `site.buildings`. pcall-guarded.
 - **`get_hf_events(hf_id)`** — event collection for the popup. Uses `herald-cache` event IDs
   when available (O(n) lookups per HF); falls back to full world scan if cache not ready.
   Relationship events always scanned from block store. Contextual `WAR_FIELD_BATTLE`
-  aggregation only runs in fallback path.
+  aggregation only runs in fallback path. Also builds and returns a `ctx_map`
+  (event_id -> best collection) via `build_event_to_collection()`.
+  Returns `(results, ctx_map)`.
   **Note:** battle participation via contextual aggregation is implemented but unconfirmed —
   see the TODO comment above `get_hf_events`.
-- **`format_event(ev, focal_hf_id)`** — renders `"In the year NNN, ..."` using `EVENT_DESCRIBE`
-  or `clean_enum_name` fallback.
+- **`format_event(ev, focal_hf_id, ctx_map)`** — renders `"In the year NNN, ..."` using
+  `EVENT_DESCRIBE` or `clean_enum_name` fallback. When `ctx_map` is provided and the event
+  type is in `CTX_TYPES`, appends a collection context suffix (e.g. "as part of a duel
+  between X and Y") via `describe_collection`.
 - **`BATTLE_TYPES` set pattern** — used in both `get_hf_events` and `build_hf_event_counts` to
   resolve `HF_SIMPLE_BATTLE_EVENT` / `HIST_FIGURE_SIMPLE_BATTLE_EVENT` across DFHack versions.
   Always use a set (`{ [v] = true }`) not a single value with `or`.
+
+**Event collection context** (local to `herald-event-history.lua`):
+
+- **`COLLECTION_PRIORITY`** — `{ [collection_type_int] = priority }` mapping. Lower number =
+  more specific context. DUEL(1) > BEAST_ATTACK(2) > ... > CEREMONY(13).
+- **`build_event_to_collection()`** — scans `event_collections.all` once, builds
+  `{ [event_id] = best_collection }` keeping highest-priority collection per event.
+  Called once per popup open inside `get_hf_events`.
+- **`describe_collection(col, skip_site)`** — returns human-readable context suffix string
+  (e.g. "during The Scraped Conflict") for 13+ collection types. `skip_site=true` omits site
+  info to avoid duplication with the base description. All field access pcall-guarded.
+  Unverified types (RAID, THEFT, INSURRECTION, PURGE) use safe_get fallback chains.
+- **`CTX_TYPES`** — `{ [event_type_int] = fn(ev)->bool }` table of event types that receive
+  collection context. The function returns true when site should be skipped in the suffix.
+  Covers 11 event type names (8 distinct types accounting for version aliases).
 
 ### Event Cache (`herald-cache.lua`)
 
