@@ -39,4 +39,4 @@ herald-main debug true/false  # toggle debug output
 
 ## Author
 
-**equanimity**
+**equanimittyy**
