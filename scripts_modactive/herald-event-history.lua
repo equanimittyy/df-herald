@@ -120,14 +120,38 @@ local function pos_name_for(entity_id, position_id, hf_sex)
     return util.get_pos_name(entity, position_id, hf_sex)
 end
 
--- Resolve an artifact ID to its translated name, or nil.
+-- Resolve an artifact ID to its translated name and item description.
+-- Returns (name_or_nil, item_desc_or_nil).
+-- item_desc is e.g. "copper sword", "porcelain slab" (material + type, lowercase).
 local function artifact_name_by_id(art_id)
-    if not art_id or art_id < 0 then return nil end
+    if not art_id or art_id < 0 then return nil, nil end
     local ok, art = pcall(function() return df.artifact_record.find(art_id) end)
-    if not ok or not art then return nil end
+    if not ok or not art then return nil, nil end
     local ok2, n = pcall(function() return dfhack.translation.translateName(art.name, true) end)
-    if not ok2 or not n or n == '' then return nil end
-    return n
+    local name = (ok2 and n and n ~= '') and n or nil
+    -- Resolve item type + material from art.item.
+    local item_desc
+    local ok3, item = pcall(function() return art.item end)
+    if ok3 and item then
+        local ok4, itype = pcall(function() return item:getType() end)
+        local type_s = ok4 and itype and df.item_type and df.item_type[itype]
+        local mat_s
+        local ok5, mt = pcall(function() return item:getActualMaterial() end)
+        local ok6, mi = pcall(function() return item:getActualMaterialIndex() end)
+        if ok5 and ok6 and mt >= 0 then
+            local ok7, info = pcall(function() return dfhack.matinfo.decode(mt, mi) end)
+            if ok7 and info then
+                local ok8, s = pcall(function() return info:toString() end)
+                if ok8 and s and s ~= '' then mat_s = s:lower() end
+            end
+        end
+        if mat_s and type_s then
+            item_desc = mat_s .. ' ' .. tostring(type_s):lower()
+        elseif type_s then
+            item_desc = tostring(type_s):lower()
+        end
+    end
+    return name, item_desc
 end
 
 -- Resolve a structure within a site to its translated building name, or nil.
@@ -657,8 +681,15 @@ do
     add('ARTIFACT_STORED', function(ev, focal)
         local site_n = site_name_by_id(safe_get(ev, 'site'))
         local art_id = safe_get(ev, 'artifact_id') or safe_get(ev, 'artifact_record')
-        local art_n  = artifact_name_by_id(art_id)
-        local what   = art_n and ('the artifact ' .. art_n) or 'an artifact'
+        local art_n, art_desc = artifact_name_by_id(art_id)
+        local what
+        if art_n and art_desc then
+            what = art_n .. ', ' .. article(art_desc)
+        elseif art_n then
+            what = 'the artifact ' .. art_n
+        else
+            what = 'an artifact'
+        end
         return 'Stored ' .. what .. (site_n and (' in ' .. site_n) or '')
     end)
 
@@ -674,7 +705,83 @@ do
     end)
 
     add('ASSUME_IDENTITY', function(ev, focal)
+        -- Fields: trickster (HF ID), identity (identity ID), target (-1 if none).
+        -- df.identity: impersonated_hf = real HF being impersonated (-1 if fictitious),
+        --              histfig_id = the trickster's own HF ID (NOT the impersonated person),
+        --              name = the fake name used.
+        local ident_id = safe_get(ev, 'identity')
+        if ident_id and ident_id >= 0 then
+            local ok, identity = pcall(function() return df.identity.find(ident_id) end)
+            if ok and identity then
+                -- Check if impersonating a real HF.
+                local imp_id = safe_get(identity, 'impersonated_hf')
+                if imp_id and imp_id >= 0 then
+                    local n = hf_name_by_id(imp_id)
+                    if n then return 'Assumed the identity of ' .. n end
+                end
+                -- Fictitious identity - use the fake name.
+                local ok2, n = pcall(function()
+                    return dfhack.translation.translateName(identity.name, true)
+                end)
+                if ok2 and n and n ~= '' then
+                    return 'Assumed the identity "' .. n .. '"'
+                end
+            end
+        end
         return 'Assumed an identity'
+    end)
+
+    add('ITEM_STOLEN', function(ev, focal)
+        -- Fields: item_type, mattype, matindex, entity, histfig, site. item is always -1.
+        local itype  = safe_get(ev, 'item_type')
+        local iname  = itype and itype >= 0 and df.item_type and df.item_type[itype]
+        local type_s = iname and title_case(tostring(iname)):lower() or nil
+        -- Resolve material via mattype/matindex.
+        local mat_s
+        local mt = safe_get(ev, 'mattype')
+        local mi = safe_get(ev, 'matindex')
+        if mt and mt >= 0 then
+            local ok, info = pcall(function() return dfhack.matinfo.decode(mt, mi or -1) end)
+            if ok and info then
+                local ok2, s = pcall(function() return info:toString() end)
+                if ok2 and s and s ~= '' then mat_s = s:lower() end
+            end
+        end
+        -- "a copper sword" / "a sword" / "an item"
+        local what
+        if mat_s and type_s then
+            what = article(mat_s .. ' ' .. type_s)
+        elseif type_s then
+            what = article(type_s)
+        else
+            what = 'an item'
+        end
+        local site_n = site_name_by_id(safe_get(ev, 'site'))
+        local ent_n  = ent_name_by_id(safe_get(ev, 'entity'))
+        local thief  = hf_name_by_id(safe_get(ev, 'histfig'))
+        local loc    = site_n and (' in ' .. site_n) or ''
+        local from   = ent_n and (' from ' .. ent_n) or ''
+        if focal == safe_get(ev, 'histfig') then
+            return 'Stole ' .. what .. from .. loc
+        end
+        local who = thief or 'Someone'
+        return who .. ' stole ' .. what .. from .. loc
+    end)
+
+    add('ARTIFACT_CLAIM_FORMED', function(ev, focal)
+        -- Fields: artifact (ID), histfig, entity, claim_type, position_profile.
+        local art_n, art_desc = artifact_name_by_id(safe_get(ev, 'artifact'))
+        local what
+        if art_n and art_desc then
+            what = 'a claim on ' .. art_n .. ', ' .. article(art_desc)
+        elseif art_n then
+            what = 'a claim on ' .. art_n
+        else
+            what = 'an artifact claim'
+        end
+        local ent_n = ent_name_by_id(safe_get(ev, 'entity'))
+        if ent_n then what = what .. ' for ' .. ent_n end
+        return 'Formed ' .. what
     end)
 
     -- competitor_hf / winner_hf are stl-vectors; iterated in get_hf_events.
@@ -883,8 +990,15 @@ do
         local site_n = site_name_by_id(safe_get(ev, 'site'))
         local loc    = site_n and (' in ' .. site_n) or ''
         local art_id = safe_get(ev, 'artifact_id') or safe_get(ev, 'artifact_record')
-        local art_n  = artifact_name_by_id(art_id)
-        local what   = art_n and ('the artifact ' .. art_n) or 'an artifact'
+        local art_n, art_desc = artifact_name_by_id(art_id)
+        local what
+        if art_n and art_desc then
+            what = art_n .. ', ' .. article(art_desc)
+        elseif art_n then
+            what = 'the artifact ' .. art_n
+        else
+            what = 'an artifact'
+        end
         return 'Created ' .. what .. loc
     end)
 
@@ -1254,6 +1368,9 @@ do
     map('MASTERPIECE_CREATED_ITEM', {'maker', 'hfid'})
     map('ARTIFACT_STORED',          {'histfig', 'hfid', 'maker'})
     map('CREATE_ENTITY_POSITION',   {'histfig', 'hfid'})
+    map('ITEM_STOLEN',               {'histfig'})
+    map('ASSUME_IDENTITY',           {'trickster'})
+    map('ARTIFACT_CLAIM_FORMED',     {'histfig', 'hfid'})
 end
 
 -- TODO: battle participation events are not yet showing in HF event history.
