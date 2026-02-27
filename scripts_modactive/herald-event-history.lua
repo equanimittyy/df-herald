@@ -284,23 +284,35 @@ do
         local ltype  = safe_get(ev, 'link_type')
         local pos_id = safe_get(ev, 'position_id')
         local ent_n  = ent_name_by_id(civ_id) or 'an entity'
+        local hf_n   = hf_name_by_id(hf_id) or 'someone'
         local LT     = df.histfig_entity_link_type
+        -- Civ-focal perspective: name the HF who gained the link.
+        local civ_focal = (focal == civ_id)
         if ltype == LT.POSITION then
             local hf    = hf_id and df.historical_figure.find(hf_id)
             local pos_n = pos_name_for(civ_id, pos_id, hf and hf.sex or -1)
-            if pos_n then return 'Became ' .. pos_n .. ' of ' .. ent_n end
+            if pos_n then
+                if civ_focal then return hf_n .. ' became ' .. pos_n end
+                return 'Became ' .. pos_n .. ' of ' .. ent_n
+            end
         elseif ltype == LT.PRISONER then
+            if civ_focal then return hf_n .. ' was imprisoned' end
             return 'Was imprisoned by ' .. ent_n
         elseif ltype == LT.SLAVE then
+            if civ_focal then return hf_n .. ' was enslaved' end
             return 'Was enslaved by ' .. ent_n
         elseif ltype == LT.ENEMY then
+            if civ_focal then return hf_n .. ' became an enemy' end
             return 'Became an enemy of ' .. ent_n
         elseif ltype == LT.MEMBER or ltype == LT.SQUAD then
+            if civ_focal then return hf_n .. ' joined' end
             return 'Became a member of ' .. ent_n
         elseif ltype == LT.FORMER_MEMBER then
+            if civ_focal then return hf_n .. ' became a former member' end
             return 'Became a former member of ' .. ent_n
         end
         local lname = ltype and LT[ltype]
+        if civ_focal then return hf_n .. ' joined' .. (lname and ' (' .. title_case(lname) .. ')' or '') end
         return 'Joined ' .. ent_n .. (lname and ' (' .. title_case(lname) .. ')' or '')
     end)
 
@@ -310,18 +322,27 @@ do
         local ltype  = safe_get(ev, 'link_type')
         local pos_id = safe_get(ev, 'position_id')
         local ent_n  = ent_name_by_id(civ_id) or 'an entity'
+        local hf_n   = hf_name_by_id(hf_id) or 'someone'
         local LT     = df.histfig_entity_link_type
+        local civ_focal = (focal == civ_id)
         if ltype == LT.POSITION or ltype == LT.SQUAD then
             local hf    = hf_id and df.historical_figure.find(hf_id)
             local pos_n = pos_name_for(civ_id, pos_id, hf and hf.sex or -1)
-            if pos_n then return 'Stopped being ' .. pos_n .. ' of ' .. ent_n end
+            if pos_n then
+                if civ_focal then return hf_n .. ' stopped being ' .. pos_n end
+                return 'Stopped being ' .. pos_n .. ' of ' .. ent_n
+            end
         elseif ltype == LT.PRISONER then
+            if civ_focal then return hf_n .. ' escaped from prison' end
             return 'Escaped from the prisons of ' .. ent_n
         elseif ltype == LT.SLAVE then
+            if civ_focal then return hf_n .. ' fled from slavery' end
             return 'Fled from ' .. ent_n
         elseif ltype == LT.ENEMY then
+            if civ_focal then return hf_n .. ' stopped being an enemy' end
             return 'Stopped being an enemy of ' .. ent_n
         end
+        if civ_focal then return hf_n .. ' left' end
         return 'Left ' .. ent_n
     end)
 
@@ -798,11 +819,20 @@ do
 
     add('ENTITY_CREATED', function(ev, focal)
         -- Fields: entity, site, structure, creator_hfid.
-        local ent_n    = ent_name_by_id(safe_get(ev, 'entity'))
+        local ent_id   = safe_get(ev, 'entity')
+        local ent_n    = ent_name_by_id(ent_id)
         local site_n   = site_name_by_id(safe_get(ev, 'site'))
         local loc      = site_n and (' in ' .. site_n) or ''
         local what     = ent_n and (' ' .. ent_n) or ' an entity'
         local creator  = safe_get(ev, 'creator_hfid')
+        -- Civ-focal: "Founded [by creator]"
+        if focal == ent_id then
+            if creator and creator >= 0 then
+                local who = hf_name_by_id(creator) or 'Someone'
+                return 'Founded by ' .. who .. loc
+            end
+            return 'Founded' .. loc
+        end
         if creator and creator >= 0 and focal == creator then
             return 'Founded' .. what .. loc
         elseif creator and creator >= 0 then
@@ -1279,6 +1309,240 @@ local function describe_collection(col, skip_site)
     return nil
 end
 
+-- Civ event history helpers ----------------------------------------------------
+
+-- Returns true if a collection involves the given civ_id as attacker, defender,
+-- or participant. pcall-guarded for version safety.
+function civ_matches_collection(col, civ_id)
+    if not col or not civ_id then return false end
+    local ok, ctype = pcall(function()
+        return df.history_event_collection_type[col:getType()]
+    end)
+    if not ok or not ctype then return false end
+
+    -- Check a scalar field for civ_id match.
+    local function scalar_match(field)
+        local v = safe_get(col, field)
+        return v and v == civ_id
+    end
+
+    -- Check a vector field for civ_id match.
+    local function vec_match(field)
+        local ok_v, vec = pcall(function() return col[field] end)
+        if not ok_v or not vec then return false end
+        local ok_n, n = pcall(function() return #vec end)
+        if not ok_n then return false end
+        for i = 0, n - 1 do
+            local ok2, v = pcall(function() return vec[i] end)
+            if ok2 and v == civ_id then return true end
+        end
+        return false
+    end
+
+    if ctype == 'WAR' or ctype == 'BATTLE' or ctype == 'SITE_CONQUERED' then
+        return vec_match('attacker_civ') or vec_match('defender_civ')
+    elseif ctype == 'RAID' or ctype == 'THEFT' then
+        return scalar_match('attacking_entity') or scalar_match('attacker_civ')
+    elseif ctype == 'ABDUCTION' then
+        return scalar_match('attacker_civ')
+    elseif ctype == 'ENTITY_OVERTHROWN' or ctype == 'PERSECUTION' or ctype == 'PURGE' then
+        return scalar_match('entity')
+    elseif ctype == 'INSURRECTION' then
+        return scalar_match('target_entity')
+    elseif ctype == 'OCCASION' or ctype == 'COMPETITION' or ctype == 'PERFORMANCE'
+        or ctype == 'PROCESSION' or ctype == 'CEREMONY' then
+        return scalar_match('civ')
+    end
+    return false
+end
+
+-- Returns a civ-perspective description for a collection entry (no year prefix).
+-- focal_civ_id determines perspective (attacker vs defender).
+-- Resolve site name from a collection's first event (fallback when the
+-- collection type has no direct site field, e.g. OCCASION sub-collections).
+local function site_from_collection_events(col)
+    local ok_evs, evs = pcall(function() return col.events end)
+    if not ok_evs or not evs then return nil end
+    local ok_n, n = pcall(function() return #evs end)
+    if not ok_n or n < 1 then return nil end
+    local ev = df.history_event.find(evs[0])
+    if not ev then return nil end
+    return site_name_by_id(safe_get(ev, 'site'))
+end
+
+local function format_collection_entry(col, focal_civ_id)
+    if not col then return 'Unknown event' end
+    local ok, ctype = pcall(function()
+        return df.history_event_collection_type[col:getType()]
+    end)
+    if not ok or not ctype then return 'Unknown event' end
+
+    -- Helper: get translated collection name.
+    local function col_name()
+        local ok_n, n = pcall(function()
+            return dfhack.translation.translateName(col.name, true)
+        end)
+        return (ok_n and n and n ~= '') and n or nil
+    end
+
+    -- Helper: get opponent civ name from attacker/defender vectors.
+    local function opponent_from_vecs()
+        local ok_ac, acv = pcall(function() return col.attacker_civ end)
+        local ok_dc, dcv = pcall(function() return col.defender_civ end)
+        local is_attacker = false
+        if ok_ac and acv then
+            local ok_n, n = pcall(function() return #acv end)
+            if ok_n then
+                for i = 0, n - 1 do
+                    local ok2, v = pcall(function() return acv[i] end)
+                    if ok2 and v == focal_civ_id then is_attacker = true; break end
+                end
+            end
+        end
+        local opp_vec = is_attacker and dcv or acv
+        local ok_ov = is_attacker and ok_dc or ok_ac
+        local opp_name
+        if ok_ov and opp_vec then
+            local ok_n, n = pcall(function() return #opp_vec end)
+            if ok_n and n > 0 then
+                opp_name = ent_name_by_id(opp_vec[0])
+            end
+        end
+        return opp_name, is_attacker
+    end
+
+    if ctype == 'WAR' then
+        local name = col_name()
+        local opp, is_att = opponent_from_vecs()
+        if name then
+            local vs = opp and (' - war with ' .. opp) or ''
+            return name .. vs
+        end
+        if opp then
+            return is_att and ('declared war on ' .. opp)
+                           or (opp .. ' declared war')
+        end
+        return 'war'
+
+    elseif ctype == 'BATTLE' then
+        local name = col_name()
+        local site = site_name_by_id(safe_get(col, 'site'))
+        local opp, _ = opponent_from_vecs()
+        local loc = site and (' at ' .. site) or ''
+        local vs  = opp and (' - against ' .. opp) or ''
+        if name then return name .. loc .. vs end
+        return 'battle' .. loc .. vs
+
+    elseif ctype == 'SITE_CONQUERED' then
+        local site = site_name_by_id(safe_get(col, 'site'))
+        local opp, is_att = opponent_from_vecs()
+        local loc = site or 'a site'
+        if is_att then
+            local from = opp and (' from ' .. opp) or ''
+            return 'conquered ' .. loc .. from
+        else
+            local by = opp and (' by ' .. opp) or ''
+            return loc .. ' was conquered' .. by
+        end
+
+    elseif ctype == 'RAID' then
+        local site = site_name_by_id(safe_get(col, 'site'))
+        local ac   = safe_get(col, 'attacking_entity') or safe_get(col, 'attacker_civ')
+        local is_att = (ac == focal_civ_id)
+        local loc  = site or 'a site'
+        if is_att then
+            return 'raided ' .. loc
+        else
+            local by = ac and ent_name_by_id(ac)
+            return (by or 'Unknown') .. ' raided ' .. loc
+        end
+
+    elseif ctype == 'THEFT' then
+        local site = site_name_by_id(safe_get(col, 'site'))
+        local ac   = safe_get(col, 'attacking_entity') or safe_get(col, 'attacker_civ')
+        local is_att = (ac == focal_civ_id)
+        local loc  = site or 'a site'
+        if is_att then
+            return 'committed theft from ' .. loc
+        else
+            local by = ac and ent_name_by_id(ac)
+            return (by or 'Unknown') .. ' committed theft from ' .. loc
+        end
+
+    elseif ctype == 'ABDUCTION' then
+        local ok_v, vv = pcall(function() return col.victim_hf end)
+        local victim = (ok_v and #vv > 0) and hf_name_by_id(vv[0]) or 'someone'
+        local site = site_name_by_id(safe_get(col, 'site'))
+        local loc  = site and (' from ' .. site) or ''
+        return 'abduction of ' .. victim .. loc
+
+    elseif ctype == 'ENTITY_OVERTHROWN' then
+        local ent  = ent_name_by_id(safe_get(col, 'entity'))
+        local site = site_name_by_id(safe_get(col, 'site'))
+        local of_  = ent and (' of ' .. ent) or ''
+        local loc  = site and (' at ' .. site) or ''
+        return 'overthrow' .. of_ .. loc
+
+    elseif ctype == 'PERSECUTION' then
+        local ent  = ent_name_by_id(safe_get(col, 'entity'))
+        local site = site_name_by_id(safe_get(col, 'site'))
+        local by   = ent and (' by ' .. ent) or ''
+        local loc  = site and (' at ' .. site) or ''
+        return 'persecution' .. by .. loc
+
+    elseif ctype == 'INSURRECTION' then
+        local ent  = ent_name_by_id(safe_get(col, 'target_entity'))
+        local site = site_name_by_id(safe_get(col, 'site'))
+        local vs   = ent and (' against ' .. ent) or ''
+        local loc  = site and (' at ' .. site) or ''
+        return 'insurrection' .. vs .. loc
+
+    elseif ctype == 'PURGE' then
+        local ent  = ent_name_by_id(safe_get(col, 'entity'))
+        local site = site_name_by_id(safe_get(col, 'site'))
+        local of_  = ent and (' of ' .. ent) or ''
+        local loc  = site and (' at ' .. site) or ''
+        return 'purge' .. of_ .. loc
+
+    elseif ctype == 'OCCASION' then
+        -- OCCASION has no occasion_id or site field; try collection name,
+        -- then resolve site from own events or first child collection's events.
+        local name = col_name()
+        local site = site_from_collection_events(col)
+        if not site then
+            -- Try first child collection's events for site.
+            local ok_ch, children = pcall(function() return col.collections end)
+            if ok_ch and children then
+                local ok_n, n = pcall(function() return #children end)
+                if ok_n and n > 0 then
+                    local child = df.history_event_collection.find(children[0])
+                    if child then site = site_from_collection_events(child) end
+                end
+            end
+        end
+        local desc = name and ('hosted ' .. name) or 'hosted a gathering'
+        if site then desc = desc .. ' at ' .. site end
+        return desc
+
+    elseif ctype == 'COMPETITION' or ctype == 'PERFORMANCE'
+        or ctype == 'PROCESSION' or ctype == 'CEREMONY' then
+        local labels = {
+            COMPETITION='held a competition',
+            PERFORMANCE='held a performance',
+            PROCESSION='held a procession',
+            CEREMONY='held a ceremony',
+        }
+        -- No direct site field on these collection types; resolve from events.
+        local site = site_from_collection_events(col)
+        local desc = labels[ctype] or title_case(ctype)
+        if site then desc = desc .. ' at ' .. site end
+        return desc
+    end
+
+    local tc = title_case(ctype)
+    return tc:sub(1,1):lower() .. tc:sub(2)
+end
+
 -- Event types that receive collection context appended to their description.
 -- Value is a function(ev) -> boolean: true = skip site in context suffix.
 local CTX_TYPES = {}
@@ -1320,9 +1584,18 @@ end
 -- format_event: returns "In the year NNN, Description" for the popup list.
 -- focal_hf_id contextualises text (e.g. "Slew X" vs "Slain by Y").
 -- ctx_map (optional): { [event_id] = collection } for appending collection context.
-local function format_event(ev, focal_hf_id, ctx_map)
-    -- Synthetic relationship events from world.history.relationship_events.
+-- civ_mode: when true, skips first-char lowercasing (civ-focal descriptions start
+--           with HF names, not verbs).
+local function format_event(ev, focal_hf_id, ctx_map, civ_mode)
+    -- Synthetic entries from plain Lua tables (collections and relationships).
     if type(ev) == 'table' then
+        -- Collection-level entries (civ event history).
+        if ev._collection then
+            local yr = (ev.year and ev.year ~= -1) and tostring(ev.year) or '???'
+            local desc = format_collection_entry(ev.col, ev.civ_id)
+            return ('In the year %s, %s'):format(yr, desc)
+        end
+        -- Relationship events from world.history.relationship_events.
         local yr    = (ev.year and ev.year ~= -1) and tostring(ev.year) or '???'
         local rtype = ev.rel_type
         local rname = rtype and rtype >= 0
@@ -1365,7 +1638,12 @@ local function format_event(ev, focal_hf_id, ctx_map)
         local raw = df.history_event_type[ev_type]
         desc = raw and clean_enum_name(raw) or tostring(ev_type)
     end
-    return ('In the year %s, %s'):format(year, desc:sub(1,1):lower() .. desc:sub(2))
+    -- HF mode: lowercase first char (verb-first: "Became king" -> "became king").
+    -- Civ mode: keep as-is (name-first: "Imush became king" stays capitalised).
+    if not civ_mode then
+        desc = desc:sub(1,1):lower() .. desc:sub(2)
+    end
+    return ('In the year %s, %s'):format(year, desc)
 end
 
 -- Returns true if any element of a DF vector field on ev equals hf_id.
@@ -1440,6 +1718,120 @@ do
     map('FAILED_INTRIGUE_CORRUPTION', {'corruptor_hf', 'target_hf'})
     map('HF_ACT_ON_BUILDING',        {'histfig'})
 end
+
+-- Civ event collection ---------------------------------------------------------
+
+-- Pre-compute event type integers for civ position events.
+local _ADD_HF_ENTITY_LINK    = df.history_event_type['ADD_HF_ENTITY_LINK']
+local _REMOVE_HF_ENTITY_LINK = df.history_event_type['REMOVE_HF_ENTITY_LINK']
+local _ENTITY_CREATED        = df.history_event_type['ENTITY_CREATED']
+
+-- Helper: resolves a collection ID to a synthetic _collection entry.
+local function col_to_entry(col, civ_id)
+    local yr = safe_get(col, 'start_year')
+    if not yr or yr < 0 then
+        local ok_e, eid = pcall(function() return col.events[0] end)
+        if ok_e and eid then
+            local ev = df.history_event.find(eid)
+            if ev then yr = ev.year end
+        end
+    end
+    return { _collection = true, year = yr or -1, col = col, civ_id = civ_id }
+end
+
+-- Fast path: use cached civ event/collection IDs.
+local function get_civ_events_cached(civ_id)
+    local cache = dfhack.reqscript('herald-cache')
+    local ev_ids  = cache.get_civ_event_ids(civ_id)
+    local col_ids = cache.get_civ_collection_ids(civ_id)
+    if not ev_ids and not col_ids then return nil end
+
+    local results = {}
+
+    -- Resolve cached collection IDs to collection objects.
+    if col_ids then
+        for _, col_id in ipairs(col_ids) do
+            local col = df.history_event_collection.find(col_id)
+            if col then
+                table.insert(results, col_to_entry(col, civ_id))
+            end
+        end
+    end
+
+    -- Resolve cached event IDs to event objects.
+    if ev_ids then
+        for _, ev_id in ipairs(ev_ids) do
+            local ev = df.history_event.find(ev_id)
+            if ev then table.insert(results, ev) end
+        end
+    end
+
+    return results
+end
+
+-- Collects events relevant to a civilisation: collection-level summaries for
+-- warfare/raids/theft/kidnappings, plus individual position-change events.
+-- Uses cache when available; falls back to full scan.
+-- Returns (results, ctx_map) matching get_hf_events signature.
+local function get_civ_events(civ_id)
+    -- Try cached path first.
+    local results = get_civ_events_cached(civ_id)
+
+    if not results then
+        -- Full scan fallback.
+        results = {}
+
+        -- Phase A: scan collections for civ involvement.
+        local ok_all, all = pcall(function()
+            return df.global.world.history.event_collections.all
+        end)
+        if ok_all and all then
+            for ci = 0, #all - 1 do
+                local col = all[ci]
+                if civ_matches_collection(col, civ_id) then
+                    table.insert(results, col_to_entry(col, civ_id))
+                end
+            end
+        end
+
+        -- Phase B: scan events for position changes and entity creation.
+        local LT_POS = df.histfig_entity_link_type and df.histfig_entity_link_type.POSITION
+        for _, ev in ipairs(df.global.world.history.events) do
+            local ev_type = ev:getType()
+            if (_ADD_HF_ENTITY_LINK and ev_type == _ADD_HF_ENTITY_LINK)
+                or (_REMOVE_HF_ENTITY_LINK and ev_type == _REMOVE_HF_ENTITY_LINK) then
+                local ev_civ = safe_get(ev, 'civ')
+                if ev_civ == civ_id then
+                    local ltype = safe_get(ev, 'link_type')
+                    if LT_POS and ltype == LT_POS then
+                        table.insert(results, ev)
+                    end
+                end
+            elseif _ENTITY_CREATED and ev_type == _ENTITY_CREATED then
+                if safe_get(ev, 'entity') == civ_id then
+                    table.insert(results, ev)
+                end
+            end
+        end
+    end
+
+    -- Sort by year, seconds, id.
+    table.sort(results, function(a, b)
+        local ya, yb = (a.year or -1), (b.year or -1)
+        if ya ~= yb then return ya < yb end
+        local sa = safe_get(a, 'seconds') or -1
+        local sb = safe_get(b, 'seconds') or -1
+        if sa ~= sb then return sa < sb end
+        local ia = safe_get(a, 'id') or -1
+        local ib = safe_get(b, 'id') or -1
+        return ia < ib
+    end)
+
+    local ctx_map = build_event_to_collection()
+    return results, ctx_map
+end
+
+-- HF event collection ----------------------------------------------------------
 
 -- TODO: battle participation events are not yet showing in HF event history.
 -- The two approaches below (BATTLE_TYPES vector check and contextual WAR_FIELD_BATTLE
@@ -1580,11 +1972,14 @@ EventHistoryWindow.ATTRS {
     resizable   = false,
     hf_id       = DEFAULT_NIL,
     hf_name     = DEFAULT_NIL,
+    entity_id   = DEFAULT_NIL,
+    entity_name = DEFAULT_NIL,
 }
 
 function EventHistoryWindow:init()
-    local hf_name = self.hf_name or '?'
-    self.frame_title = 'Event History: ' .. hf_name
+    local is_civ       = (self.entity_id ~= nil)
+    local display_name = is_civ and (self.entity_name or '?') or (self.hf_name or '?')
+    self.frame_title   = 'Event History: ' .. display_name
 
     -- w=76, 1-char border each side = 74 interior, l=1 r=1 list padding = 72,
     -- minus 1 for the list cursor glyph = 71 safe width.
@@ -1605,10 +2000,19 @@ function EventHistoryWindow:init()
         return #lines > 0 and lines or {text}
     end
 
-    local events, ctx_map = get_hf_events(self.hf_id)
+    local events, ctx_map
+    local focal
+    if is_civ then
+        events, ctx_map = get_civ_events(self.entity_id)
+        focal = self.entity_id  -- civ ID as focal for civ-perspective describers
+    else
+        events, ctx_map = get_hf_events(self.hf_id)
+        focal = self.hf_id
+    end
+
     local event_choices = {}
     for _, ev in ipairs(events) do
-        local formatted = format_event(ev, self.hf_id, ctx_map)
+        local formatted = format_event(ev, focal, ctx_map, is_civ)
         if formatted then
             local lines = wrap_text(formatted)
             -- All lines for one event share the same search_key so they filter as a group.
@@ -1623,9 +2027,14 @@ function EventHistoryWindow:init()
         table.insert(event_choices, { text = 'No events found.' })
     end
 
-    print(('[Herald] EventHistory: %s (hf_id=%d) - %d event(s)'):format(
-        hf_name, self.hf_id or -1, #events))
-    -- Detailed per-event field dump for mapping new event types; gated behind DEBUG.
+    if is_civ then
+        print(('[Herald] EventHistory: %s (entity_id=%d) - %d event(s)'):format(
+            display_name, self.entity_id or -1, #events))
+    else
+        print(('[Herald] EventHistory: %s (hf_id=%d) - %d event(s)'):format(
+            display_name, self.hf_id or -1, #events))
+    end
+    -- Detailed per-event dump; gated behind DEBUG.
     if dfhack.reqscript('herald-main').DEBUG then
         local PROBE_FIELDS = {
             'state', 'substate', 'mood', 'reason',
@@ -1649,13 +2058,25 @@ function EventHistoryWindow:init()
         }
         for _, ev in ipairs(events) do
             local yr  = (ev.year and ev.year ~= -1) and tostring(ev.year) or '???'
-            local fmt = format_event(ev, self.hf_id, ctx_map)
+            local fmt = format_event(ev, focal, ctx_map, is_civ)
             if type(ev) == 'table' then
-                local rtype = ev.rel_type
-                local rname = rtype and rtype >= 0
-                    and (df.vague_relationship_type[rtype] or tostring(rtype)):lower():gsub('_', ' ')
-                    or '?'
-                print(('  [yr%s] RELATIONSHIP(%s) -> %s'):format(yr, rname, fmt or '(omitted)'))
+                if ev._collection then
+                    -- Collection entry (civ mode).
+                    local ok, ctype = pcall(function()
+                        return df.history_event_collection_type[ev.col:getType()]
+                    end)
+                    local ctype_s = (ok and ctype) or '?'
+                    local col_id  = safe_get(ev.col, 'id') or '?'
+                    print(('  [yr%s] COLLECTION(%s, id=%s) -> %s'):format(
+                        yr, ctype_s, tostring(col_id), fmt or '(omitted)'))
+                elseif ev._relationship then
+                    -- Relationship entry (HF mode).
+                    local rtype = ev.rel_type
+                    local rname = rtype and rtype >= 0
+                        and (df.vague_relationship_type[rtype] or tostring(rtype)):lower():gsub('_', ' ')
+                        or '?'
+                    print(('  [yr%s] RELATIONSHIP(%s) -> %s'):format(yr, rname, fmt or '(omitted)'))
+                end
             else
                 local raw = df.history_event_type[ev:getType()] or tostring(ev:getType())
                 print(('  [yr%s] %s -> %s'):format(yr, raw, fmt or '(omitted)'))
@@ -1678,7 +2099,7 @@ function EventHistoryWindow:init()
             frame = { t = 0, l = 1 },
             text  = {
                 { text = 'Showing events for: ', pen = COLOR_GREY },
-                { text = hf_name,               pen = COLOR_GREEN },
+                { text = display_name,           pen = COLOR_GREEN },
             },
         },
         widgets.FilteredList{
@@ -1700,16 +2121,20 @@ end
 
 local EventHistoryScreen = defclass(EventHistoryScreen, gui.ZScreen)
 EventHistoryScreen.ATTRS {
-    focus_path = 'herald/event-history',
-    hf_id      = DEFAULT_NIL,
-    hf_name    = DEFAULT_NIL,
+    focus_path  = 'herald/event-history',
+    hf_id       = DEFAULT_NIL,
+    hf_name     = DEFAULT_NIL,
+    entity_id   = DEFAULT_NIL,
+    entity_name = DEFAULT_NIL,
 }
 
 function EventHistoryScreen:init()
     self:addviews{
         EventHistoryWindow{
-            hf_id   = self.hf_id,
-            hf_name = self.hf_name,
+            hf_id       = self.hf_id,
+            hf_name     = self.hf_name,
+            entity_id   = self.entity_id,
+            entity_name = self.entity_name,
         },
     }
 end
@@ -1718,11 +2143,11 @@ function EventHistoryScreen:onDismiss()
     event_history_view = nil
 end
 
--- Exported: opens the Event History popup for hf_id.
--- If a window is already open for the same HF, raises it; if for a different HF, replaces it.
+-- Exported: opens the Event History popup for an HF.
+-- Singleton: same HF raises, different HF/civ replaces.
 function open_event_history(hf_id, hf_name)
     if event_history_view then
-        if event_history_view.hf_id == hf_id then
+        if event_history_view.hf_id == hf_id and not event_history_view.entity_id then
             event_history_view:raise()
             return
         end
@@ -1730,4 +2155,20 @@ function open_event_history(hf_id, hf_name)
         event_history_view = nil
     end
     event_history_view = EventHistoryScreen{ hf_id = hf_id, hf_name = hf_name }:show()
+end
+
+-- Exported: opens the Event History popup for a civilisation.
+-- Singleton: same entity raises, different entity/HF replaces.
+function open_civ_event_history(entity_id, entity_name)
+    if event_history_view then
+        if event_history_view.entity_id == entity_id then
+            event_history_view:raise()
+            return
+        end
+        event_history_view:dismiss()
+        event_history_view = nil
+    end
+    event_history_view = EventHistoryScreen{
+        entity_id = entity_id, entity_name = entity_name,
+    }:show()
 end

@@ -29,6 +29,10 @@ building    = false   -- true during build
 local hf_event_counts = nil   -- { [hf_id] = count }
 local hf_event_ids    = nil   -- { [hf_id] = {id, ...} }
 local hf_rel_counts   = nil   -- { [hf_id] = count }
+-- Civ cache tables.
+local civ_event_ids      = nil   -- { [civ_id] = {ev_id, ...} } position/entity events
+local civ_collection_ids = nil   -- { [civ_id] = {col_id, ...} } collection IDs
+local civ_event_counts   = nil   -- { [civ_id] = count } total (events + collections)
 -- Watermark: tracks how far into the events array we've cached.
 -- last_cached_event_idx is an array INDEX into df.global.world.history.events (0-based),
 -- last_cached_event_id is the .id field of that event (used to validate the watermark
@@ -38,6 +42,8 @@ local last_cached_event_id  = -1
 -- Relationship event watermarks (block store has different structure from regular events).
 local rel_blocks_scanned    = 0
 local rel_last_block_ne     = 0
+-- Collection watermark.
+local last_cached_collection_idx = -1
 
 -- Lazy-loaded dependency (inside function bodies, not at module scope).
 local function get_ev_hist()
@@ -60,10 +66,14 @@ function load_cache()
     hf_event_counts = nil
     hf_event_ids    = nil
     hf_rel_counts   = nil
+    civ_event_ids      = nil
+    civ_collection_ids = nil
+    civ_event_counts   = nil
     last_cached_event_idx = -1
     last_cached_event_id  = -1
     rel_blocks_scanned    = 0
     rel_last_block_ne     = 0
+    last_cached_collection_idx = -1
 
     local ok, site_data = pcall(dfhack.persistent.getSiteData, PERSIST_KEY)
     if not ok or type(site_data) ~= 'table' then
@@ -116,17 +126,23 @@ function load_cache()
     hf_event_counts = restore_counts(site_data.hf_event_counts)
     hf_event_ids    = restore_id_lists(site_data.hf_event_ids)
     hf_rel_counts   = restore_counts(site_data.hf_rel_counts)
+    civ_event_ids      = restore_id_lists(site_data.civ_event_ids)
+    civ_collection_ids = restore_id_lists(site_data.civ_collection_ids)
+    civ_event_counts   = restore_counts(site_data.civ_event_counts)
     last_cached_event_idx = stored_idx
     last_cached_event_id  = stored_id
     rel_blocks_scanned    = tonumber(site_data.rel_blocks_scanned) or 0
     rel_last_block_ne     = tonumber(site_data.rel_last_block_ne)  or 0
+    last_cached_collection_idx = tonumber(site_data.last_cached_collection_idx) or -1
     cache_ready = true
 
-    -- Count unique HFs in cache for the summary.
+    -- Count unique HFs/civs in cache for the summary.
     local hf_count = 0
     for _ in pairs(hf_event_counts) do hf_count = hf_count + 1 end
-    dprint('load_cache: restored from save - watermark idx=%d id=%d, %d HFs cached, rel_blocks=%d',
-        stored_idx, stored_id, hf_count, rel_blocks_scanned)
+    local civ_count = 0
+    for _ in pairs(civ_event_counts) do civ_count = civ_count + 1 end
+    dprint('load_cache: restored - watermark idx=%d id=%d, %d HFs, %d civs, rel_blocks=%d, col_idx=%d',
+        stored_idx, stored_id, hf_count, civ_count, rel_blocks_scanned, last_cached_collection_idx)
 end
 
 function save_cache()
@@ -151,9 +167,13 @@ function save_cache()
         last_cached_event_id  = last_cached_event_id,
         rel_blocks_scanned    = rel_blocks_scanned,
         rel_last_block_ne     = rel_last_block_ne,
+        last_cached_collection_idx = last_cached_collection_idx,
         hf_event_counts       = stringify_keys(hf_event_counts),
         hf_event_ids          = stringify_keys(hf_event_ids),
         hf_rel_counts         = stringify_keys(hf_rel_counts),
+        civ_event_ids         = stringify_keys(civ_event_ids or {}),
+        civ_collection_ids    = stringify_keys(civ_collection_ids or {}),
+        civ_event_counts      = stringify_keys(civ_event_counts or {}),
     }
     pcall(dfhack.persistent.saveSiteData, PERSIST_KEY, data)
 end
@@ -164,10 +184,14 @@ function invalidate_cache()
     hf_event_counts = nil
     hf_event_ids    = nil
     hf_rel_counts   = nil
+    civ_event_ids      = nil
+    civ_collection_ids = nil
+    civ_event_counts   = nil
     last_cached_event_idx = -1
     last_cached_event_id  = -1
     rel_blocks_scanned    = 0
     rel_last_block_ne     = 0
+    last_cached_collection_idx = -1
     pcall(dfhack.persistent.saveSiteData, PERSIST_KEY, {})
 end
 
@@ -185,7 +209,14 @@ for _, name in ipairs({'HF_SIMPLE_BATTLE_EVENT', 'HIST_FIGURE_SIMPLE_BATTLE_EVEN
 end
 local COMP_TYPE = df.history_event_type['COMPETITION']
 
--- Processes a single event: updates hf_event_counts and hf_event_ids.
+-- Civ-relevant event types.
+local ADD_HF_ENTITY_LINK_TYPE    = df.history_event_type['ADD_HF_ENTITY_LINK']
+local REMOVE_HF_ENTITY_LINK_TYPE = df.history_event_type['REMOVE_HF_ENTITY_LINK']
+local ENTITY_CREATED_TYPE        = df.history_event_type['ENTITY_CREATED']
+local LT_POSITION = df.histfig_entity_link_type and df.histfig_entity_link_type.POSITION
+
+-- Processes a single event: updates hf_event_counts, hf_event_ids,
+-- and civ_event_ids/civ_event_counts for position/entity events.
 -- Returns nothing; mutates tables in place.
 local function process_event(ev, ev_hist)
     if not ev_hist.event_will_be_shown(ev) then return end
@@ -247,6 +278,28 @@ local function process_event(ev, ev_hist)
             end
         end
     end
+
+    -- Civ position events: ADD/REMOVE_HF_ENTITY_LINK with POSITION link_type.
+    if (ADD_HF_ENTITY_LINK_TYPE and ev_type == ADD_HF_ENTITY_LINK_TYPE)
+        or (REMOVE_HF_ENTITY_LINK_TYPE and ev_type == REMOVE_HF_ENTITY_LINK_TYPE) then
+        local civ_id = ev_hist.safe_get(ev, 'civ')
+        local ltype  = ev_hist.safe_get(ev, 'link_type')
+        if civ_id and civ_id >= 0 and LT_POSITION and ltype == LT_POSITION then
+            if not civ_event_ids[civ_id] then civ_event_ids[civ_id] = {} end
+            table.insert(civ_event_ids[civ_id], ev_id)
+            civ_event_counts[civ_id] = (civ_event_counts[civ_id] or 0) + 1
+        end
+    end
+
+    -- Entity creation events.
+    if ENTITY_CREATED_TYPE and ev_type == ENTITY_CREATED_TYPE then
+        local ent_id = ev_hist.safe_get(ev, 'entity')
+        if ent_id and ent_id >= 0 then
+            if not civ_event_ids[ent_id] then civ_event_ids[ent_id] = {} end
+            table.insert(civ_event_ids[ent_id], ev_id)
+            civ_event_counts[ent_id] = (civ_event_counts[ent_id] or 0) + 1
+        end
+    end
 end
 
 -- Scans relationship event blocks from the given watermark.
@@ -291,6 +344,43 @@ local function scan_rel_events(from_block, from_ne)
     end
 end
 
+-- Scans event collections from the given watermark for civ associations.
+-- Uses civ_matches_collection from herald-event-history to check each collection
+-- against every civ it involves, storing collection IDs per civ.
+local function scan_collections(from_idx, ev_hist)
+    local ok_all, all = pcall(function()
+        return df.global.world.history.event_collections.all
+    end)
+    if not ok_all or not all then return end
+
+    local n = #all
+    dprint('scan_collections: scanning from idx %d, total collections=%d', from_idx + 1, n)
+
+    -- Build civ_set: all Civilization entity IDs.
+    local civ_set = {}
+    for _, entity in ipairs(df.global.world.entities.all) do
+        if entity.type == df.historical_entity_type.Civilization then
+            civ_set[entity.id] = true
+        end
+    end
+
+    for ci = from_idx + 1, n - 1 do
+        local col = all[ci]
+        for civ_id in pairs(civ_set) do
+            if ev_hist.civ_matches_collection(col, civ_id) then
+                local col_id = col.id
+                if not civ_collection_ids[civ_id] then civ_collection_ids[civ_id] = {} end
+                table.insert(civ_collection_ids[civ_id], col_id)
+                civ_event_counts[civ_id] = (civ_event_counts[civ_id] or 0) + 1
+            end
+        end
+    end
+
+    if n > 0 then
+        last_cached_collection_idx = n - 1
+    end
+end
+
 -- Full build: scans all events from scratch.
 function build_full(on_done)
     dprint('build_full: starting full cache build')
@@ -299,10 +389,14 @@ function build_full(on_done)
     hf_event_counts = {}
     hf_event_ids    = {}
     hf_rel_counts   = {}
+    civ_event_ids      = {}
+    civ_collection_ids = {}
+    civ_event_counts   = {}
     last_cached_event_idx = -1
     last_cached_event_id  = -1
     rel_blocks_scanned    = 0
     rel_last_block_ne     = 0
+    last_cached_collection_idx = -1
 
     local ev_hist = get_ev_hist()
     local events  = df.global.world.history.events
@@ -321,14 +415,19 @@ function build_full(on_done)
     dprint('build_full: scanning relationship event blocks')
     scan_rel_events(0, 0)
 
+    dprint('build_full: scanning event collections for civ associations')
+    scan_collections(-1, ev_hist)
+
     cache_ready = true
     building    = false
     save_cache()
 
     local hf_count = 0
     for _ in pairs(hf_event_counts) do hf_count = hf_count + 1 end
-    dprint('build_full: complete - %d event(s) processed, %d HFs indexed, watermark idx=%d id=%d',
-        n, hf_count, last_cached_event_idx, last_cached_event_id)
+    local civ_count = 0
+    for _ in pairs(civ_event_counts) do civ_count = civ_count + 1 end
+    dprint('build_full: complete - %d event(s), %d HFs, %d civs, watermark idx=%d id=%d',
+        n, hf_count, civ_count, last_cached_event_idx, last_cached_event_id)
 
     if on_done then on_done() end
     return n
@@ -373,6 +472,13 @@ function build_delta()
     -- Delta scan relationship events from last watermark.
     scan_rel_events(rel_blocks_scanned, rel_last_block_ne)
 
+    -- Delta scan collections from last watermark.
+    -- Ensure civ tables exist (may be nil if loaded from an older cache version).
+    if not civ_event_ids then civ_event_ids = {} end
+    if not civ_collection_ids then civ_collection_ids = {} end
+    if not civ_event_counts then civ_event_counts = {} end
+    scan_collections(last_cached_collection_idx, ev_hist)
+
     if count > 0 then
         dprint('build_delta: processed %d new event(s), watermark now idx=%d id=%d',
             count, last_cached_event_idx, last_cached_event_id)
@@ -415,6 +521,23 @@ function get_hf_total_count(hf_id)
     return (hf_event_counts[hf_id] or 0) + (hf_rel_counts[hf_id] or 0)
 end
 
+-- Civ accessors ---------------------------------------------------------------
+
+function get_civ_event_ids(civ_id)
+    if not cache_ready or not civ_event_ids then return nil end
+    return civ_event_ids[civ_id]
+end
+
+function get_civ_collection_ids(civ_id)
+    if not cache_ready or not civ_collection_ids then return nil end
+    return civ_collection_ids[civ_id]
+end
+
+function get_civ_total_count(civ_id)
+    if not cache_ready or not civ_event_counts then return 0 end
+    return civ_event_counts[civ_id] or 0
+end
+
 -- Cleanup ----------------------------------------------------------------------
 
 function reset()
@@ -424,8 +547,12 @@ function reset()
     hf_event_counts = nil
     hf_event_ids    = nil
     hf_rel_counts   = nil
+    civ_event_ids      = nil
+    civ_collection_ids = nil
+    civ_event_counts   = nil
     last_cached_event_idx = -1
     last_cached_event_id  = -1
     rel_blocks_scanned    = 0
     rel_last_block_ne     = 0
+    last_cached_collection_idx = -1
 end

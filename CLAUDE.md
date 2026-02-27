@@ -164,10 +164,16 @@ Exports (non-local at module scope):
   `herald-cache`.
 - **`event_will_be_shown(ev)`** — calls the describer with `focal=-1`; returns false if the result
   is nil. Used by `herald-cache` to exclude noise events from counts.
+- **`civ_matches_collection(col, civ_id)`** — returns true if a collection involves the given
+  civ. Used by `herald-cache` for civ collection scanning.
 - **`open_event_history(hf_id, hf_name)`** — opens (or raises) the EventHistory popup. Uses
   `widgets.FilteredList` with `search_key` for text search/filtering across events. Multi-line
   events share the same `search_key` so they filter as a group. Called via
   `ev_hist.open_event_history(...)` from `FiguresPanel` and `PinnedPanel`.
+- **`open_civ_event_history(entity_id, entity_name)`** — opens (or raises) the EventHistory
+  popup for a civilisation. Shows collection-level summaries (wars, battles, conquests, raids,
+  theft, abductions) plus individual position-change events. Same singleton pattern as
+  `open_event_history`; opening one dismisses the other.
 
 Internal (local) components:
 
@@ -190,10 +196,12 @@ Internal (local) components:
   Returns `(results, ctx_map)`.
   **Note:** battle participation via contextual aggregation is implemented but unconfirmed —
   see the TODO comment above `get_hf_events`.
-- **`format_event(ev, focal_hf_id, ctx_map)`** — renders `"In the year NNN, ..."` using
+- **`format_event(ev, focal_hf_id, ctx_map, civ_mode)`** — renders `"In the year NNN, ..."` using
   `EVENT_DESCRIBE` or `clean_enum_name` fallback. When `ctx_map` is provided and the event
   type is in `CTX_TYPES`, appends a collection context suffix (e.g. "as part of a duel
-  between X and Y") via `describe_collection`.
+  between X and Y") via `describe_collection`. In HF mode (default), lowercases the first char
+  of descriptions (verb-first). In civ mode (`civ_mode=true`), keeps capitalisation intact
+  (descriptions start with HF names).
 - **`BATTLE_TYPES` set pattern** — used in both `get_hf_events` and `build_hf_event_counts` to
   resolve `HF_SIMPLE_BATTLE_EVENT` / `HIST_FIGURE_SIMPLE_BATTLE_EVENT` across DFHack versions.
   Always use a set (`{ [v] = true }`) not a single value with `or`.
@@ -212,6 +220,23 @@ Internal (local) components:
 - **`CTX_TYPES`** — `{ [event_type_int] = fn(ev)->bool }` table of event types that receive
   collection context. The function returns true when site should be skipped in the suffix.
   Covers 11 event type names (8 distinct types accounting for version aliases).
+
+**Civ event history** (local to `herald-event-history.lua`):
+
+- **`civ_matches_collection(col, civ_id)`** — returns true if a collection involves the given
+  civ as attacker, defender, or participant. pcall-guarded vector/scalar field checks.
+- **`site_from_collection_events(col)`** — resolves a site name from a collection's first
+  event. Used as fallback for collection types with no direct `site` field (OCCASION and its
+  sub-collections: COMPETITION, PERFORMANCE, PROCESSION, CEREMONY).
+- **`format_collection_entry(col, focal_civ_id)`** — returns civ-perspective description text
+  for a collection. Lowercase-first for generated text (e.g. "conquered Site from Enemy",
+  "hosted a gathering at Site"), preserves capitalisation for proper names from DF
+  translation (e.g. "The War of X - war with Y"). No year prefix; caller handles that.
+  OCCASION collections have no `occasion_id` field; name resolved via `col_name()` fallback,
+  site resolved from own events or first child collection's events.
+- **`get_civ_events(civ_id)`** — collects events relevant to a civ: collection-level summaries
+  for warfare/raids/theft/kidnappings + individual position-change and entity-creation events.
+  Returns `(results, ctx_map)` matching `get_hf_events` signature.
 
 ### Event Cache (`herald-cache.lua`)
 
@@ -233,10 +258,14 @@ on every GUI open by caching results in the save file via `dfhack.persistent.sav
 - `get_all_hf_event_counts()` — `{ [hf_id] = count }` (events + relationships merged)
 - `get_hf_event_ids(hf_id)` — sorted event ID list for Event History popup
 - `get_hf_total_count(hf_id)` — events + relationships for a single HF
+- `get_civ_event_ids(civ_id)` — position/entity event IDs for a civ
+- `get_civ_collection_ids(civ_id)` — collection IDs involving a civ
+- `get_civ_total_count(civ_id)` — total events + collections for a civ
 - `reset()` — cleanup on world unload
 
 **Dependencies:** Requires `herald-event-history` only (for `HF_FIELDS`, `TYPE_HF_FIELDS`,
-`safe_get`, `event_will_be_shown`). Does NOT require `herald-main` or any handler module.
+`safe_get`, `event_will_be_shown`, `civ_matches_collection`). Does NOT require `herald-main`
+or any handler module.
 
 **Lifecycle:** `load_cache()` called in `herald-main.init_scan()`; `reset()` called in
 `herald-main.cleanup()`. GUI calls `build_delta()` on open, or shows a warning dialog
@@ -251,10 +280,11 @@ Ctrl-J (open DFHack Journal), Ctrl-C (refresh cache), and Escape (close).
 
 - **Pinned** (tab 1): left list of pinned individuals or civs; Ctrl-I toggles Individuals/
   Civilisations view. Right panel shows per-pin announcement toggles (unimplemented categories
-  marked `*`). Ctrl-E opens Event History. Enter unpins the selection.
+  marked `*`). Ctrl-E opens Event History (HF or civ depending on view). Enter unpins the selection.
 - **Historical Figures** (tab 2): Name/Race/Civ/Status/Events list with detail panel. Enter to
   pin/unpin; Ctrl-E event history; Ctrl-D show-dead; Ctrl-P pinned-only.
-- **Civilisations** (tab 3): full civ list. Enter to pin/unpin; Ctrl-P pinned-only.
+- **Civilisations** (tab 3): full civ list. Enter to pin/unpin; Ctrl-E event history; Ctrl-P
+  pinned-only.
 
 **Global config** (`dfhack-config/herald.json`):
 
@@ -526,7 +556,7 @@ col.name                       -- language_name (WAR and BATTLE only)
 | PERSECUTION | `entity` scalar (persecutor), `site` scalar | |
 | ENTITY_OVERTHROWN | `entity` scalar (overthrown), `site` scalar | |
 | JOURNEY | `traveler_hf` **vector**, no `site` | |
-| OCCASION/COMPETITION/PERFORMANCE/PROCESSION/CEREMONY | `civ` scalar, no `site` | |
+| OCCASION/COMPETITION/PERFORMANCE/PROCESSION/CEREMONY | `civ` scalar, no `site`, no `occasion_id` | site resolved from events via `site_from_collection_events` |
 | RAID/THEFT/INSURRECTION/PURGE | unverified (absent from test save) | use `safe_get` guards |
 
 Civ/entity fields use `attacker_civ`/`defender_civ` naming (NOT `attacking_entity`/`defending_entity`)

@@ -27,7 +27,7 @@ Tags: fort | gameplay
   Categories marked "*" are not yet implemented.
 
   Ctrl-I              Toggle between Individuals and Civilisations view
-  Ctrl-E              Open event history for the selected individual
+  Ctrl-E              Open event history for the selected entry (HF or civ)
   Enter               Unpin the selected entry
 
   Tab 2 - Historical Figures
@@ -50,6 +50,7 @@ Tags: fort | gameplay
 
   Type to search      Filter by name or race
   Enter               Pin or unpin the selected civilisation
+  Ctrl-E              Open event history for the selected civilisation
   Ctrl-P              Toggle "Pinned only" filter
 
   Event History Popup
@@ -728,8 +729,11 @@ function PinnedPanel:init()
             visible     = true,   -- individuals mode is the default
             on_activate = function()
                 local _, choice = self.subviews.pinned_list:getSelected()
-                if choice and choice.hf_id then
+                if not choice then return end
+                if self.view_type == 'individuals' and choice.hf_id then
                     ev_hist.open_event_history(choice.hf_id, choice.display_name)
+                elseif self.view_type == 'civilisations' and choice.entity_id then
+                    ev_hist.open_civ_event_history(choice.entity_id, choice.display_name)
                 end
             end,
         },
@@ -743,10 +747,14 @@ function PinnedPanel:init()
 end
 
 function PinnedPanel:onInput(keys)
-    if keys.CUSTOM_CTRL_E and self.view_type == 'individuals' then
+    if keys.CUSTOM_CTRL_E then
         local _, choice = self.subviews.pinned_list:getSelected()
-        if choice and choice.hf_id then
-            ev_hist.open_event_history(choice.hf_id, choice.display_name)
+        if choice then
+            if self.view_type == 'individuals' and choice.hf_id then
+                ev_hist.open_event_history(choice.hf_id, choice.display_name)
+            elseif self.view_type == 'civilisations' and choice.entity_id then
+                ev_hist.open_civ_event_history(choice.entity_id, choice.display_name)
+            end
         end
         return true
     end
@@ -801,7 +809,6 @@ function PinnedPanel:on_type_change(new_val)
     self.view_type = is_ind and 'individuals' or 'civilisations'
     self.subviews.ann_panel_individuals.visible   = is_ind
     self.subviews.ann_panel_civilisations.visible = not is_ind
-    self.subviews.event_history_btn.visible       = is_ind
 
     -- Update column header to match view type
     local list_header = self.subviews.list_header
@@ -956,6 +963,18 @@ function CivisationsPanel:init()
             end,
         },
         widgets.HotkeyLabel{
+            frame       = { b = 0, l = 22 },
+            key         = 'CUSTOM_CTRL_E',
+            label       = 'Event History',
+            auto_width  = true,
+            on_activate = function()
+                local _, choice = self.subviews.civ_list:getSelected()
+                if choice and choice.entity_id then
+                    ev_hist.open_civ_event_history(choice.entity_id, choice.display_name)
+                end
+            end,
+        },
+        widgets.HotkeyLabel{
             view_id     = 'toggle_pinned_btn',
             frame       = { b = 1, l = 1 },
             key         = 'CUSTOM_CTRL_P',
@@ -971,6 +990,13 @@ function CivisationsPanel:init()
 end
 
 function CivisationsPanel:onInput(keys)
+    if keys.CUSTOM_CTRL_E then
+        local _, choice = self.subviews.civ_list:getSelected()
+        if choice and choice.entity_id then
+            ev_hist.open_civ_event_history(choice.entity_id, choice.display_name)
+        end
+        return true
+    end
     if keys.CUSTOM_CTRL_P then
         self:toggle_pinned_only()
         return true
@@ -1140,9 +1166,9 @@ function HeraldWindow:onInput(keys)
             return self.subviews.figures_panel:onInput(keys)
         end
     end
-    -- Route Ctrl-P to civs panel when on tab 3
+    -- Route Ctrl-P and Ctrl-E to civs panel when on tab 3
     if self.cur_tab == 3 then
-        if keys.CUSTOM_CTRL_P then
+        if keys.CUSTOM_CTRL_P or keys.CUSTOM_CTRL_E then
             return self.subviews.civs_panel:onInput(keys)
         end
     end
