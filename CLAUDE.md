@@ -19,7 +19,8 @@ scripts_modactive/
 ├── herald-cache.lua             ← persistent event cache (HF event counts + IDs, delta processing)
 ├── herald-ind-death.lua         ← HIST_FIGURE_DIED + poll handler for pinned individuals [Individuals]
 ├── herald-world-leaders.lua     ← poll-based world leader tracking [Civilisations]
-└── herald-util.lua              ← shared utilities (announcement wrappers, position helpers, pin settings)
+├── herald-util.lua              ← shared utilities (announcement wrappers, position helpers, pin settings)
+└── herald-probe.lua             ← debug utility for inspecting live DF data (requires debug mode)
 
 scripts_modinstalled/
 ├── herald-button.lua            ← DFHack overlay widget; adds Herald button to the main DF screen
@@ -378,6 +379,9 @@ console to inspect live game data rather than guessing or searching documentatio
 - **Overlay viewscreens confirmed**:
   - Fort mode (all sub-screens): `'dwarfmode'` (prefix match; `'dwarfmode/'` is redundant)
   - World map (fort mode overworld): `'world/'`
+- **herald-probe**: For probing live DF data, edit the probe code in `herald-probe.lua`
+  rather than writing inline `lua` one-liners (which break on the DFHack console for long
+  commands). Requires debug mode: `herald-main debug true`, then `herald-main probe`.
 
 ## DF API Reference
 
@@ -533,6 +537,11 @@ ev.seconds         -- timestamp within the year
 - `CREATED_SITE`/`CREATED_STRUCTURE`: `ev.builder_hf`
 - `WAR_PEACE_ACCEPTED`/`WAR_PEACE_REJECTED`: `ev.source`, `ev.destination`, `ev.topic` (entity IDs; civ-level, no HF fields)
 - `TOPICAGREEMENT_CONCLUDED`/`TOPICAGREEMENT_MADE`/`TOPICAGREEMENT_REJECTED`: `ev.source`, `ev.destination` (entity IDs; assumed same layout)
+- `BODY_ABUSED`: `ev.histfig` (abuser), `ev.bodies` (vector of victim HF IDs), `ev.abuse_type` (`body_abuse_method_type` enum: 0=impaled, 1=piled, 2=flayed, 3=hung, 4=animated), `ev.site`, `ev.region`
+- `WRITTEN_CONTENT_COMPOSED`: `ev.histfig` (author), `ev.content` (written_content ID; use `df.written_content.find(id).title`), `ev.site`
+- `HF_CONFRONTED`: `ev.target` (confronted HF), `ev.situation`, `ev.reasons` (vector; 0=ageless, 1=murder), `ev.site`
+- `ARTIFACT_POSSESSED`: `ev.histfig`, `ev.artifact` (artifact_record ID), `ev.site`
+- `HF_GAINS_SECRET_GOAL`: `ev.histfig`, `ev.goal` (`goal_type` enum: 0-14, see describer)
 - `AGREEMENT_FORMED`: `ev.agreement_id` (no entity fields; not included in civ event history)
 
 For a full mapping see `TYPE_HF_FIELDS` in `herald-event-history.lua`. When the field name is
