@@ -16,52 +16,32 @@ Not intended for direct use.
 
 ]====]
 
--- tracked_leaders: { [entity_id] = { [assignment_id] = { hf_id, pos_name, civ_name } } }
+local util = dfhack.reqscript('herald-util')
+
+local PERSIST_CIVS_KEY = 'herald_pinned_civ_ids'
+
+-- { [entity_id] = settings_table }; absent key = not pinned.
+local pinned_civ_ids = {}
+
+-- Snapshot of active position holders per civ; rebuilt each scan cycle to
+-- detect deaths and new appointments by comparing against the previous cycle.
+-- Schema: { [entity_id] = { [assignment_id] = { hf_id, pos_name, civ_name } } }
 local tracked_leaders = {}
 
-local function is_alive(hf)
-    return hf.died_year == -1 and hf.died_seconds == -1
-end
+-- Persistence -----------------------------------------------------------------
 
--- Normalises a position name field: entity_position_raw uses string[] (name[0]),
--- entity_position (entity.positions.own) uses plain stl-string.
-local function name_str(field)
-    if not field then return nil end
-    if type(field) == 'string' then return field ~= '' and field or nil end
-    local s = field[0]
-    return (s and s ~= '') and s or nil
-end
-
--- Returns the gendered (or neutral) position title for an assignment.
--- Tries entity_raw.positions first; falls back to entity.positions.own for EVIL/PLAINS
--- civs whose entity_raw carries no positions.
-local function get_pos_name(entity, pos_id, hf)
-    if not entity or pos_id == nil then return nil end
-
-    local entity_raw = entity.entity_raw
-    if entity_raw then
-        for _, pos in ipairs(entity_raw.positions) do
-            if pos.id == pos_id then
-                local gendered = hf.sex == 1 and name_str(pos.name_male) or name_str(pos.name_female)
-                return gendered or name_str(pos.name)
-            end
-        end
+local function save_pinned_civs()
+    local pins = {}
+    for id, settings in pairs(pinned_civ_ids) do
+        table.insert(pins, { id = id, settings = settings })
     end
-
-    local own = entity.positions and entity.positions.own
-    if own then
-        for _, pos in ipairs(own) do
-            if pos.id == pos_id then
-                local gendered = hf.sex == 1 and name_str(pos.name_male) or name_str(pos.name_female)
-                return gendered or name_str(pos.name)
-            end
-        end
-    end
-
-    return nil
+    dfhack.persistent.saveSiteData(PERSIST_CIVS_KEY, { pins = pins })
 end
 
--- Formats an announcement string, omitting the position clause when pos_name is nil.
+-- Announcement formatting -----------------------------------------------------
+-- pos_name may be nil when util.get_pos_name can't resolve a title; the
+-- fallback messages still name the civ so the player has useful context.
+
 local function fmt_death(hf_name, pos_name, civ_name)
     if pos_name then
         return ('[Herald] %s, %s of %s, has died.'):format(hf_name, pos_name, civ_name)
@@ -76,23 +56,47 @@ local function fmt_appointment(hf_name, pos_name, civ_name)
     return ('[Herald] %s has been appointed to a position in %s.'):format(hf_name, civ_name)
 end
 
+local function fmt_vacated(hf_name, pos_name, civ_name)
+    if pos_name then
+        return ('[Herald] %s is no longer %s of %s.'):format(hf_name, pos_name, civ_name)
+    end
+    return ('[Herald] %s is no longer a position holder in %s.'):format(hf_name, civ_name)
+end
+
+-- Poll handler ----------------------------------------------------------------
+-- Called every scan cycle. Walks pinned civs, compares current position
+-- assignments against the previous snapshot, and fires announcements
+-- when a pinned civ gains or loses a position holder.
+
 function check(dprint)
     dprint = dprint or function() end
 
-    dprint('world-leaders.check: scanning entity position assignments')
+    dprint('world-leaders.check: scanning pinned entity position assignments')
 
     local new_snapshot = {}
     local dbg_civs = 0
 
-    for _, entity in ipairs(df.global.world.entities.all) do
-        -- Only track civilisation-layer entities; guilds, religions, animal herds, etc.
-        -- are irrelevant to wars, raids, and succession tracking.
-        if entity.type ~= df.historical_entity_type.Civilization then goto continue_entity end
+    -- Iterate only pinned civs; look up each entity directly instead of scanning all entities.
+    -- Key struct fields used below:
+    --   entity.positions.assignments[i] - vector of position assignment structs
+    --   asgn.histfig2    - HF ID of the current holder (-1 if vacant)
+    --   asgn.position_id - references pos.id in the position definition lists
+    --   asgn.id          - stable assignment ID (used as snapshot key across cycles)
+    for entity_id, pin_settings in pairs(pinned_civ_ids) do
+        local entity = df.historical_entity.find(entity_id)
+        if not entity then
+            dprint('world-leaders: entity_id=%d not found, skipping', entity_id)
+            goto continue_entity
+        end
         dbg_civs = dbg_civs + 1
-        if #entity.positions.assignments == 0 then goto continue_entity end
 
-        local entity_id = entity.id
-        local civ_name  = dfhack.translation.translateName(entity.name, true)
+        if #entity.positions.assignments == 0 then
+            dprint('world-leaders: entity_id=%d has no assignments, skipping', entity_id)
+            goto continue_entity
+        end
+
+        local civ_name           = dfhack.translation.translateName(entity.name, true)
+        local announce_positions = pin_settings.positions
 
         dprint('world-leaders: civ "%s" has %d assignments', civ_name, #entity.positions.assignments)
 
@@ -104,19 +108,25 @@ function check(dprint)
             if not hf then goto continue_assignment end
 
             local pos_id   = assignment.position_id
-            local pos_name = get_pos_name(entity, pos_id, hf)
+            local pos_name = util.get_pos_name(entity, pos_id, hf.sex)
 
             dprint('world-leaders:   hf=%s pos=%s alive=%s',
-                dfhack.translation.translateName(hf.name, true), tostring(pos_name), tostring(is_alive(hf)))
+                dfhack.translation.translateName(hf.name, true), tostring(pos_name), tostring(util.is_alive(hf)))
 
             local prev_entity  = tracked_leaders[entity_id]
             local prev         = prev_entity and prev_entity[assignment.id]
 
-            if not is_alive(hf) then
+            if not util.is_alive(hf) then
                 if prev and prev.hf_id == hf_id then
                     local hf_name = dfhack.translation.translateName(hf.name, true)
-                    dprint('world-leaders: death detected: %s, %s of %s', hf_name, tostring(pos_name), civ_name)
-                    dfhack.gui.showAnnouncement(fmt_death(hf_name, pos_name, civ_name), COLOR_RED, true)
+                    if announce_positions then
+                        dprint('world-leaders: death detected for %s (%s of %s) - firing announcement (positions ON)',
+                            hf_name, tostring(pos_name), civ_name)
+                        util.announce_death(fmt_death(hf_name, pos_name, civ_name))
+                    else
+                        dprint('world-leaders: death detected for %s (%s of %s) - announcement suppressed (positions OFF)',
+                            hf_name, tostring(pos_name), civ_name)
+                    end
                 end
             else
                 if not new_snapshot[entity_id] then
@@ -130,8 +140,14 @@ function check(dprint)
 
                 if prev_entity and (prev == nil or prev.hf_id ~= hf_id) then
                     local hf_name = dfhack.translation.translateName(hf.name, true)
-                    dprint('world-leaders: appointment: %s as %s of %s', hf_name, tostring(pos_name), civ_name)
-                    dfhack.gui.showAnnouncement(fmt_appointment(hf_name, pos_name, civ_name), COLOR_YELLOW, true)
+                    if announce_positions then
+                        dprint('world-leaders: appointment detected for %s (%s of %s) - firing announcement (positions ON)',
+                            hf_name, tostring(pos_name), civ_name)
+                        util.announce_appointment(fmt_appointment(hf_name, pos_name, civ_name))
+                    else
+                        dprint('world-leaders: appointment detected for %s (%s of %s) - announcement suppressed (positions OFF)',
+                            hf_name, tostring(pos_name), civ_name)
+                    end
                 end
             end
 
@@ -141,12 +157,85 @@ function check(dprint)
         ::continue_entity::
     end
 
+    -- Detect vacated positions: was in previous snapshot, alive, but gone or replaced this cycle.
+    for entity_id, prev_assignments in pairs(tracked_leaders) do
+        local pin_settings = pinned_civ_ids[entity_id]
+        if not pin_settings then goto continue_vacate_entity end
+
+        local entity   = df.historical_entity.find(entity_id)
+        local civ_name = entity and dfhack.translation.translateName(entity.name, true) or tostring(entity_id)
+
+        for assignment_id, prev in pairs(prev_assignments) do
+            local new_assign = new_snapshot[entity_id] and new_snapshot[entity_id][assignment_id]
+            if not new_assign or new_assign.hf_id ~= prev.hf_id then
+                local old_hf = df.historical_figure.find(prev.hf_id)
+                if old_hf and util.is_alive(old_hf) then
+                    local hf_name = dfhack.translation.translateName(old_hf.name, true)
+                    if pin_settings.positions then
+                        dprint('world-leaders: vacated detected for %s (%s of %s) - firing announcement (positions ON)',
+                            hf_name, tostring(prev.pos_name), civ_name)
+                        util.announce_vacated(fmt_vacated(hf_name, prev.pos_name, civ_name))
+                    else
+                        dprint('world-leaders: vacated detected for %s (%s of %s) - announcement suppressed (positions OFF)',
+                            hf_name, tostring(prev.pos_name), civ_name)
+                    end
+                end
+            end
+        end
+
+        ::continue_vacate_entity::
+    end
+
     tracked_leaders = new_snapshot
     dprint('world-leaders.check: civs=%d tracked=%d',
         dbg_civs,
         (function() local n=0 for _ in pairs(tracked_leaders) do n=n+1 end return n end)())
 end
 
+-- Public interface ------------------------------------------------------------
+
+-- Loads pinned civs from persistence; drops stale entity entries.
+function load_pinned_civs()
+    local data = dfhack.persistent.getSiteData(PERSIST_CIVS_KEY, {})
+    pinned_civ_ids = {}
+    if type(data.pins) == 'table' then
+        for _, entry in ipairs(data.pins) do
+            if type(entry.id) == 'number' and df.historical_entity.find(entry.id) then
+                pinned_civ_ids[entry.id] = util.merge_civ_pin_settings(entry.settings)
+            end
+        end
+    end
+end
+
+-- Returns the full pinned civ map: { [entity_id] = settings_table }.
+function get_pinned_civs()
+    return pinned_civ_ids
+end
+
+-- Pins (truthy value) or unpins (nil/false) a civilisation.
+function set_pinned_civ(entity_id, value)
+    if value then
+        pinned_civ_ids[entity_id] = util.default_civ_pin_settings()
+    else
+        pinned_civ_ids[entity_id] = nil
+    end
+    save_pinned_civs()
+end
+
+-- Returns the per-civ settings table for entity_id, or nil if not pinned.
+function get_civ_pin_settings(entity_id)
+    return pinned_civ_ids[entity_id]
+end
+
+-- Updates one announcement key for a pinned civ and persists.
+function set_civ_pin_setting(entity_id, key, value)
+    if pinned_civ_ids[entity_id] then
+        pinned_civ_ids[entity_id][key] = value
+        save_pinned_civs()
+    end
+end
+
+-- Clears per-session snapshot on world unload (pinned list is reloaded on next load).
 function reset()
     tracked_leaders = {}
 end
