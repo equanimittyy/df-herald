@@ -784,6 +784,70 @@ do
         return 'Formed ' .. what
     end)
 
+    add('GAMBLE', function(ev, focal)
+        -- Fields: hf, site, structure, account_before, account_after.
+        local site_n = site_name_by_id(safe_get(ev, 'site'))
+        local bld_n  = building_name_at_site(safe_get(ev, 'site'), safe_get(ev, 'structure'))
+        local loc    = bld_n and ('at ' .. bld_n) or nil
+        if site_n then loc = (loc and (loc .. ' in ') or 'in ') .. site_n end
+        local before = safe_get(ev, 'account_before') or 0
+        local after  = safe_get(ev, 'account_after') or 0
+        local result = after > before and ' and won' or after < before and ' and lost' or ''
+        return 'Gambled ' .. (loc or '') .. result
+    end)
+
+    add('ENTITY_CREATED', function(ev, focal)
+        -- Fields: entity, site, structure, creator_hfid.
+        local ent_n    = ent_name_by_id(safe_get(ev, 'entity'))
+        local site_n   = site_name_by_id(safe_get(ev, 'site'))
+        local loc      = site_n and (' in ' .. site_n) or ''
+        local what     = ent_n and (' ' .. ent_n) or ' an entity'
+        local creator  = safe_get(ev, 'creator_hfid')
+        if creator and creator >= 0 and focal == creator then
+            return 'Founded' .. what .. loc
+        elseif creator and creator >= 0 then
+            local who = hf_name_by_id(creator) or 'Someone'
+            return who .. ' founded' .. what .. loc
+        end
+        return 'Founded' .. what .. loc
+    end)
+
+    add('FAILED_INTRIGUE_CORRUPTION', function(ev, focal)
+        -- Fields: corruptor_hf, target_hf, corruptor_identity, target_identity, site.
+        local corr_id = safe_get(ev, 'corruptor_hf')
+        local tgt_id  = safe_get(ev, 'target_hf')
+        local site_n  = site_name_by_id(safe_get(ev, 'site'))
+        local loc     = site_n and (' in ' .. site_n) or ''
+        if focal == corr_id then
+            local tgt = hf_name_by_id(tgt_id) or 'someone'
+            return 'Failed to corrupt ' .. tgt .. loc
+        elseif focal == tgt_id then
+            local corr = hf_name_by_id(corr_id) or 'Someone'
+            return corr .. ' failed to corrupt them' .. loc
+        end
+        local corr = hf_name_by_id(corr_id) or 'Someone'
+        local tgt  = hf_name_by_id(tgt_id) or 'someone'
+        return corr .. ' failed to corrupt ' .. tgt .. loc
+    end)
+
+    add('HF_ACT_ON_BUILDING', function(ev, focal)
+        -- Fields: action (enum int), histfig, site, structure.
+        -- Known action values: 0=profaned, 2=prayed at (both observed on TEMPLE buildings).
+        local ACT_VERBS = { [0] = 'Profaned', [2] = 'Prayed at' }
+        local act    = safe_get(ev, 'action')
+        local verb   = act and ACT_VERBS[act] or 'Visited'
+        local bld_n  = building_name_at_site(safe_get(ev, 'site'), safe_get(ev, 'structure'))
+        local site_n = site_name_by_id(safe_get(ev, 'site'))
+        if bld_n and site_n then
+            return verb .. ' ' .. bld_n .. ' in ' .. site_n
+        elseif bld_n then
+            return verb .. ' ' .. bld_n
+        elseif site_n then
+            return verb .. ' a building in ' .. site_n
+        end
+        return verb .. ' a building'
+    end)
+
     -- competitor_hf / winner_hf are stl-vectors; iterated in get_hf_events.
     add('COMPETITION', function(ev, focal)
         local site_n = site_name_by_id(safe_get(ev, 'site'))
@@ -1371,6 +1435,10 @@ do
     map('ITEM_STOLEN',               {'histfig'})
     map('ASSUME_IDENTITY',           {'trickster'})
     map('ARTIFACT_CLAIM_FORMED',     {'histfig', 'hfid'})
+    map('GAMBLE',                     {'hf'})
+    map('ENTITY_CREATED',            {'creator_hfid'})
+    map('FAILED_INTRIGUE_CORRUPTION', {'corruptor_hf', 'target_hf'})
+    map('HF_ACT_ON_BUILDING',        {'histfig'})
 end
 
 -- TODO: battle participation events are not yet showing in HF event history.
