@@ -760,7 +760,7 @@ do
 
     add('ARTIFACT_STORED', function(ev, focal)
         local site_n = site_name_by_id(safe_get(ev, 'site'))
-        local art_id = safe_get(ev, 'artifact_id') or safe_get(ev, 'artifact_record')
+        local art_id = safe_get(ev, 'artifact') or safe_get(ev, 'artifact_id') or safe_get(ev, 'artifact_record')
         local art_n, art_desc = artifact_name_by_id(art_id)
         local what
         if art_n and art_desc then
@@ -1187,7 +1187,7 @@ do
     end
 
     add('WAR_PEACE_ACCEPTED', function(ev, focal)
-        return peace_fn('Made peace with', 'made peace with', ev, focal)
+        return peace_fn('made peace with', 'made peace with', ev, focal)
     end)
 
     add('WAR_PEACE_REJECTED', function(ev, focal)
@@ -1195,7 +1195,7 @@ do
         local dst  = safe_get(ev, 'destination')
         local src_n = ent_name_by_id(src) or 'an entity'
         local dst_n = ent_name_by_id(dst) or 'an entity'
-        if focal == src then return 'Rejected peace with ' .. dst_n end
+        if focal == src then return 'rejected peace with ' .. dst_n end
         if focal == dst then return dst_n .. ' rejected peace offer' end
         return src_n .. ' rejected peace with ' .. dst_n
     end)
@@ -1204,11 +1204,11 @@ do
     -- Actual DF type names: TOPICAGREEMENT_* (no underscore; probe-confirmed).
     -- 0 events in test save but types exist in the enum.
     add('TOPICAGREEMENT_CONCLUDED', function(ev, focal)
-        return peace_fn('Concluded an agreement with', 'concluded an agreement with', ev, focal)
+        return peace_fn('concluded an agreement with', 'concluded an agreement with', ev, focal)
     end)
 
     add('TOPICAGREEMENT_MADE', function(ev, focal)
-        return peace_fn('Made an agreement with', 'made an agreement with', ev, focal)
+        return peace_fn('made an agreement with', 'made an agreement with', ev, focal)
     end)
 
     add('TOPICAGREEMENT_REJECTED', function(ev, focal)
@@ -1216,9 +1216,151 @@ do
         local dst  = safe_get(ev, 'destination')
         local src_n = ent_name_by_id(src) or 'an entity'
         local dst_n = ent_name_by_id(dst) or 'an entity'
-        if focal == src then return 'Rejected an agreement with ' .. dst_n end
+        if focal == src then return 'rejected an agreement with ' .. dst_n end
         if focal == dst then return dst_n .. ' rejected agreement offer' end
         return src_n .. ' rejected an agreement with ' .. dst_n
+    end)
+
+    add('BODY_ABUSED', function(ev, focal)
+        -- Fields: histfig (abuser HF), bodies (victim HF vector), site, region,
+        -- abuse_type / method (body_abuse_method_type enum), abuse_data (union).
+        local ABUSE_VERBS = {
+            [0] = 'impaled', [1] = 'arranged into a sculpture',
+            [2] = 'flayed',  [3] = 'hung from a tree',
+            [4] = 'mutilated', [5] = 'animated',
+        }
+        local ABUSE_PASSIVE = {
+            [0] = 'was impaled', [1] = 'was arranged into a sculpture',
+            [2] = 'was flayed',  [3] = 'was hung from a tree',
+            [4] = 'was mutilated', [5] = 'was animated',
+        }
+        local abuse = safe_get(ev, 'abuse_type') or safe_get(ev, 'method')
+        local verb    = abuse and ABUSE_VERBS[abuse] or 'desecrated'
+        local passive = abuse and ABUSE_PASSIVE[abuse] or 'was desecrated'
+        local abuser_id = safe_get(ev, 'histfig')
+        local site_n  = site_name_by_id(safe_get(ev, 'site'))
+        local loc     = site_n and (' in ' .. site_n) or ''
+        -- Resolve victim names from the bodies vector.
+        local focal_is_victim = false
+        local victim_names = {}
+        local ok, bodies = pcall(function() return ev.bodies end)
+        if ok and bodies then
+            local ok2, n = pcall(function() return #bodies end)
+            if ok2 then
+                for i = 0, n - 1 do
+                    local ok3, v = pcall(function() return bodies[i] end)
+                    if ok3 and v and v >= 0 then
+                        if v == focal then focal_is_victim = true end
+                        local name = hf_name_by_id(v)
+                        if name then table.insert(victim_names, name) end
+                    end
+                end
+            end
+        end
+        local victims_str
+        if #victim_names > 0 then
+            victims_str = 'the body of ' .. table.concat(victim_names, ', ')
+        else
+            victims_str = 'a body'
+        end
+        if focal_is_victim then
+            local by_sfx = (abuser_id and abuser_id >= 0)
+                and (' by ' .. (hf_name_by_id(abuser_id) or 'someone')) or ''
+            return ('Their body %s%s%s'):format(passive, by_sfx, loc)
+        end
+        if focal == abuser_id then
+            return verb:sub(1,1):upper() .. verb:sub(2) .. ' ' .. victims_str .. loc
+        end
+        local who = hf_name_by_id(abuser_id) or 'Someone'
+        return who .. ' ' .. verb .. ' ' .. victims_str .. loc
+    end)
+
+    add('WRITTEN_CONTENT_COMPOSED', function(ev, focal)
+        -- Fields: histfig (author), content (written_content ID), site.
+        local site_n = site_name_by_id(safe_get(ev, 'site'))
+        local loc    = site_n and (' in ' .. site_n) or ''
+        local wc_id  = safe_get(ev, 'content')
+        local title
+        if wc_id and wc_id >= 0 then
+            local ok, wc = pcall(function() return df.written_content.find(wc_id) end)
+            if ok and wc then
+                local ok2, t = pcall(function() return wc.title end)
+                if ok2 and t and t ~= '' then title = t end
+            end
+        end
+        if title then
+            return 'Composed "' .. title .. '"' .. loc
+        end
+        return 'Composed a written work' .. loc
+    end)
+
+    add('HF_CONFRONTED', function(ev, focal)
+        -- Fields: target (confronted HF), situation, reasons (vector), site.
+        local REASON_TEXT = { [0] = 'being ageless', [1] = 'murder' }
+        local site_n = site_name_by_id(safe_get(ev, 'site'))
+        local loc    = site_n and (' in ' .. site_n) or ''
+        -- Collect reason strings.
+        local reason_parts = {}
+        local ok, reasons = pcall(function() return ev.reasons end)
+        if ok and reasons then
+            local ok2, n = pcall(function() return #reasons end)
+            if ok2 then
+                for i = 0, n - 1 do
+                    local ok3, r = pcall(function() return reasons[i] end)
+                    if ok3 and r then
+                        local text = REASON_TEXT[r]
+                        if text then table.insert(reason_parts, text) end
+                    end
+                end
+            end
+        end
+        local reason_sfx = #reason_parts > 0
+            and (' over ' .. table.concat(reason_parts, ' and ')) or ''
+        return 'Was confronted' .. reason_sfx .. loc
+    end)
+
+    add('ARTIFACT_POSSESSED', function(ev, focal)
+        -- Fields: histfig (possessor), artifact (artifact_record ID), site.
+        local site_n = site_name_by_id(safe_get(ev, 'site'))
+        local loc    = site_n and (' in ' .. site_n) or ''
+        local art_id = safe_get(ev, 'artifact')
+        local art_n, art_desc = artifact_name_by_id(art_id)
+        local what
+        if art_n and art_desc then
+            what = art_n .. ', ' .. article(art_desc)
+        elseif art_n then
+            what = art_n
+        else
+            what = 'an artifact'
+        end
+        return 'Claimed ' .. what .. loc
+    end)
+
+    add('HF_GAINS_SECRET_GOAL', function(ev, focal)
+        -- Fields: histfig, goal (goal_type enum).
+        local GOAL_TEXT = {
+            [0]  = 'to stay alive',
+            [1]  = 'to maintain entity status',
+            [2]  = 'to start a family',
+            [3]  = 'to rule the world',
+            [4]  = 'to create a great work of art',
+            [5]  = 'to craft a masterwork',
+            [6]  = 'to bring peace to the world',
+            [7]  = 'to become a legendary warrior',
+            [8]  = 'to master a skill',
+            [9]  = 'to fall in love',
+            [10] = 'to see the great natural sites',
+            [11] = 'to achieve immortality',
+            [12] = 'to make a great discovery',
+            [13] = 'to attain rank in society',
+            [14] = 'to bathe the world in chaos',
+        }
+        local goal = safe_get(ev, 'goal')
+        local goal_text = goal and GOAL_TEXT[goal]
+        if goal_text then
+            return 'Developed a secret ambition ' .. goal_text
+        end
+        return 'Developed a secret ambition'
     end)
 end
 
@@ -2033,12 +2175,13 @@ for _, name in ipairs({'HF_SIMPLE_BATTLE_EVENT', 'HIST_FIGURE_SIMPLE_BATTLE_EVEN
     local v = df.history_event_type[name]
     if v ~= nil then _BATTLE_TYPES[v] = true end
 end
-local _COMP_TYPE       = df.history_event_type['COMPETITION']
-local _WAR_BATTLE_TYPE = df.history_event_type['WAR_FIELD_BATTLE']
+local _COMP_TYPE         = df.history_event_type['COMPETITION']
+local _WAR_BATTLE_TYPE   = df.history_event_type['WAR_FIELD_BATTLE']
+local _BODY_ABUSED_TYPE  = df.history_event_type['BODY_ABUSED']
 
 -- Dispatch table: event type integer -> scalar HF field names to check.
 -- Reduces safe_get calls per event from ~28 to 1-4 for known types.
--- Types with vector HF fields (BATTLE_TYPES, COMPETITION) are handled separately.
+-- Types with vector HF fields (BATTLE_TYPES, COMPETITION, BODY_ABUSED) are handled separately.
 -- Unknown types fall back to full HF_FIELDS scan.
 TYPE_HF_FIELDS = {}
 do
@@ -2082,6 +2225,11 @@ do
     map('ENTITY_CREATED',            {'creator_hfid'})
     map('FAILED_INTRIGUE_CORRUPTION', {'corruptor_hf', 'target_hf'})
     map('HF_ACT_ON_BUILDING',        {'histfig'})
+    map('BODY_ABUSED',                {'histfig'})
+    map('WRITTEN_CONTENT_COMPOSED',   {'histfig'})
+    map('HF_CONFRONTED',              {'target'})
+    map('ARTIFACT_POSSESSED',         {'histfig'})
+    map('HF_GAINS_SECRET_GOAL',       {'histfig'})
     -- Peace/agreement events have no HF fields (civ-level only).
     -- Empty tables prevent fallback to full HF_FIELDS scan in the cache.
     map('WAR_PEACE_ACCEPTED',         {})
@@ -2264,6 +2412,11 @@ local function get_hf_events(hf_id)
                 end
             elseif _COMP_TYPE and ev_type == _COMP_TYPE then
                 if vec_has(ev, 'competitor_hf', hf_id) or vec_has(ev, 'winner_hf', hf_id) then
+                    added_ids[ev.id] = true
+                    table.insert(results, ev)
+                end
+            elseif _BODY_ABUSED_TYPE and ev_type == _BODY_ABUSED_TYPE then
+                if safe_get(ev, 'histfig') == hf_id or vec_has(ev, 'bodies', hf_id) then
                     added_ids[ev.id] = true
                     table.insert(results, ev)
                 end

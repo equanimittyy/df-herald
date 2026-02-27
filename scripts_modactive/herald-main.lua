@@ -24,6 +24,7 @@ Usage
    herald-main gui
    herald-main button
    herald-main cache-rebuild
+   herald-main probe
 
 Commands
 --------
@@ -425,6 +426,8 @@ elseif args[1] == 'test' then
         util.announce_info('[Herald] TEST - Info announcement (cyan, no pause)')
         print('[Herald] Test announcements fired.')
     end
+elseif args[1] == 'probe' then
+    dfhack.run_script('herald-probe')
 elseif args[1] == 'cache-rebuild' then
     if not dfhack.isMapLoaded() then
         dfhack.printerr('[Herald] A fort must be loaded to rebuild the cache.')

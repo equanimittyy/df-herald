@@ -537,7 +537,7 @@ ev.seconds         -- timestamp within the year
 - `CREATED_SITE`/`CREATED_STRUCTURE`: `ev.builder_hf`
 - `WAR_PEACE_ACCEPTED`/`WAR_PEACE_REJECTED`: `ev.source`, `ev.destination`, `ev.topic` (entity IDs; civ-level, no HF fields)
 - `TOPICAGREEMENT_CONCLUDED`/`TOPICAGREEMENT_MADE`/`TOPICAGREEMENT_REJECTED`: `ev.source`, `ev.destination` (entity IDs; assumed same layout)
-- `BODY_ABUSED`: `ev.histfig` (abuser), `ev.bodies` (vector of victim HF IDs), `ev.abuse_type` (`body_abuse_method_type` enum: 0=impaled, 1=piled, 2=flayed, 3=hung, 4=animated), `ev.site`, `ev.region`
+- `BODY_ABUSED`: `ev.histfig` (abuser), `ev.bodies` (vector of victim HF IDs), `ev.abuse_type` (`body_abuse_method_type` enum: 0=impaled, 1=piled, 2=flayed, 3=hung, 4=mutilated, 5=animated), `ev.site`, `ev.region`
 - `WRITTEN_CONTENT_COMPOSED`: `ev.histfig` (author), `ev.content` (written_content ID; use `df.written_content.find(id).title`), `ev.site`
 - `HF_CONFRONTED`: `ev.target` (confronted HF), `ev.situation`, `ev.reasons` (vector; 0=ageless, 1=murder), `ev.site`
 - `ARTIFACT_POSSESSED`: `ev.histfig`, `ev.artifact` (artifact_record ID), `ev.site`
