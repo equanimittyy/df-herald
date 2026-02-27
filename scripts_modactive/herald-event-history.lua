@@ -1370,6 +1370,33 @@ end
 
 -- Civ event history helpers ----------------------------------------------------
 
+-- Lazily-built entity_population.id -> civ_id lookup.
+-- BATTLE collections reference entity_population IDs (not civ IDs) in their
+-- attacker_squad_entity_pop / defender_squad_entity_pops vectors.
+local _entpop_to_civ = nil
+local function get_entpop_to_civ()
+    if _entpop_to_civ then return _entpop_to_civ end
+    _entpop_to_civ = {}
+    for _, ep in ipairs(df.global.world.entity_populations) do
+        local cid = safe_get(ep, 'civ_id')
+        if cid and cid >= 0 then _entpop_to_civ[ep.id] = cid end
+    end
+    return _entpop_to_civ
+end
+
+-- Check if any entity_population in a squad vector belongs to civ_id.
+local function entpop_vec_has_civ(col, field, civ_id, ep_map)
+    local ok_v, vec = pcall(function() return col[field] end)
+    if not ok_v or not vec then return false end
+    local ok_n, n = pcall(function() return #vec end)
+    if not ok_n then return false end
+    for i = 0, n - 1 do
+        local ok2, epid = pcall(function() return vec[i] end)
+        if ok2 and ep_map[epid] == civ_id then return true end
+    end
+    return false
+end
+
 -- Returns true if a collection involves the given civ_id as attacker, defender,
 -- or participant. pcall-guarded for version safety.
 function civ_matches_collection(col, civ_id)
@@ -1398,7 +1425,14 @@ function civ_matches_collection(col, civ_id)
         return false
     end
 
-    if ctype == 'WAR' or ctype == 'BATTLE' or ctype == 'SITE_CONQUERED' then
+    if ctype == 'BATTLE' then
+        -- BATTLE collections have empty attacker_civ/defender_civ; combatants
+        -- are in attacker_squad_entity_pop / defender_squad_entity_pops which
+        -- reference entity_population IDs (resolved to civ_id via lookup).
+        local ep_map = get_entpop_to_civ()
+        return entpop_vec_has_civ(col, 'attacker_squad_entity_pop', civ_id, ep_map)
+            or entpop_vec_has_civ(col, 'defender_squad_entity_pops', civ_id, ep_map)
+    elseif ctype == 'WAR' or ctype == 'SITE_CONQUERED' then
         return vec_match('attacker_civ') or vec_match('defender_civ')
     elseif ctype == 'RAID' or ctype == 'THEFT' then
         return scalar_match('attacking_entity') or scalar_match('attacker_civ')
@@ -1427,6 +1461,137 @@ local function site_from_collection_events(col)
     local ev = df.history_event.find(evs[0])
     if not ev then return nil end
     return site_name_by_id(safe_get(ev, 'site'))
+end
+
+-- Returns the translated name of the parent WAR collection, or nil.
+local function get_parent_war_name(col)
+    local ok_pid, pid = pcall(function() return col.parent_collection end)
+    if not ok_pid or not pid or pid < 0 then return nil end
+    local parent = df.history_event_collection.find(pid)
+    if not parent then return nil end
+    local ok_t, ptype = pcall(function()
+        return df.history_event_collection_type[parent:getType()]
+    end)
+    if not ok_t or ptype ~= 'WAR' then return nil end
+    local ok_n, wname = pcall(function()
+        return dfhack.translation.translateName(parent.name, true)
+    end)
+    return (ok_n and wname and wname ~= '') and wname or nil
+end
+
+-- Sum a squad deaths vector. Returns total.
+local function sum_squad_vec(col, field)
+    local ok_v, vec = pcall(function() return col[field] end)
+    if not ok_v or not vec then return 0 end
+    local ok_n, n = pcall(function() return #vec end)
+    if not ok_n then return 0 end
+    local total = 0
+    for i = 0, n - 1 do
+        local ok2, v = pcall(function() return vec[i] end)
+        if ok2 and v > 0 then total = total + v end
+    end
+    return total
+end
+
+-- Build a set from an integer vector field. Returns { [value] = true }.
+local function vec_to_set(col, field)
+    local set = {}
+    local ok_v, vec = pcall(function() return col[field] end)
+    if not ok_v or not vec then return set end
+    local ok_n, n = pcall(function() return #vec end)
+    if not ok_n then return set end
+    for i = 0, n - 1 do
+        local ok2, v = pcall(function() return vec[i] end)
+        if ok2 then set[v] = true end
+    end
+    return set
+end
+
+-- Pre-computed HIST_FIGURE_DIED type integer for HF death counting.
+local _DIED_TYPE = df.history_event_type['HIST_FIGURE_DIED']
+
+-- Count HF deaths per side in a battle. Uses attacker_hf/defender_hf vectors
+-- to classify victims from HIST_FIGURE_DIED events in the battle + children.
+-- Returns (attacker_hf_deaths, defender_hf_deaths).
+local function count_battle_hf_deaths(col)
+    if not _DIED_TYPE then return 0, 0 end
+    local att_hf_set = vec_to_set(col, 'attacker_hf')
+    local def_hf_set = vec_to_set(col, 'defender_hf')
+    -- Collect event IDs from battle + child collections (e.g. duels).
+    local event_ids = {}
+    local ok_evs, evs = pcall(function() return col.events end)
+    if ok_evs and evs then
+        local ok_n, n = pcall(function() return #evs end)
+        if ok_n then for i = 0, n - 1 do event_ids[evs[i]] = true end end
+    end
+    local ok_cc, cc = pcall(function() return col.collections end)
+    if ok_cc and cc then
+        local ok_cn, cn = pcall(function() return #cc end)
+        if ok_cn then
+            for i = 0, cn - 1 do
+                local child = df.history_event_collection.find(cc[i])
+                if child then
+                    local ok_ce, ce = pcall(function() return child.events end)
+                    if ok_ce and ce then
+                        local ok_en, en = pcall(function() return #ce end)
+                        if ok_en then
+                            for j = 0, en - 1 do event_ids[ce[j]] = true end
+                        end
+                    end
+                end
+            end
+        end
+    end
+    local att_dead, def_dead = 0, 0
+    for eid in pairs(event_ids) do
+        local ev = df.history_event.find(eid)
+        if ev then
+            local ok_t, etype = pcall(function() return ev:getType() end)
+            if ok_t and etype == _DIED_TYPE then
+                local vid = safe_get(ev, 'victim_hf')
+                if vid and vid >= 0 then
+                    if att_hf_set[vid] then att_dead = att_dead + 1
+                    elseif def_hf_set[vid] then def_dead = def_dead + 1 end
+                end
+            end
+        end
+    end
+    return att_dead, def_dead
+end
+
+-- Returns battle details from the focal civ's perspective.
+-- Uses squad entity_pop vectors (not the empty attacker_civ/defender_civ).
+-- Deaths = squad deaths (generic population) + HF deaths (named figures).
+-- Returns (opponent_name, killed, lost) or (nil, 0, 0) on failure.
+local function get_battle_details(col, focal_civ_id)
+    local ep_map = get_entpop_to_civ()
+    local is_att = entpop_vec_has_civ(col, 'attacker_squad_entity_pop', focal_civ_id, ep_map)
+    -- Squad (non-HF) deaths.
+    local att_deaths = sum_squad_vec(col, 'attacker_squad_deaths')
+    local def_deaths = sum_squad_vec(col, 'defender_squad_deaths')
+    -- HF deaths from battle events.
+    local att_hf_dead, def_hf_dead = count_battle_hf_deaths(col)
+    att_deaths = att_deaths + att_hf_dead
+    def_deaths = def_deaths + def_hf_dead
+    local killed = is_att and def_deaths or att_deaths
+    local lost   = is_att and att_deaths or def_deaths
+    -- Resolve opponent civ from the other side's squad entity_pop.
+    local opp_field = is_att and 'defender_squad_entity_pops' or 'attacker_squad_entity_pop'
+    local opp_name
+    local ok_v, vec = pcall(function() return col[opp_field] end)
+    if ok_v and vec then
+        local ok_n, n = pcall(function() return #vec end)
+        if ok_n and n > 0 then
+            local ok2, epid = pcall(function() return vec[0] end)
+            if ok2 then
+                local opp_civ_id = ep_map[epid]
+                if opp_civ_id then
+                    opp_name = civ_name_by_id(opp_civ_id, focal_civ_id)
+                end
+            end
+        end
+    end
+    return opp_name, killed, lost
 end
 
 local function format_collection_entry(col, focal_civ_id)
@@ -1486,11 +1651,17 @@ local function format_collection_entry(col, focal_civ_id)
     elseif ctype == 'BATTLE' then
         local name = col_name()
         local site = site_name_by_id(safe_get(col, 'site'))
-        local opp, _ = opponent_from_vecs()
+        local opp, killed, lost = get_battle_details(col, focal_civ_id)
         local loc = site and (' at ' .. site) or ''
         local vs  = opp and (' - against ' .. opp) or ''
-        if name then return name .. loc .. vs end
-        return 'battle' .. loc .. vs
+        local deaths = ''
+        if killed > 0 or lost > 0 then
+            deaths = ' (killed ' .. killed .. ', lost ' .. lost .. ')'
+        end
+        local war_name = get_parent_war_name(col)
+        local war_suffix = war_name and (' - part of ' .. war_name) or ''
+        if name then return name .. loc .. vs .. deaths .. war_suffix end
+        return 'battle' .. loc .. vs .. deaths .. war_suffix
 
     elseif ctype == 'SITE_CONQUERED' then
         local site = site_name_by_id(safe_get(col, 'site'))

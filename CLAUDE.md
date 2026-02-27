@@ -233,10 +233,29 @@ Internal (local) components:
 - **`site_from_collection_events(col)`** — resolves a site name from a collection's first
   event. Used as fallback for collection types with no direct `site` field (OCCASION and its
   sub-collections: COMPETITION, PERFORMANCE, PROCESSION, CEREMONY).
+- **`get_parent_war_name(col)`** — returns translated name of the parent WAR collection, or nil.
+  Looks up `col.parent_collection`, verifies it is WAR type. pcall-guarded.
+- **`get_entpop_to_civ()`** — lazily builds and caches `{ [entity_population.id] = civ_id }`
+  lookup from `df.global.world.entity_populations`. Used by BATTLE matching and details.
+- **`entpop_vec_has_civ(col, field, civ_id, ep_map)`** — checks if any entity_population ID
+  in a squad vector field belongs to `civ_id`. Used by `civ_matches_collection` BATTLE branch.
+- **`sum_squad_vec(col, field)`** — sums integer values from a squad vector (e.g.
+  `attacker_squad_deaths`). Returns total.
+- **`vec_to_set(col, field)`** — builds `{ [value] = true }` set from an integer vector field.
+- **`count_battle_hf_deaths(col)`** — counts HF deaths per side in a battle by scanning
+  `HIST_FIGURE_DIED` events (battle + child collections), classifying victims via
+  `attacker_hf`/`defender_hf` vectors. Returns `(att_hf_deaths, def_hf_deaths)`.
+- **`_DIED_TYPE`** — pre-computed `df.history_event_type['HIST_FIGURE_DIED']` integer.
+- **`get_battle_details(col, focal_civ_id)`** — returns `(opponent_name, killed, lost)` for a
+  BATTLE collection. Determines side via `attacker_squad_entity_pop` / `defender_squad_entity_pops`
+  entity_population lookup, sums squad deaths (generic population) + HF deaths (named figures),
+  resolves opponent civ name.
 - **`format_collection_entry(col, focal_civ_id)`** — returns civ-perspective description text
-  for a collection. Lowercase-first for generated text (e.g. "conquered Site from Enemy",
-  "hosted a gathering at Site"), preserves capitalisation for proper names from DF
-  translation (e.g. "The War of X - war with Y"). No year prefix; caller handles that.
+  for a collection. BATTLE entries use entity_population-based resolution (not `attacker_civ`/
+  `defender_civ` which are empty on BATTLEs), include death counts (`killed X, lost Y` - omitted
+  when both zero) and parent war name suffix. Lowercase-first for generated text (e.g. "conquered
+  Site from Enemy", "hosted a gathering at Site"), preserves capitalisation for proper names
+  from DF translation (e.g. "The War of X - war with Y"). No year prefix; caller handles that.
   OCCASION collections have no `occasion_id` field; name resolved via `col_name()` fallback,
   site resolved from own events or first child collection's events.
 - **`get_civ_events(civ_id)`** — collects events relevant to a civ: collection-level summaries
@@ -555,7 +574,7 @@ col.name                       -- language_name (WAR and BATTLE only)
 | DUEL | `attacker_hf` scalar, `defender_hf` scalar, `site` scalar | |
 | BEAST_ATTACK | `attacker_hf` **vector** `[0]`, `site` scalar | |
 | ABDUCTION | `snatcher_hf`/`victim_hf` **vectors**, `attacker_civ` scalar, `site` | NOT `attacker_hf`/`target_hf` |
-| BATTLE | `name`, `attacker_civ`/`defender_civ` **vectors**, `site` scalar | `attacker_civ` may be empty |
+| BATTLE | `name`, `site` scalar, `attacker_squad_entity_pop`/`defender_squad_entity_pops` **vectors** (entity_population IDs), `attacker_squad_deaths`/`defender_squad_deaths` **vectors**, `attacker_hf`/`defender_hf` **vectors** | `attacker_civ`/`defender_civ` always empty; use entity_pop -> `civ_id` |
 | SITE_CONQUERED | `attacker_civ`/`defender_civ` **vectors**, `site` scalar | no `new_civ_id` |
 | WAR | `name`, `attacker_civ`/`defender_civ` **vectors** | no `site` |
 | PERSECUTION | `entity` scalar (persecutor), `site` scalar | |
