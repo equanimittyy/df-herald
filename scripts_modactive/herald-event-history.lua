@@ -1172,6 +1172,54 @@ do
     end
     add('CREATED_BUILDING',  created_structure_fn)
     add('CREATED_STRUCTURE', created_structure_fn)
+
+    -- Peace events (civ-level; fields: source, destination = entity IDs, topic = entity ID).
+    -- Actual DF type names: WAR_PEACE_ACCEPTED, WAR_PEACE_REJECTED (probe-confirmed).
+    -- Civ-focal: perspective of the focal civ. General: names both parties.
+    local function peace_fn(verb_focal, verb_general, ev, focal)
+        local src  = safe_get(ev, 'source')
+        local dst  = safe_get(ev, 'destination')
+        local src_n = ent_name_by_id(src) or 'an entity'
+        local dst_n = ent_name_by_id(dst) or 'an entity'
+        if focal == src then return verb_focal .. ' ' .. dst_n end
+        if focal == dst then return verb_focal .. ' ' .. src_n end
+        return src_n .. ' ' .. verb_general .. ' ' .. dst_n
+    end
+
+    add('WAR_PEACE_ACCEPTED', function(ev, focal)
+        return peace_fn('Made peace with', 'made peace with', ev, focal)
+    end)
+
+    add('WAR_PEACE_REJECTED', function(ev, focal)
+        local src  = safe_get(ev, 'source')
+        local dst  = safe_get(ev, 'destination')
+        local src_n = ent_name_by_id(src) or 'an entity'
+        local dst_n = ent_name_by_id(dst) or 'an entity'
+        if focal == src then return 'Rejected peace with ' .. dst_n end
+        if focal == dst then return dst_n .. ' rejected peace offer' end
+        return src_n .. ' rejected peace with ' .. dst_n
+    end)
+
+    -- Topic agreement events (civ-level; same field layout as peace events).
+    -- Actual DF type names: TOPICAGREEMENT_* (no underscore; probe-confirmed).
+    -- 0 events in test save but types exist in the enum.
+    add('TOPICAGREEMENT_CONCLUDED', function(ev, focal)
+        return peace_fn('Concluded an agreement with', 'concluded an agreement with', ev, focal)
+    end)
+
+    add('TOPICAGREEMENT_MADE', function(ev, focal)
+        return peace_fn('Made an agreement with', 'made an agreement with', ev, focal)
+    end)
+
+    add('TOPICAGREEMENT_REJECTED', function(ev, focal)
+        local src  = safe_get(ev, 'source')
+        local dst  = safe_get(ev, 'destination')
+        local src_n = ent_name_by_id(src) or 'an entity'
+        local dst_n = ent_name_by_id(dst) or 'an entity'
+        if focal == src then return 'Rejected an agreement with ' .. dst_n end
+        if focal == dst then return dst_n .. ' rejected agreement offer' end
+        return src_n .. ' rejected an agreement with ' .. dst_n
+    end)
 end
 
 -- Event collection context --------------------------------------------------
@@ -1799,6 +1847,42 @@ do
     add_ctx('WAR_FIELD_BATTLE',                has_site)
 end
 
+-- Peace events get custom war-context suffix instead of generic CTX_TYPES.
+-- ACCEPTED: "ending <war>"; REJECTED: "during <war>" (war continues).
+local _PEACE_CTX = {}
+do
+    local a = df.history_event_type['WAR_PEACE_ACCEPTED']
+    local r = df.history_event_type['WAR_PEACE_REJECTED']
+    if a ~= nil then _PEACE_CTX[a] = 'ending' end
+    if r ~= nil then _PEACE_CTX[r] = 'during' end
+end
+
+-- Returns "<prefix> <war name>" suffix for a peace event, or nil.
+local function peace_war_suffix(ev_type, ev_id, ctx_map)
+    local prefix = _PEACE_CTX[ev_type]
+    if not prefix or not ctx_map then return nil end
+    local col = ctx_map[ev_id]
+    if not col then return nil end
+    local ok, ctype = pcall(function()
+        return df.history_event_collection_type[col:getType()]
+    end)
+    if not ok or ctype ~= 'WAR' then return nil end
+    local ok_n, war_name = pcall(function()
+        return dfhack.translation.translateName(col.name, true)
+    end)
+    if ok_n and war_name and war_name ~= '' then
+        return prefix .. ' ' .. war_name
+    end
+    local ok_ac, acv = pcall(function() return col.attacker_civ end)
+    local ok_dc, dcv = pcall(function() return col.defender_civ end)
+    local ac = (ok_ac and #acv > 0) and ent_name_by_id(acv[0]) or nil
+    local dc = (ok_dc and #dcv > 0) and ent_name_by_id(dcv[0]) or nil
+    if ac and dc then
+        return prefix .. ' the war between ' .. ac .. ' and ' .. dc
+    end
+    return nil
+end
+
 -- Exported: returns true if this event will produce visible text.
 -- Used by herald-gui's build_hf_event_counts to exclude noise events from counts.
 function event_will_be_shown(ev)
@@ -1849,11 +1933,17 @@ local function format_event(ev, focal_hf_id, ctx_map, civ_mode)
             if result then
                 -- Append collection context for qualifying event types.
                 if ctx_map then
-                    local col = ctx_map[ev.id]
-                    local skip_fn = col and CTX_TYPES[ev_type]
-                    if skip_fn then
-                        local ctx = describe_collection(col, skip_fn(ev))
-                        if ctx then result = result .. ', ' .. ctx end
+                    if _PEACE_CTX[ev_type] then
+                        -- Peace accepted: "ending <war>"; rejected: "during <war>".
+                        local sfx = peace_war_suffix(ev_type, ev.id, ctx_map)
+                        if sfx then result = result .. ', ' .. sfx end
+                    else
+                        local col = ctx_map[ev.id]
+                        local skip_fn = col and CTX_TYPES[ev_type]
+                        if skip_fn then
+                            local ctx = describe_collection(col, skip_fn(ev))
+                            if ctx then result = result .. ', ' .. ctx end
+                        end
                     end
                 end
                 desc = result
@@ -1959,14 +2049,30 @@ do
     map('ENTITY_CREATED',            {'creator_hfid'})
     map('FAILED_INTRIGUE_CORRUPTION', {'corruptor_hf', 'target_hf'})
     map('HF_ACT_ON_BUILDING',        {'histfig'})
+    -- Peace/agreement events have no HF fields (civ-level only).
+    -- Empty tables prevent fallback to full HF_FIELDS scan in the cache.
+    map('WAR_PEACE_ACCEPTED',         {})
+    map('WAR_PEACE_REJECTED',         {})
+    map('TOPICAGREEMENT_CONCLUDED',   {})
+    map('TOPICAGREEMENT_MADE',        {})
+    map('TOPICAGREEMENT_REJECTED',    {})
 end
 
 -- Civ event collection ---------------------------------------------------------
 
--- Pre-compute event type integers for civ position events.
+-- Pre-compute event type integers for civ position and diplomacy events.
 local _ADD_HF_ENTITY_LINK    = df.history_event_type['ADD_HF_ENTITY_LINK']
 local _REMOVE_HF_ENTITY_LINK = df.history_event_type['REMOVE_HF_ENTITY_LINK']
 local _ENTITY_CREATED        = df.history_event_type['ENTITY_CREATED']
+-- Set of all peace/agreement event types for quick lookup.
+-- Actual DF names: WAR_PEACE_*, TOPICAGREEMENT_* (probe-confirmed).
+local _PEACE_TYPES = {}
+for _, name in ipairs({'WAR_PEACE_ACCEPTED', 'WAR_PEACE_REJECTED',
+                       'TOPICAGREEMENT_CONCLUDED', 'TOPICAGREEMENT_MADE',
+                       'TOPICAGREEMENT_REJECTED'}) do
+    local v = df.history_event_type[name]
+    if v ~= nil then _PEACE_TYPES[v] = true end
+end
 
 -- Helper: resolves a collection ID to a synthetic _collection entry.
 local function col_to_entry(col, civ_id)
@@ -2036,7 +2142,7 @@ local function get_civ_events(civ_id)
             end
         end
 
-        -- Phase B: scan events for position changes and entity creation.
+        -- Phase B: scan events for position changes, entity creation, and diplomacy.
         local LT_POS = df.histfig_entity_link_type and df.histfig_entity_link_type.POSITION
         for _, ev in ipairs(df.global.world.history.events) do
             local ev_type = ev:getType()
@@ -2051,6 +2157,12 @@ local function get_civ_events(civ_id)
                 end
             elseif _ENTITY_CREATED and ev_type == _ENTITY_CREATED then
                 if safe_get(ev, 'entity') == civ_id then
+                    table.insert(results, ev)
+                end
+            elseif _PEACE_TYPES[ev_type] then
+                local src = safe_get(ev, 'source')
+                local dst = safe_get(ev, 'destination')
+                if src == civ_id or dst == civ_id then
                     table.insert(results, ev)
                 end
             end

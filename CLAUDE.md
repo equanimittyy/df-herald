@@ -19,7 +19,8 @@ scripts_modactive/
 ├── herald-cache.lua             ← persistent event cache (HF event counts + IDs, delta processing)
 ├── herald-ind-death.lua         ← HIST_FIGURE_DIED + poll handler for pinned individuals [Individuals]
 ├── herald-world-leaders.lua     ← poll-based world leader tracking [Civilisations]
-└── herald-util.lua              ← shared utilities (announcement wrappers, position helpers, pin settings)
+├── herald-util.lua              ← shared utilities (announcement wrappers, position helpers, pin settings)
+└── herald-probe-peace.lua       ← dev probe: discovers peace/agreement event types and fields
 
 scripts_modinstalled/
 ├── herald-button.lua            ← DFHack overlay widget; adds Herald button to the main DF screen
@@ -259,8 +260,8 @@ Internal (local) components:
   OCCASION collections have no `occasion_id` field; name resolved via `col_name()` fallback,
   site resolved from own events or first child collection's events.
 - **`get_civ_events(civ_id)`** — collects events relevant to a civ: collection-level summaries
-  for warfare/raids/theft/kidnappings + individual position-change and entity-creation events.
-  Returns `(results, ctx_map)` matching `get_hf_events` signature.
+  for warfare/raids/theft/kidnappings + individual position-change, entity-creation, and
+  peace/agreement events. Returns `(results, ctx_map)` matching `get_hf_events` signature.
 
 ### Event Cache (`herald-cache.lua`)
 
@@ -523,6 +524,9 @@ ev.seconds         -- timestamp within the year
 - `FAILED_INTRIGUE_CORRUPTION`: `ev.corruptor_hf`, `ev.target_hf`, `ev.site`
 - `HF_ACT_ON_BUILDING`: `ev.histfig`, `ev.action` (0=profaned, 2=prayed), `ev.site`, `ev.structure`
 - `CREATED_SITE`/`CREATED_STRUCTURE`: `ev.builder_hf`
+- `WAR_PEACE_ACCEPTED`/`WAR_PEACE_REJECTED`: `ev.source`, `ev.destination`, `ev.topic` (entity IDs; civ-level, no HF fields)
+- `TOPICAGREEMENT_CONCLUDED`/`TOPICAGREEMENT_MADE`/`TOPICAGREEMENT_REJECTED`: `ev.source`, `ev.destination` (entity IDs; assumed same layout)
+- `AGREEMENT_FORMED`: `ev.agreement_id` (no entity fields; not included in civ event history)
 
 For a full mapping see `TYPE_HF_FIELDS` in `herald-event-history.lua`. When the field name is
 uncertain, always use `safe_get(ev, field)` (pcall-guarded) rather than direct access.

@@ -215,6 +215,16 @@ local REMOVE_HF_ENTITY_LINK_TYPE = df.history_event_type['REMOVE_HF_ENTITY_LINK'
 local ENTITY_CREATED_TYPE        = df.history_event_type['ENTITY_CREATED']
 local LT_POSITION = df.histfig_entity_link_type and df.histfig_entity_link_type.POSITION
 
+-- Peace/agreement event types (civ-level diplomacy).
+-- Actual DF names: WAR_PEACE_*, TOPICAGREEMENT_* (probe-confirmed).
+local PEACE_TYPES = {}
+for _, name in ipairs({'WAR_PEACE_ACCEPTED', 'WAR_PEACE_REJECTED',
+                       'TOPICAGREEMENT_CONCLUDED', 'TOPICAGREEMENT_MADE',
+                       'TOPICAGREEMENT_REJECTED'}) do
+    local v = df.history_event_type[name]
+    if v ~= nil then PEACE_TYPES[v] = true end
+end
+
 -- Processes a single event: updates hf_event_counts, hf_event_ids,
 -- and civ_event_ids/civ_event_counts for position/entity events.
 -- Returns nothing; mutates tables in place.
@@ -298,6 +308,18 @@ local function process_event(ev, ev_hist)
             if not civ_event_ids[ent_id] then civ_event_ids[ent_id] = {} end
             table.insert(civ_event_ids[ent_id], ev_id)
             civ_event_counts[ent_id] = (civ_event_counts[ent_id] or 0) + 1
+        end
+    end
+
+    -- Peace/agreement events: cache for both source and destination civs.
+    if PEACE_TYPES[ev_type] then
+        for _, field in ipairs({'source', 'destination'}) do
+            local eid = ev_hist.safe_get(ev, field)
+            if eid and eid >= 0 then
+                if not civ_event_ids[eid] then civ_event_ids[eid] = {} end
+                table.insert(civ_event_ids[eid], ev_id)
+                civ_event_counts[eid] = (civ_event_counts[eid] or 0) + 1
+            end
         end
     end
 end
