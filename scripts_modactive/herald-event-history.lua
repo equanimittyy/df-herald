@@ -673,6 +673,10 @@ do
         return 'established a new position in ' .. ent_n
     end)
 
+    add('ASSUME_IDENTITY', function(ev, focal)
+        return 'Assumed an identity'
+    end)
+
     -- competitor_hf / winner_hf are stl-vectors; iterated in get_hf_events.
     add('COMPETITION', function(ev, focal)
         local site_n = site_name_by_id(safe_get(ev, 'site'))
@@ -1422,11 +1426,12 @@ function EventHistoryWindow:init()
         local formatted = format_event(ev, self.hf_id, ctx_map)
         if formatted then
             local lines = wrap_text(formatted)
-            table.insert(event_choices, { text = lines[1] })
+            -- All lines for one event share the same search_key so they filter as a group.
+            table.insert(event_choices, { text = lines[1], search_key = formatted })
             for i = 2, #lines do
-                table.insert(event_choices, { text = '    ' .. lines[i] })
+                table.insert(event_choices, { text = '    ' .. lines[i], search_key = formatted })
             end
-            table.insert(event_choices, { text = '' })
+            table.insert(event_choices, { text = '', search_key = formatted })
         end
     end
     if #event_choices == 0 then
@@ -1491,7 +1496,7 @@ function EventHistoryWindow:init()
                 { text = hf_name,               pen = COLOR_GREEN },
             },
         },
-        widgets.List{
+        widgets.FilteredList{
             view_id   = 'event_list',
             frame     = { t = 2, b = 2, l = 1, r = 1 },
             on_select = function() end,
