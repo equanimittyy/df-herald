@@ -102,24 +102,29 @@ civ_name } } }` each cycle to detect position holder deaths and new appointments
 Shared utility module required by all other herald scripts. All exports are non-local at module scope.
 
 **Announcement wrappers** (use these — never call `dfhack.gui.showAnnouncement` directly):
+
 - `announce_death(msg)` — red, pauses game (death of tracked individual or position holder)
 - `announce_appointment(msg)` — yellow, pauses (new position holder)
 - `announce_vacated(msg)` — white, no pause (living HF left a position)
 - `announce_info(msg)` — cyan, no pause (debug/informational)
 
 **Position helpers**:
+
 - `name_str(field)` — normalises a position name field to a plain Lua string or `nil`; handles both `stl-string` and `string[]` layouts
 - `get_pos_name(entity, pos_id, hf_sex)` — returns gendered (or neutral) position title; checks `entity.positions.own` first, falls back to `entity.entity_raw.positions`
 
 **HF / entity helpers**:
+
 - `is_alive(hf)` — true when `hf.died_year == -1 and hf.died_seconds == -1`
 - `get_race_name(hf)` — creature species name string for an HF
 - `get_entity_race_name(entity)` — same for a historical entity
 
 **Table utilities**:
+
 - `deepcopy(t)` — recursive deep copy of any Lua value
 
 **Pin settings** (defined here to avoid circular deps — handlers must not reqscript herald-main):
+
 - `INDIVIDUAL_SETTINGS_KEYS` — ordered list: `{ 'relationships', 'death', 'combat', 'legendary', 'positions', 'migration' }`
 - `CIVILISATION_SETTINGS_KEYS` — ordered list: `{ 'positions', 'diplomacy', 'warfare', 'raids', 'theft', 'kidnappings' }`
 - `default_pin_settings()` — returns defaults table (all `true`) for individual pins
@@ -127,9 +132,11 @@ Shared utility module required by all other herald scripts. All exports are non-
 - `merge_pin_settings(saved)` / `merge_civ_pin_settings(saved)` — merges saved booleans over defaults; ignores unknown keys
 
 **Standalone inspection** (when run directly from the DFHack console):
+
 ```
 herald-util inspect [TYPENAME]
 ```
+
 Prints all fields of the first matching event collection via `printall`. Defaults to `DUEL`. Running without `inspect` lists valid type names.
 
 ### Debug Output
@@ -180,12 +187,13 @@ Internal (local) components:
 
 ### Event Cache (`herald-cache.lua`)
 
-Persistent cache layer that maps events to HF IDs. Eliminates the O(n * 28) pcall scan
+Persistent cache layer that maps events to HF IDs. Eliminates the O(n \* 28) pcall scan
 on every GUI open by caching results in the save file via `dfhack.persistent.saveSiteData`.
 
 **Persist key:** `herald_event_cache`
 
 **Exports (non-local at module scope):**
+
 - `cache_ready` — boolean; true once loaded/built
 - `building` — boolean; true during full build
 - `load_cache()` — read from persistence, validate watermark
@@ -303,9 +311,11 @@ not exist on a given event subtype or across DFHack versions.
 as a valid reference. Never treat `-1` as a valid lookup key.
 
 **String fields come in two formats.** DF stores names as either:
+
 - `stl-string`: plain Lua string (e.g. `pos.name` in `entity.positions.own`)
 - `string[]`: 0-indexed array (e.g. `pos.name[0]` in `entity.entity_raw.positions`,
   `cr.name[0]` in creature_raw)
+
 Use `herald-util.name_str(field)` to normalise either format to a plain string or nil.
 
 **`language_name` structs must be translated.** Entity, HF, and site names are `language_name`
@@ -342,6 +352,7 @@ hf.entity_links   -- vector of histfig_entity_link (see Entity Links below)
 ### HF Entity Links
 
 Each link is a polymorphic struct. Field access rules:
+
 ```
 link = hf.entity_links[i]
 link:getType()     -- returns histfig_entity_link_type enum (MEMBER, POSITION, etc.)
@@ -362,6 +373,7 @@ entity.name        -- language_name struct
 entity.type        -- df.historical_entity_type (Civilization, SiteGovernment, etc.)
 entity.race        -- creature race ID (int)
 entity.positions   -- T_positions sub-struct (see below)
+entity.histfig_ids -- vector of HF IDs that are/were members (pcall-guard; may vary by type)
 entity.entity_raw  -- entity_raw (template data; may be nil)
 ```
 
@@ -379,6 +391,7 @@ entity.entity_raw  -- entity_raw (template data; may be nil)
 Use `herald-util.get_pos_name(entity, pos_id, hf_sex)` which handles both sources.
 
 **Position assignments:**
+
 ```
 asgn = entity.positions.assignments[i]
 asgn.id           -- assignment ID (stable across cycles; used as snapshot key)
@@ -408,6 +421,7 @@ ev.seconds         -- timestamp within the year
 ```
 
 **Per-event-type fields** (field names vary by event subtype):
+
 - `HIST_FIGURE_DIED`: `ev.victim_hf`, `ev.slayer_hf`, `ev.death_cause`, `ev.site`
 - `HF_SIMPLE_BATTLE_EVENT`: `ev.group1` (vector), `ev.group2` (vector), `ev.subtype`
 - `COMPETITION`: `ev.competitor_hf` (vector), `ev.winner_hf` (vector)
@@ -424,12 +438,14 @@ For a full mapping see `TYPE_HF_FIELDS` in `herald-event-history.lua`. When the 
 uncertain, always use `safe_get(ev, field)` (pcall-guarded) rather than direct access.
 
 **DFHack version aliases:** Some event types have multiple names across versions:
+
 - `HF_SIMPLE_BATTLE_EVENT` / `HIST_FIGURE_SIMPLE_BATTLE_EVENT` - always check both
 
 ### Relationship Events (Block Store)
 
 `df.global.world.history.relationship_events` is NOT a simple vector - it's a block store with
 a different access pattern:
+
 ```
 rel_evs = df.global.world.history.relationship_events
 block = rel_evs[block_idx]
@@ -467,15 +483,15 @@ col.name                       -- language_name (WAR and BATTLE only)
 |---|---|---|
 | DUEL | `attacker_hf` scalar, `defender_hf` scalar, `site` scalar | |
 | BEAST_ATTACK | `attacker_hf` **vector** `[0]`, `site` scalar | |
-| ABDUCTION | `snatcher_hf` **vector**, `victim_hf` **vector**, `attacker_civ` scalar, `site` scalar | NOT `attacker_hf`/`target_hf` |
-| BATTLE | `name`, `attacker_civ` **vector** (may be empty), `defender_civ` **vector**, `site` scalar | |
-| SITE_CONQUERED | `attacker_civ` **vector**, `defender_civ` **vector**, `site` scalar | no `new_civ_id` |
-| WAR | `name`, `attacker_civ` **vector**, `defender_civ` **vector** | no `site` |
+| ABDUCTION | `snatcher_hf`/`victim_hf` **vectors**, `attacker_civ` scalar, `site` | NOT `attacker_hf`/`target_hf` |
+| BATTLE | `name`, `attacker_civ`/`defender_civ` **vectors**, `site` scalar | `attacker_civ` may be empty |
+| SITE_CONQUERED | `attacker_civ`/`defender_civ` **vectors**, `site` scalar | no `new_civ_id` |
+| WAR | `name`, `attacker_civ`/`defender_civ` **vectors** | no `site` |
 | PERSECUTION | `entity` scalar (persecutor), `site` scalar | |
 | ENTITY_OVERTHROWN | `entity` scalar (overthrown), `site` scalar | |
 | JOURNEY | `traveler_hf` **vector**, no `site` | |
 | OCCASION/COMPETITION/PERFORMANCE/PROCESSION/CEREMONY | `civ` scalar, no `site` | |
-| RAID/THEFT/INSURRECTION/PURGE | fields unverified (absent from test save) | use `safe_get` guards |
+| RAID/THEFT/INSURRECTION/PURGE | unverified (absent from test save) | use `safe_get` guards |
 
 Civ/entity fields use `attacker_civ`/`defender_civ` naming (NOT `attacking_entity`/`defending_entity`)
 across all collection types.
@@ -489,9 +505,14 @@ site.cur_owner_id  -- current owner entity ID (may be a SiteGovernment, not a Ci
 site.name          -- language_name struct
 ```
 
-`cur_owner_id` may point to a SiteGovernment. To resolve to the parent Civilisation, find a
-position holder HF in the SiteGovernment and follow their MEMBER entity link to a Civilization
-entity. See `build_civ_choices()` in `herald-gui.lua` for the resolution pattern.
+`cur_owner_id` may point to a SiteGovernment. `build_civ_choices()` in `herald-gui.lua` resolves
+SiteGovernments to parent Civilizations via 5-tier fallback:
+
+1. `cur_owner_id` is directly a Civilization
+2. SiteGov -> position holder HF (`positions.assignments[].histfig2`) -> MEMBER link -> Civ
+3. SiteGov -> `histfig_ids` members -> MEMBER/FORMER_MEMBER link -> Civ (catches vacant positions)
+4. SITE_CONQUERED event collections -> `attacker_civ[0]` (most recent conquest wins)
+5. `site.civ_id` (original/founding civ; last resort, may be stale after conquest)
 
 ### Entity Populations
 
@@ -503,14 +524,6 @@ ep.counts          -- vector of population counts (0-indexed; NO count_min field
 ```
 
 Sum `ep.counts[j]` across all entries matching a civ_id for total population.
-
-### Announcements
-
-Use `herald-util` wrappers - never call `dfhack.gui.showAnnouncement` directly:
-- `announce_death(msg)` - red, pauses game
-- `announce_appointment(msg)` - yellow, pauses game
-- `announce_vacated(msg)` - white, no pause
-- `announce_info(msg)` - cyan, no pause
 
 ## Rules
 
@@ -524,6 +537,7 @@ Use `herald-util` wrappers - never call `dfhack.gui.showAnnouncement` directly:
 - Do not use em-dashes (`—`) in any string printed to the user (announcements,
   debug output, or console `print`); DF cannot render them. Use `-` instead.
 - Create comments where appropriate, ensure they are logical, human-readable and are as lean as possible to minimise token usage and clutter.
+- When making changes to the codebase, update this CLAUDE.md file to reflect any new or changed architecture, exports, data structures, patterns, or conventions. Keep documentation accurate and in sync with the code. Try to keep documentation as lean and neat as possible.
 
 ## Future (on request only)
 
