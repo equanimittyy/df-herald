@@ -1,169 +1,85 @@
 # Dwarf Fortress Herald
 
-DFHack mod (Lua, v50+ Steam) that scans world history for significant events and notifies the player in-game.
+DFHack mod (Lua, v50+ Steam) - scans world history for significant events and notifies the player in-game.
 
-## Tech Stack
-
-- Dwarf Fortress Steam (v50.xx) + DFHack (latest stable)
-- Language: Lua
-- Ref: DFHack Modding Guide (https://docs.dfhack.org/)
+**Stack:** Dwarf Fortress Steam (v50.xx) + DFHack (latest stable), Lua. Ref: https://docs.dfhack.org/
 
 ## File Structure
 
 ```
 scripts_modactive/
-├── onLoad.init                  ← auto-enables the mod on world load
-├── herald-main.lua              ← event loop, dispatcher; add new event types here
-├── herald-gui.lua               ← settings UI: tabbed window (Pinned / Historical Figures / Civilisations)
-├── herald-event-history.lua     ← Event History popup subsystem (event collection, describers, UI)
-├── herald-cache.lua             ← persistent event cache (HF event counts + IDs, delta processing)
-├── herald-ind-death.lua         ← HIST_FIGURE_DIED + poll handler for pinned individuals [Individuals]
-├── herald-world-leaders.lua     ← poll-based world leader tracking [Civilisations]
-├── herald-util.lua              ← shared utilities (announcement wrappers, position helpers, pin settings)
-└── herald-probe.lua             ← debug utility for inspecting live DF data (requires debug mode)
+  onLoad.init              ← auto-enables mod on world load
+  herald-main.lua          ← event loop, dispatcher; add new event types here
+  herald-gui.lua           ← settings UI (Pinned / Historical Figures / Civilisations)
+  herald-event-history.lua ← Event History popup subsystem (describers, collection context)
+  herald-cache.lua         ← persistent event cache (HF event counts + IDs, delta processing)
+  herald-ind-death.lua     ← HIST_FIGURE_DIED + poll handler for pinned individuals
+  herald-world-leaders.lua ← poll-based world leader tracking [Civilisations]
+  herald-util.lua          ← shared utilities (announcements, position helpers, pin settings)
+  herald-probe.lua         ← debug utility for inspecting live DF data
 
 scripts_modinstalled/
-├── herald-button.lua            ← DFHack overlay widget; adds Herald button to the main DF screen
-└── herald-logo.png              ← 64×36 px sprite sheet (two 32×36 states: normal | hover)
+  herald-button.lua        ← DFHack overlay widget (Herald button on main screen)
+  herald-logo.png          ← 64x36 px sprite sheet (two 32x36 states: normal | hover)
 ```
 
-Each event type lives in its own `herald-<type>.lua` module. Event-driven handlers export
-`check(event, dprint)` and register in `get_handlers()`. Poll-based handlers export
-`check(dprint)` + `reset()` and register in `get_world_handlers()`.
+Each event type in its own `herald-<type>.lua`. Event-driven: `check(event, dprint)` via `get_handlers()`. Poll-based: `check(dprint)` + `reset()` via `get_world_handlers()`.
 
-## Handler Categories
+## Handlers
 
-- **Individuals** — two sub-modes:
-  - _Event-driven_ (in-fort): called per matching `df.history_event_type.*` event via the
-    incremental scan. Interface: `check(event, dprint)`. Registered in `get_handlers()`.
-  - _Poll-based_ (off-screen): called each scan cycle; checks HF state directly for deaths.
-    Interface: `check(dprint)` + `reset()`. Registered in `get_world_handlers()`.
-- **Civilisations** (poll-based): called each cycle regardless of events; snapshots civ-level
-  state and detects changes by comparing to the previous cycle.
-  Interface: `check(dprint)` + `reset()`. Registered in `get_world_handlers()`.
-
-Poll-based handlers are necessary because `df.global.world.history.events` is **unreliable**
-for out-of-fort changes — the game may set `hf.died_year`/`hf.died_seconds` directly without
-generating a `HIST_FIGURE_DIED` event.
+- **Individuals** - event-driven (in-fort, per `df.history_event_type.*`) and poll-based (off-screen, checks HF state directly for deaths since the game may skip generating events).
+- **Civilisations** - poll-based only; snapshots civ state each cycle, detects changes by diff.
 
 ## Module Requirements
 
-Every handler script **must** have, in order:
-
-1. `--@ module=true` — required for `dfhack.reqscript`; omitting throws "Cannot be used as a module".
-2. A `--[====[` docblock ending with "Not intended for direct use."
-
-`dfhack.reqscript` returns the script's **environment table** — export functions at module scope
-(no `local`, no wrapper table):
-
-- Correct: `function check(event, dprint) ... end`
-- Wrong: `local M = {}; function M.check(...) end; return M` — `check` is never in the env
-
-Each handler runs in its **own isolated environment**, so naming exports `check` in every handler
-is safe — each is a separate object accessed via its handler reference. `herald-main.lua` uses
-`--@ enable=true` (user-facing); all handler modules use `--@ module=true` only.
+1. `--@ module=true` at top (required for `dfhack.reqscript`; omitting throws "Cannot be used as a module")
+2. `--[====[` docblock ending with "Not intended for direct use."
+3. Exports at module scope (no `local`, no wrapper table) - `dfhack.reqscript` returns the env table
+4. Each handler has its own isolated env, so `check` in every handler is safe
+5. `herald-main.lua` uses `--@ enable=true`; all others use `--@ module=true` only
 
 ## Architecture
 
-### Event Loop
+**Event loop:** `dfhack.timeout(tick_interval, 'ticks', cb)` - default 1200 ticks (1 dwarf day), min 600. Fires once only - `scan_events` must reschedule; early return kills the loop. `onStateChange`: start on `SC_MAP_LOADED`, stop on `SC_MAP_UNLOADED`. Ticks-mode timers auto-cancelled on unload.
 
-- Poll via `dfhack.timeout(tick_interval, 'ticks', callback)`
-  - Default: 1,200 ticks (1 dwarf day); minimum: 600 ticks (half a day)
-  - Set via `herald-main interval`; persisted in `dfhack-config/herald.json` as `tick_interval`
-- `onStateChange`: start on `SC_MAP_LOADED`, stop on `SC_MAP_UNLOADED`
-- `last_event_id` tracks position in `df.global.world.history.events` to avoid duplicates
-- `dfhack.timeout` fires **once only** — `scan_events` must reschedule at the end; any early
-  return permanently kills the loop
-- Timers in `'ticks'` mode are auto-cancelled by DFHack on world unload
+**Event scanning:** Incremental from `last_event_id + 1` (never re-scan from 0). Dispatch by `event:getType()`. Keep checks in separate scripts per event type. Implemented: `HIST_FIGURE_DIED` (`event.victim_hf`).
 
-### History Event Scanning
-
-- Iterate events from `last_event_id + 1` (incremental; never re-scan from 0)
-- Dispatch by `event:getType()` vs `df.history_event_type.*`; handlers apply their own filters
-- Keep event checks in separate scripts, one per event type — never embed in the scan loop
-- Out-of-fort deaths may not generate a history event; poll HF state directly for reliability
-
-Implemented event checks:
-
-- Death: `df.history_event_type.HIST_FIGURE_DIED`; victim field: `event.victim_hf` (hf id)
-
-### Civilisation-Level Polling
-
-Runs alongside the event scan each cycle via `scan_world_state(dprint)`:
-
-1. `get_world_handlers()` — lazy-init map of string keys to poll-based handler modules
-2. `scan_world_state(dprint)` — iterates all world handlers, calling `handler.check(dprint)`
-3. On cleanup, `handler.reset()` clears snapshot state
-
-`herald-world-leaders.lua` snapshots `{ [entity_id] = { [assignment_id] = { hf_id, pos_name,
-civ_name } } }` each cycle to detect position holder deaths and new appointments.
+**Civ polling:** `scan_world_state(dprint)` calls all `get_world_handlers()` each cycle. `herald-world-leaders.lua` snapshots `{ [entity_id] = { [assignment_id] = { hf_id, pos_name, civ_name } } }` to detect deaths/appointments.
 
 ### herald-util.lua
 
-Shared utility module required by all other herald scripts. All exports are non-local at module scope.
+Shared module, all exports non-local at module scope.
 
-**Announcement wrappers** (use these — never call `dfhack.gui.showAnnouncement` directly):
+- **Announcements** (use these, never `dfhack.gui.showAnnouncement` directly): `announce_death` (red, pause), `announce_appointment` (yellow, pause), `announce_vacated` (white), `announce_info` (cyan)
+- **Position helpers:** `name_str(field)` normalises stl-string/string[] to string; `get_pos_name(entity, pos_id, hf_sex)` returns gendered title
+- **HF/entity:** `is_alive(hf)`, `get_race_name(hf)`, `get_entity_race_name(entity)`, `deepcopy(t)`
+- **Pin settings** (here to avoid circular deps): `INDIVIDUAL_SETTINGS_KEYS` = `{relationships, death, combat, legendary, positions, migration}`, `CIVILISATION_SETTINGS_KEYS` = `{positions, diplomacy, warfare, raids, theft, kidnappings}`, `default_pin_settings()`/`default_civ_pin_settings()` (all true), `merge_pin_settings(saved)`/`merge_civ_pin_settings(saved)`
 
-- `announce_death(msg)` — red, pauses game
-- `announce_appointment(msg)` — yellow, pauses
-- `announce_vacated(msg)` — white, no pause
-- `announce_info(msg)` — cyan, no pause
+### Detailed Docs (read on demand)
 
-**Position helpers**:
-
-- `name_str(field)` — normalises a position name field to a plain Lua string or `nil`
-- `get_pos_name(entity, pos_id, hf_sex)` — returns gendered (or neutral) position title
-
-**HF / entity helpers**: `is_alive(hf)`, `get_race_name(hf)`, `get_entity_race_name(entity)`
-
-**Table utilities**: `deepcopy(t)` — recursive deep copy
-
-**Pin settings** (defined here to avoid circular deps):
-
-- `INDIVIDUAL_SETTINGS_KEYS` — `{ 'relationships', 'death', 'combat', 'legendary', 'positions', 'migration' }`
-- `CIVILISATION_SETTINGS_KEYS` — `{ 'positions', 'diplomacy', 'warfare', 'raids', 'theft', 'kidnappings' }`
-- `default_pin_settings()` / `default_civ_pin_settings()` — returns defaults table (all `true`)
-- `merge_pin_settings(saved)` / `merge_civ_pin_settings(saved)` — merges saved booleans over defaults
-
-### Debug Output
-
-When `DEBUG = true`, handlers emit verbose trace lines covering:
-
-- Untracked HFs/civs: `"is not tracked, skipping"`
-- Duplicate suppression: `"already announced, skipping"`
-- Announcement fired: `"firing announcement … (setting is ON)"`
-- Announcement suppressed: `"announcement suppressed … (setting is OFF)"`
-
-### Event History, Cache, GUI & Config
-
-Detailed documentation for these subsystems is in separate files — read on demand:
-
-- **`docs/event-history.md`** — Event History popup exports, internals, collection context, civ event history
-- **`docs/gui-and-config.md`** — Event cache exports/lifecycle, GUI tabs/hotkeys, global config schema, per-save persistence, overlay button
-- **`docs/df-api-reference.md`** — DF API critical conventions, global data paths, HF/entity/position structs, per-event-type fields, relationship events, event collections (per-type key fields table), world sites, entity populations
+- **`docs/df-api-reference.md`** — DF API conventions, structs, event fields, collections, world sites
+- **`docs/event-history.md`** — Event History popup exports/internals, collection context, civ events
+- **`docs/gui-and-config.md`** — Cache, GUI tabs/hotkeys, config schema, persistence, overlay button
 
 ## DFHack Console Debugging
 
-- **Viewscreen focus string**: `lua printall(dfhack.gui.getCurFocus())`
-- **Struct fields**: `lua printall(<object>)`
-- **herald-probe**: edit `herald-probe.lua`, then `herald-main debug true` + `herald-main probe`
+- Focus string: `lua printall(dfhack.gui.getCurFocus())`
+- Struct fields: `lua printall(<object>)`
+- herald-probe: edit `herald-probe.lua`, then `herald-main debug true` + `herald-main probe`
 
 ## Rules
 
-- Use graphics-compatible UI only (no legacy text-mode)
+- Graphics-compatible UI only (no legacy text-mode)
 - Guard with `dfhack.isMapLoaded()` before scanning
 - Never re-scan from event ID 0; always incremental
-- Keep UI (`herald-gui.lua`) separate from logic (`herald-main.lua`)
-- Keep event history subsystem (`herald-event-history.lua`) separate from the main settings UI (`herald-gui.lua`)
-- Use `DEBUG` (not `debug`) — `debug` shadows Lua's built-in, making
-  `debug = debug or false` always truthy and permanently enabling debug output
-- Do not use em-dashes (`—`) in any string printed to the user (announcements,
-  debug output, or console `print`); DF cannot render them. Use `-` instead.
-- Create comments where appropriate, ensure they are logical, human-readable and are as lean as possible to minimise token usage and clutter.
-- When making changes to the codebase, update this CLAUDE.md file (and relevant docs/ files) to reflect any new or changed architecture, exports, data structures, patterns, or conventions. Keep documentation accurate and in sync with the code.
+- Keep UI/logic/event-history in separate files
+- Use `DEBUG` not `debug` (`debug` shadows Lua built-in, always truthy)
+- No em-dashes in printed strings; DF can't render them. Use `-`
+- Comments: lean, logical, human-readable
+- Update CLAUDE.md + relevant docs/ files when changing architecture/exports/conventions
 
 ## Future (on request only)
 
 - Adventure mode handler category
-- Legendary citizen tracking (notable deeds of fort-born figures)
-- War progress summaries (casualty totals after battles)
+- Legendary citizen tracking
+- War progress summaries
