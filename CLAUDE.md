@@ -164,7 +164,9 @@ Exports (non-local at module scope):
   `herald-cache`.
 - **`event_will_be_shown(ev)`** — calls the describer with `focal=-1`; returns false if the result
   is nil. Used by `herald-cache` to exclude noise events from counts.
-- **`open_event_history(hf_id, hf_name)`** — opens (or raises) the EventHistory popup. Called via
+- **`open_event_history(hf_id, hf_name)`** — opens (or raises) the EventHistory popup. Uses
+  `widgets.FilteredList` with `search_key` for text search/filtering across events. Multi-line
+  events share the same `search_key` so they filter as a group. Called via
   `ev_hist.open_event_history(...)` from `FiguresPanel` and `PinnedPanel`.
 
 Internal (local) components:
@@ -173,8 +175,11 @@ Internal (local) components:
   `do` block via `add(type_name, fn)`, which silently skips unknown type names (handles DFHack
   version differences). Describers return verb-first text when focal matches a participant;
   return `nil` to suppress the event entirely.
-- **`artifact_name_by_id(art_id)`** — resolves an artifact ID to its translated name via
-  `df.artifact_record.find`. pcall-guarded, returns nil on failure.
+- **`article(s)`** — returns `"a <s>"` or `"an <s>"` based on first letter.
+- **`title_case(s)`** — converts `ALL_CAPS_ENUM_NAME` to `"All Caps Enum Name"`.
+- **`artifact_name_by_id(art_id)`** — resolves an artifact ID to its translated name and item
+  description (material + type, e.g. "copper sword"). Returns `(name_or_nil, item_desc_or_nil)`.
+  pcall-guarded, returns nil on failure.
 - **`building_name_at_site(site_id, structure_id)`** — resolves a structure within a site to its
   translated building name by scanning `site.buildings`. pcall-guarded.
 - **`get_hf_events(hf_id)`** — event collection for the popup. Uses `herald-cache` event IDs
@@ -455,6 +460,14 @@ ev.seconds         -- timestamp within the year
 - `HIST_FIGURE_ABDUCTED`: `ev.snatcher`, `ev.target`
 - `MASTERPIECE_CREATED_*`: `ev.maker`, `ev.maker_entity`, `ev.item_type`, `ev.item_subtype`
 - `ARTIFACT_CREATED`: `ev.creator_hfid`
+- `ARTIFACT_STORED`: `ev.histfig`, `ev.artifact_id` (or `artifact_record`), `ev.site`
+- `ARTIFACT_CLAIM_FORMED`: `ev.artifact`, `ev.histfig`, `ev.entity`, `ev.claim_type`
+- `ITEM_STOLEN`: `ev.histfig`, `ev.item_type`, `ev.mattype`, `ev.matindex`, `ev.entity`, `ev.site`
+- `ASSUME_IDENTITY`: `ev.trickster`, `ev.identity`, `ev.target`
+- `GAMBLE`: `ev.hf`, `ev.site`, `ev.structure`, `ev.account_before`, `ev.account_after`
+- `ENTITY_CREATED`: `ev.entity`, `ev.site`, `ev.structure`, `ev.creator_hfid`
+- `FAILED_INTRIGUE_CORRUPTION`: `ev.corruptor_hf`, `ev.target_hf`, `ev.site`
+- `HF_ACT_ON_BUILDING`: `ev.histfig`, `ev.action` (0=profaned, 2=prayed), `ev.site`, `ev.structure`
 - `CREATED_SITE`/`CREATED_STRUCTURE`: `ev.builder_hf`
 
 For a full mapping see `TYPE_HF_FIELDS` in `herald-event-history.lua`. When the field name is
