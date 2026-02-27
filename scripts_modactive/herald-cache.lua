@@ -209,6 +209,7 @@ for _, name in ipairs({'HF_SIMPLE_BATTLE_EVENT', 'HIST_FIGURE_SIMPLE_BATTLE_EVEN
 end
 local COMP_TYPE = df.history_event_type['COMPETITION']
 local BODY_ABUSED_TYPE = df.history_event_type['BODY_ABUSED']
+local OVERTHROWN_TYPE  = df.history_event_type['ENTITY_OVERTHROWN']
 
 -- Civ-relevant event types.
 local ADD_HF_ENTITY_LINK_TYPE    = df.history_event_type['ADD_HF_ENTITY_LINK']
@@ -293,6 +294,25 @@ local function process_event(ev, ev_hist)
     -- Vector field for body abuse events (victim HF IDs in 'bodies').
     if BODY_ABUSED_TYPE and ev_type == BODY_ABUSED_TYPE then
         local ok, vec = pcall(function() return ev.bodies end)
+        if ok and vec then
+            local ok2, n = pcall(function() return #vec end)
+            if ok2 then
+                for i = 0, n - 1 do
+                    local ok3, v = pcall(function() return vec[i] end)
+                    if ok3 and type(v) == 'number' and v >= 0 and not seen[v] then
+                        seen[v] = true
+                        hf_event_counts[v] = (hf_event_counts[v] or 0) + 1
+                        if not hf_event_ids[v] then hf_event_ids[v] = {} end
+                        table.insert(hf_event_ids[v], ev_id)
+                    end
+                end
+            end
+        end
+    end
+
+    -- Vector field for overthrow events (conspirator HF IDs).
+    if OVERTHROWN_TYPE and ev_type == OVERTHROWN_TYPE then
+        local ok, vec = pcall(function() return ev.conspirator_hfs end)
         if ok and vec then
             local ok2, n = pcall(function() return #vec end)
             if ok2 then

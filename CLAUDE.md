@@ -542,6 +542,8 @@ ev.seconds         -- timestamp within the year
 - `HF_CONFRONTED`: `ev.target` (confronted HF), `ev.situation`, `ev.reasons` (vector; 0=ageless, 1=murder), `ev.site`
 - `ARTIFACT_POSSESSED`: `ev.histfig`, `ev.artifact` (artifact_record ID), `ev.site`
 - `HF_GAINS_SECRET_GOAL`: `ev.histfig`, `ev.goal` (`goal_type` enum: 0-14, see describer)
+- `HF_LEARNS_SECRET`: `ev.student` (learner HF), `ev.teacher` (HF or -1), `ev.artifact` (artifact ID), `ev.interaction` (interaction ID; name via `df.interaction.find(id).str` `[IS_NAME:...]` tag)
+- `ENTITY_OVERTHROWN`: `ev.overthrown_hf`, `ev.position_taker_hf`, `ev.instigator_hf`, `ev.conspirator_hfs` (vector), `ev.entity`, `ev.position_profile_id`, `ev.site`
 - `AGREEMENT_FORMED`: `ev.agreement_id` (no entity fields; not included in civ event history)
 
 For a full mapping see `TYPE_HF_FIELDS` in `herald-event-history.lua`. When the field name is

@@ -1362,6 +1362,77 @@ do
         end
         return 'Developed a secret ambition'
     end)
+
+    -- Resolve the readable name from an interaction's str tags.
+    -- Looks for [IS_NAME:<name>] in the interaction.str vector.
+    local function interaction_name(inter_id)
+        if not inter_id or inter_id < 0 then return nil end
+        local ok, inter = pcall(function() return df.interaction.find(inter_id) end)
+        if not ok or not inter then return nil end
+        local ok2, n = pcall(function() return #inter.str end)
+        if not ok2 then return nil end
+        for i = 0, n - 1 do
+            local ok3, s = pcall(function() return inter.str[i].value end)
+            if ok3 and s then
+                local name = s:match('^%[IS_NAME:(.+)%]$')
+                if name then return name end
+            end
+        end
+        return nil
+    end
+
+    add('HF_LEARNS_SECRET', function(ev, focal)
+        -- Fields: student (learner HF), teacher (HF or -1), artifact (source), interaction.
+        local teacher_id = safe_get(ev, 'teacher')
+        local art_id     = safe_get(ev, 'artifact')
+        local inter_id   = safe_get(ev, 'interaction')
+        local secret     = interaction_name(inter_id)
+        local what       = secret and ('learned ' .. secret) or 'learned a secret'
+        -- Source: from a teacher, or from an artifact.
+        if teacher_id and teacher_id >= 0 then
+            local teacher = hf_name_by_id(teacher_id) or 'someone'
+            return what:sub(1,1):upper() .. what:sub(2) .. ' from ' .. teacher
+        end
+        if art_id and art_id >= 0 then
+            local art_n = artifact_name_by_id(art_id)
+            if art_n then
+                return what:sub(1,1):upper() .. what:sub(2) .. ' from ' .. art_n
+            end
+        end
+        return what:sub(1,1):upper() .. what:sub(2)
+    end)
+
+    add('ENTITY_OVERTHROWN', function(ev, focal)
+        -- Fields: overthrown_hf, position_taker_hf, instigator_hf,
+        -- conspirator_hfs (vector), entity, position_profile_id, site.
+        local overthrown_id = safe_get(ev, 'overthrown_hf')
+        local taker_id      = safe_get(ev, 'position_taker_hf')
+        local instigator_id = safe_get(ev, 'instigator_hf')
+        local ent_id        = safe_get(ev, 'entity')
+        local site_n        = site_name_by_id(safe_get(ev, 'site'))
+        local loc           = site_n and (' in ' .. site_n) or ''
+        local ent_n         = ent_name_by_id(ent_id)
+        local ent_sfx       = ent_n and (' of ' .. ent_n) or ''
+        -- Resolve position name from entity + position_profile_id.
+        local pos_n
+        local pos_id = safe_get(ev, 'position_profile_id')
+        if ent_id and ent_id >= 0 and pos_id and pos_id >= 0 then
+            pos_n = pos_name_for(ent_id, pos_id, -1)
+        end
+        local pos_sfx = pos_n and (' as ' .. pos_n) or ''
+        if focal == taker_id or focal == instigator_id then
+            local victim = hf_name_by_id(overthrown_id) or 'the ruler'
+            return 'Overthrew ' .. victim .. pos_sfx .. ent_sfx .. loc
+        elseif focal == overthrown_id then
+            local taker = hf_name_by_id(taker_id) or 'someone'
+            return 'Was overthrown by ' .. taker .. pos_sfx .. ent_sfx .. loc
+        else
+            -- Focal might be a conspirator.
+            local taker = hf_name_by_id(taker_id) or 'Someone'
+            local victim = hf_name_by_id(overthrown_id) or 'the ruler'
+            return 'Conspired as ' .. taker .. ' overthrew ' .. victim .. pos_sfx .. ent_sfx .. loc
+        end
+    end)
 end
 
 -- Event collection context --------------------------------------------------
@@ -1929,10 +2000,31 @@ local function format_collection_entry(col, focal_civ_id)
         return 'abduction of ' .. victim .. loc
 
     elseif ct == _CT.ENTITY_OVERTHROWN then
-        local ent  = ent_name_by_id(safe_get(col, 'entity'))
-        local site = site_name_by_id(safe_get(col, 'site'))
-        local of_  = ent and (' of ' .. ent) or ''
-        local loc  = site and (' at ' .. site) or ''
+        local ent_n = ent_name_by_id(safe_get(col, 'entity'))
+        local site  = site_name_by_id(safe_get(col, 'site'))
+        local loc   = site and (' in ' .. site) or ''
+        -- Find the ENTITY_OVERTHROWN event within the collection for detail.
+        local ot = df.history_event_type['ENTITY_OVERTHROWN']
+        local overthrown, taker, pos_n
+        local ent_id = safe_get(col, 'entity')
+        for j = 0, #col.events - 1 do
+            local ev = df.history_event.find(col.events[j])
+            if ev and ot and ev:getType() == ot then
+                overthrown = hf_name_by_id(safe_get(ev, 'overthrown_hf'))
+                taker      = hf_name_by_id(safe_get(ev, 'position_taker_hf'))
+                local pos_id = safe_get(ev, 'position_profile_id')
+                if ent_id and ent_id >= 0 and pos_id and pos_id >= 0 then
+                    pos_n = pos_name_for(ent_id, pos_id, -1)
+                end
+                break
+            end
+        end
+        if taker and overthrown then
+            local pos_sfx = pos_n and (' as ' .. pos_n) or ''
+            return taker .. ' overthrew ' .. overthrown .. pos_sfx
+                .. (ent_n and (' of ' .. ent_n) or '') .. loc
+        end
+        local of_ = ent_n and (' of ' .. ent_n) or ''
         return 'overthrow' .. of_ .. loc
 
     elseif ct == _CT.PERSECUTION then
@@ -2178,6 +2270,7 @@ end
 local _COMP_TYPE         = df.history_event_type['COMPETITION']
 local _WAR_BATTLE_TYPE   = df.history_event_type['WAR_FIELD_BATTLE']
 local _BODY_ABUSED_TYPE  = df.history_event_type['BODY_ABUSED']
+local _OVERTHROWN_TYPE   = df.history_event_type['ENTITY_OVERTHROWN']
 
 -- Dispatch table: event type integer -> scalar HF field names to check.
 -- Reduces safe_get calls per event from ~28 to 1-4 for known types.
@@ -2230,6 +2323,8 @@ do
     map('HF_CONFRONTED',              {'target'})
     map('ARTIFACT_POSSESSED',         {'histfig'})
     map('HF_GAINS_SECRET_GOAL',       {'histfig'})
+    map('HF_LEARNS_SECRET',           {'student', 'teacher'})
+    map('ENTITY_OVERTHROWN',          {'overthrown_hf', 'position_taker_hf', 'instigator_hf'})
     -- Peace/agreement events have no HF fields (civ-level only).
     -- Empty tables prevent fallback to full HF_FIELDS scan in the cache.
     map('WAR_PEACE_ACCEPTED',         {})
@@ -2417,6 +2512,14 @@ local function get_hf_events(hf_id)
                 end
             elseif _BODY_ABUSED_TYPE and ev_type == _BODY_ABUSED_TYPE then
                 if safe_get(ev, 'histfig') == hf_id or vec_has(ev, 'bodies', hf_id) then
+                    added_ids[ev.id] = true
+                    table.insert(results, ev)
+                end
+            elseif _OVERTHROWN_TYPE and ev_type == _OVERTHROWN_TYPE then
+                if safe_get(ev, 'overthrown_hf') == hf_id
+                    or safe_get(ev, 'position_taker_hf') == hf_id
+                    or safe_get(ev, 'instigator_hf') == hf_id
+                    or vec_has(ev, 'conspirator_hfs', hf_id) then
                     added_ids[ev.id] = true
                     table.insert(results, ev)
                 end
