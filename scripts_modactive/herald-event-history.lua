@@ -1433,6 +1433,25 @@ do
             return 'Conspired as ' .. taker .. ' overthrew ' .. victim .. pos_sfx .. ent_sfx .. loc
         end
     end)
+
+    add('HIST_FIGURE_REVIVED', function(ev, focal)
+        -- Fields: histfig (revived), actor_hfid (reviver), interaction, site, region.
+        local revived_id = safe_get(ev, 'histfig')
+        local actor_id   = safe_get(ev, 'actor_hfid')
+        local site_n     = site_name_by_id(safe_get(ev, 'site'))
+        local loc        = site_n and (' in ' .. site_n) or ''
+        if focal == actor_id then
+            local target = hf_name_by_id(revived_id) or 'someone'
+            return 'Raised ' .. target .. ' from the dead' .. loc
+        elseif focal == revived_id then
+            local by_sfx = (actor_id and actor_id >= 0)
+                and (' by ' .. (hf_name_by_id(actor_id) or 'someone')) or ''
+            return 'Was raised from the dead' .. by_sfx .. loc
+        end
+        local actor   = hf_name_by_id(actor_id) or 'Someone'
+        local revived = hf_name_by_id(revived_id) or 'someone'
+        return actor .. ' raised ' .. revived .. ' from the dead' .. loc
+    end)
 end
 
 -- Event collection context --------------------------------------------------
@@ -2325,6 +2344,7 @@ do
     map('HF_GAINS_SECRET_GOAL',       {'histfig'})
     map('HF_LEARNS_SECRET',           {'student', 'teacher'})
     map('ENTITY_OVERTHROWN',          {'overthrown_hf', 'position_taker_hf', 'instigator_hf'})
+    map('HIST_FIGURE_REVIVED',        {'histfig', 'actor_hfid'})
     -- Peace/agreement events have no HF fields (civ-level only).
     -- Empty tables prevent fallback to full HF_FIELDS scan in the cache.
     map('WAR_PEACE_ACCEPTED',         {})
