@@ -5,11 +5,11 @@ Need to try fix up the UI first, needs to be as accurate as possible as I imagin
 
 ## Fixes
 
-- Site count fixes
+- ~~Site count fixes~~
 
 ## Changes
 
-- Optimisation: caching the loaded data in the user's save file and then applying delta processing when scanning for new events
+- ~~Optimisation: caching the loaded data in the user's save file and then applying delta processing when scanning for new events~~
 - Change event window for:
   - CREATED_BUILDING: specify building name
   - ARTIFACT_CREATED: specify artifact name

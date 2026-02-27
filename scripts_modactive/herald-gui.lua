@@ -183,8 +183,12 @@ local function build_choices(show_dead, show_pinned_only)
 end
 
 -- Builds choice rows for the Civilisations tab FilteredList.
--- Sites: counted from world_data.sites via cur_owner_id (current holder).
--- SiteGovernments are resolved to their parent Civilization in two phases.
+-- Sites: counted from world_data.sites via 5-tier cur_owner_id resolution:
+--   1. cur_owner_id is directly a Civilization
+--   2. SiteGov -> position holder HF -> MEMBER link -> Civ
+--   3. SiteGov -> histfig_ids members -> MEMBER/FORMER_MEMBER link -> Civ
+--   4. SITE_CONQUERED event collections -> attacker_civ[0] (most recent conquest)
+--   5. site.civ_id (original/founding civ; last resort)
 -- Population: summed from world.entity_populations (global non-HF racial group list).
 -- Column widths: Name=26, Race=13, Sites=6, Pop=6, Status=remaining.
 local function build_civ_choices(show_pinned_only)
@@ -196,16 +200,13 @@ local function build_civ_choices(show_pinned_only)
         end
     end
 
-    -- Site count: use cur_owner_id (current holder). Direct Civ owners are counted
-    -- immediately; non-Civ owners (SiteGovernments) are resolved to their parent Civ
-    -- by finding a position-holder HF and following their MEMBER entity links.
-    -- site.civ_id is intentionally not used — it reflects original ownership, not current.
+    -- Site count: 5-tier resolution from cur_owner_id to parent Civilization.
     local site_counts = {}
     local ok_wd, world_sites = pcall(function() return df.global.world.world_data.sites end)
     if ok_wd and world_sites then
-        -- Collect unique non-Civ owner IDs that need resolving.
         local sg_to_civ = {}
         local to_resolve = {}
+        -- Collect unique non-Civ owner IDs that need resolving.
         for _, site in ipairs(world_sites) do
             local owner = site.cur_owner_id
             if type(owner) == 'number' and owner >= 0
@@ -213,7 +214,8 @@ local function build_civ_choices(show_pinned_only)
                 to_resolve[owner] = true
             end
         end
-        -- Resolve each non-Civ owner to its parent Civ via HF position holders.
+
+        -- Tier 2: resolve SiteGov -> position holder HF -> MEMBER link -> Civ.
         for owner_id in pairs(to_resolve) do
             local ok_ent, ent = pcall(df.historical_entity.find, owner_id)
             if not ok_ent or not ent then goto ue_cont end
@@ -236,10 +238,76 @@ local function build_civ_choices(show_pinned_only)
             end
             ::ue_cont::
         end
+
+        -- Tier 3: SiteGov -> histfig_ids members -> MEMBER/FORMER_MEMBER link -> Civ.
+        -- Catches SiteGovernments where all positions are vacant but entity still has
+        -- members on record (dead HFs retain their entity links).
+        local LT = df.histfig_entity_link_type
+        for owner_id in pairs(to_resolve) do
+            if sg_to_civ[owner_id] then goto t3_cont end
+            local ok_ent, ent = pcall(df.historical_entity.find, owner_id)
+            if not ok_ent or not ent then goto t3_cont end
+            local ok_hfids, hfids = pcall(function() return ent.histfig_ids end)
+            if not ok_hfids or not hfids then goto t3_cont end
+            for _, hf_id in ipairs(hfids) do
+                if not (type(hf_id) == 'number' and hf_id >= 0) then goto t3_hf end
+                local hf = df.historical_figure.find(hf_id)
+                if not hf then goto t3_hf end
+                for _, link in ipairs(hf.entity_links) do
+                    local lt = link:getType()
+                    if (lt == LT.MEMBER or lt == LT.FORMER_MEMBER)
+                       and civ_set[link.entity_id] then
+                        sg_to_civ[owner_id] = link.entity_id
+                        break
+                    end
+                end
+                if sg_to_civ[owner_id] then break end
+                ::t3_hf::
+            end
+            ::t3_cont::
+        end
+
+        -- Tier 4: SITE_CONQUERED event collections -> attacker_civ[0].
+        -- Build site_conqueror map: iterate forward so latest conquest wins.
+        local site_conqueror = {}
+        local ok_cols, cols = pcall(function()
+            return df.global.world.history.event_collections.all
+        end)
+        if ok_cols and cols then
+            local SC_TYPE = df.history_event_collection_type.SITE_CONQUERED
+            for _, col in ipairs(cols) do
+                local ok_t, ctype = pcall(function() return col:getType() end)
+                if not ok_t or ctype ~= SC_TYPE then goto t4_col end
+                local ok_s, site_id = pcall(function() return col.site end)
+                if not ok_s or not (type(site_id) == 'number' and site_id >= 0) then
+                    goto t4_col
+                end
+                local ok_ac, acv = pcall(function() return col.attacker_civ end)
+                if ok_ac and acv and #acv > 0 then
+                    local ac_id = acv[0]
+                    if type(ac_id) == 'number' and ac_id >= 0 and civ_set[ac_id] then
+                        site_conqueror[site_id] = ac_id
+                    end
+                end
+                ::t4_col::
+            end
+        end
+
+        -- Count sites per civ: Tier 1 (direct civ) -> Tier 2/3 (sg_to_civ) ->
+        -- Tier 4 (site_conqueror) -> Tier 5 (site.civ_id as last resort).
         for _, site in ipairs(world_sites) do
             local owner = site.cur_owner_id
             if not (type(owner) == 'number' and owner >= 0) then goto sc_cont end
-            local cid = (civ_set[owner] and owner) or sg_to_civ[owner]
+            local cid = (civ_set[owner] and owner)
+                        or sg_to_civ[owner]
+                        or site_conqueror[site.id]
+            -- Tier 5: fall back to site.civ_id (original/founding civ).
+            if not cid then
+                local orig = site.civ_id
+                if type(orig) == 'number' and orig >= 0 and civ_set[orig] then
+                    cid = orig
+                end
+            end
             if cid then
                 site_counts[cid] = (site_counts[cid] or 0) + 1
             end
