@@ -188,6 +188,11 @@ Internal (local) components:
   pcall-guarded, returns nil on failure.
 - **`building_name_at_site(site_id, structure_id)`** — resolves a structure within a site to its
   translated building name by scanning `site.buildings`. pcall-guarded.
+- **`civ_name_by_id(entity_id)`** — like `ent_name_by_id` but resolves SiteGovernments to their
+  parent Civilisation (via position holder HF -> MEMBER link -> Civilization). Falls back to
+  the entity's own name. Used in `format_collection_entry` so opponents show civ names.
+- **`event_sort_cmp(a, b)`** — shared sort comparator for event lists; sorts by year, seconds,
+  id. Used by both `get_civ_events` and `get_hf_events`.
 - **`get_hf_events(hf_id)`** — event collection for the popup. Uses `herald-cache` event IDs
   when available (O(n) lookups per HF); falls back to full world scan if cache not ready.
   Relationship events always scanned from block store. Contextual `WAR_FIELD_BATTLE`

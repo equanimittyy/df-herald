@@ -87,6 +87,65 @@ local function ent_name_by_id(entity_id)
     return n ~= '' and n or nil
 end
 
+-- Like ent_name_by_id but resolves SiteGovernments to their parent Civilisation.
+-- skip_civ_id: exclude this civ from resolution (avoids "conquered X from itself").
+local function civ_name_by_id(entity_id, skip_civ_id)
+    if not entity_id or entity_id < 0 then return nil end
+    local ent = df.historical_entity.find(entity_id)
+    if not ent then return nil end
+    -- If already a Civilization, return its name directly.
+    local ok_t, etype = pcall(function() return ent.type end)
+    if ok_t and etype == df.historical_entity_type.Civilization then
+        local n = dfhack.translation.translateName(ent.name, true)
+        return n ~= '' and n or nil
+    end
+    -- SiteGovernment: find parent civ via members' links, skipping skip_civ_id.
+    if ok_t and etype == df.historical_entity_type.SiteGovernment then
+        -- Check an HF's entity links for a parent Civilization (not skip_civ_id).
+        local function find_parent_civ(hf)
+            if not hf then return nil end
+            for _, link in ipairs(hf.entity_links) do
+                local lt = link:getType()
+                if lt == df.histfig_entity_link_type.MEMBER
+                    or lt == df.histfig_entity_link_type.FORMER_MEMBER then
+                    local parent = df.historical_entity.find(link.entity_id)
+                    if parent and parent.type == df.historical_entity_type.Civilization
+                        and link.entity_id ~= skip_civ_id then
+                        local n = dfhack.translation.translateName(parent.name, true)
+                        if n ~= '' then return n end
+                    end
+                end
+            end
+            return nil
+        end
+        -- Tier 1: position holders.
+        local ok_a, asgns = pcall(function() return ent.positions.assignments end)
+        if ok_a and asgns then
+            for i = 0, #asgns - 1 do
+                local hf_id = safe_get(asgns[i], 'histfig2')
+                if hf_id and hf_id >= 0 then
+                    local n = find_parent_civ(df.historical_figure.find(hf_id))
+                    if n then return n end
+                end
+            end
+        end
+        -- Tier 2: entity members.
+        local ok_h, hfids = pcall(function() return ent.histfig_ids end)
+        if ok_h and hfids then
+            local ok_n, cnt = pcall(function() return #hfids end)
+            if ok_n then
+                for i = 0, cnt - 1 do
+                    local n = find_parent_civ(df.historical_figure.find(hfids[i]))
+                    if n then return n end
+                end
+            end
+        end
+    end
+    -- Fallback: return the entity's own name.
+    local n = dfhack.translation.translateName(ent.name, true)
+    return n ~= '' and n or nil
+end
+
 local function site_name_by_id(site_id)
     if not site_id or site_id < 0 then return nil end
     local ok, site = pcall(function() return df.world_site.find(site_id) end)
@@ -1405,7 +1464,7 @@ local function format_collection_entry(col, focal_civ_id)
         if ok_ov and opp_vec then
             local ok_n, n = pcall(function() return #opp_vec end)
             if ok_n and n > 0 then
-                opp_name = ent_name_by_id(opp_vec[0])
+                opp_name = civ_name_by_id(opp_vec[0], focal_civ_id)
             end
         end
         return opp_name, is_attacker
@@ -1662,6 +1721,18 @@ local function vec_has(ev, field, hf_id)
     return false
 end
 
+-- Shared sort comparator: order events by year, seconds, id.
+local function event_sort_cmp(a, b)
+    local ya, yb = (a.year or -1), (b.year or -1)
+    if ya ~= yb then return ya < yb end
+    local sa = safe_get(a, 'seconds') or -1
+    local sb = safe_get(b, 'seconds') or -1
+    if sa ~= sb then return sa < sb end
+    local ia = safe_get(a, 'id') or -1
+    local ib = safe_get(b, 'id') or -1
+    return ia < ib
+end
+
 -- Pre-compute event-type integers once at module load.
 local _BATTLE_TYPES = {}
 for _, name in ipairs({'HF_SIMPLE_BATTLE_EVENT', 'HIST_FIGURE_SIMPLE_BATTLE_EVENT'}) do
@@ -1815,18 +1886,7 @@ local function get_civ_events(civ_id)
         end
     end
 
-    -- Sort by year, seconds, id.
-    table.sort(results, function(a, b)
-        local ya, yb = (a.year or -1), (b.year or -1)
-        if ya ~= yb then return ya < yb end
-        local sa = safe_get(a, 'seconds') or -1
-        local sb = safe_get(b, 'seconds') or -1
-        if sa ~= sb then return sa < sb end
-        local ia = safe_get(a, 'id') or -1
-        local ib = safe_get(b, 'id') or -1
-        return ia < ib
-    end)
-
+    table.sort(results, event_sort_cmp)
     local ctx_map = build_event_to_collection()
     return results, ctx_map
 end
@@ -1949,16 +2009,7 @@ local function get_hf_events(hf_id)
             end
         end
     end
-    table.sort(results, function(a, b)
-        local ya, yb = (a.year or -1), (b.year or -1)
-        if ya ~= yb then return ya < yb end
-        local sa = safe_get(a, 'seconds') or -1
-        local sb = safe_get(b, 'seconds') or -1
-        if sa ~= sb then return sa < sb end
-        local ia = safe_get(a, 'id') or -1
-        local ib = safe_get(b, 'id') or -1
-        return ia < ib
-    end)
+    table.sort(results, event_sort_cmp)
     local ctx_map = build_event_to_collection()
     return results, ctx_map
 end

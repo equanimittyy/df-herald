@@ -1106,7 +1106,7 @@ function HeraldWindow:switch_tab(idx)
     end
 end
 
--- Ctrl-R: delta-process new events and refresh the active panel.
+-- Ctrl-C: delta-process new events and refresh the active panel.
 function HeraldWindow:refresh_cache()
     local n = cache.build_delta()
     print(('[Herald] Cache refreshed - %d new event(s) processed'):format(n))
@@ -1149,7 +1149,7 @@ function HeraldWindow:onInput(keys)
         end
         self._last_tab_t = now
     end
-    -- Ctrl-R: refresh cache (handled at window level, applies to all tabs).
+    -- Ctrl-C: refresh cache (handled at window level, applies to all tabs).
     if keys.CUSTOM_CTRL_C then
         self:refresh_cache()
         return true
