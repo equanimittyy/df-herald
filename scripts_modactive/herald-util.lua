@@ -9,13 +9,7 @@ Tags: fort | gameplay
   herald-ind-death, herald-world-leaders, herald-gui, and
   herald-event-history to avoid code duplication.
 
-  When run directly from the DFHack console, provides event collection
-  inspection:
-
-    herald-util inspect [TYPENAME]
-
-  Prints all fields of the first matching event collection via printall.
-  TYPENAME defaults to DUEL. Running without 'inspect' lists all valid types.
+Not intended for direct use.
 ]====]
 
 -- Announcement helpers --------------------------------------------------------
@@ -175,27 +169,3 @@ function merge_civ_pin_settings(saved)
     return merge_settings(saved, CIVILISATION_SETTINGS_KEYS, default_civ_pin_settings())
 end
 
--- Console inspection (standalone mode only) -----------------------------------
--- Usage: herald-util inspect [TYPENAME]
--- Prints all fields of the first event collection of the given type via printall.
--- e.g. herald-util inspect BEAST_ATTACK
-if not dfhack_flags.module then
-    local args = {...}
-    if args[1] == 'inspect' then
-        local target = args[2] or 'DUEL'
-        local all = df.global.world.history.event_collections.all
-        for i = 0, #all - 1 do
-            local col = all[i]
-            if df.history_event_collection_type[col:getType()] == target then
-                printall(col)
-                return
-            end
-        end
-        print(target .. ' not found in this save')
-    else
-        print('Usage: herald-util inspect TYPENAME')
-        print('Types: WAR BATTLE DUEL SITE_CONQUERED ABDUCTION BEAST_ATTACK JOURNEY')
-        print('       OCCASION COMPETITION PERFORMANCE PROCESSION CEREMONY')
-        print('       PERSECUTION ENTITY_OVERTHROWN RAID THEFT INSURRECTION PURGE')
-    end
-end

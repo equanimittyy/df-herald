@@ -19,8 +19,7 @@ scripts_modactive/
 ├── herald-cache.lua             ← persistent event cache (HF event counts + IDs, delta processing)
 ├── herald-ind-death.lua         ← HIST_FIGURE_DIED + poll handler for pinned individuals [Individuals]
 ├── herald-world-leaders.lua     ← poll-based world leader tracking [Civilisations]
-├── herald-util.lua              ← shared utilities (announcement wrappers, position helpers, pin settings)
-└── herald-probe-peace.lua       ← dev probe: discovers peace/agreement event types and fields
+└── herald-util.lua              ← shared utilities (announcement wrappers, position helpers, pin settings)
 
 scripts_modinstalled/
 ├── herald-button.lua            ← DFHack overlay widget; adds Herald button to the main DF screen
@@ -132,14 +131,6 @@ Shared utility module required by all other herald scripts. All exports are non-
 - `default_civ_pin_settings()` — returns defaults table (all `true`) for civ pins
 - `merge_pin_settings(saved)` / `merge_civ_pin_settings(saved)` — merges saved booleans over defaults; ignores unknown keys
 
-**Standalone inspection** (when run directly from the DFHack console):
-
-```
-herald-util inspect [TYPENAME]
-```
-
-Prints all fields of the first matching event collection via `printall`. Defaults to `DUEL`. Running without `inspect` lists valid type names.
-
 ### Debug Output
 
 When `DEBUG = true`, handlers emit verbose trace lines covering:
@@ -175,6 +166,8 @@ Exports (non-local at module scope):
   popup for a civilisation. Shows collection-level summaries (wars, battles, conquests, raids,
   theft, abductions) plus individual position-change events. Same singleton pattern as
   `open_event_history`; opening one dismisses the other.
+- **`reset_civ_caches()`** — invalidates lazy civ caches (`_entpop_to_civ`) on world unload.
+  Called from `herald-main.cleanup()`.
 
 Internal (local) components:
 
@@ -193,7 +186,8 @@ Internal (local) components:
   parent Civilisation (via position holder HF -> MEMBER link -> Civilization). Falls back to
   the entity's own name. Used in `format_collection_entry` so opponents show civ names.
 - **`event_sort_cmp(a, b)`** — shared sort comparator for event lists; sorts by year, seconds,
-  id. Used by both `get_civ_events` and `get_hf_events`.
+  id. Direct field access (no pcall); synthetic entries must set `seconds=-1, id=-1`.
+  Used by both `get_civ_events` and `get_hf_events`.
 - **`get_hf_events(hf_id)`** — event collection for the popup. Uses `herald-cache` event IDs
   when available (O(n) lookups per HF); falls back to full world scan if cache not ready.
   Relationship events always scanned from block store. Contextual `WAR_FIELD_BATTLE`
@@ -214,8 +208,16 @@ Internal (local) components:
 
 **Event collection context** (local to `herald-event-history.lua`):
 
+- **`_CT`** — `{ [name_string] = collection_type_int }` lookup table pre-computed at module
+  load. Maps 18 collection type names (DUEL, BEAST_ATTACK, ... CEREMONY) to their integer
+  values. Used by `describe_collection`, `civ_matches_collection`, `format_collection_entry`,
+  `get_parent_war_name`, `peace_war_suffix`, and `build_war_event_map` for fast integer
+  dispatch instead of string comparison.
 - **`COLLECTION_PRIORITY`** — `{ [collection_type_int] = priority }` mapping. Lower number =
-  more specific context. DUEL(1) > BEAST_ATTACK(2) > ... > CEREMONY(13).
+  more specific context. DUEL(1) > BEAST_ATTACK(2) > ... > CEREMONY(13). Built from `_CT`.
+- **`build_war_event_map()`** — scans only WAR-type collections, builds
+  `{ [event_id] = war_collection }`. Used by `get_civ_events` (civ mode only needs war context
+  for peace/agreement event suffixes).
 - **`build_event_to_collection()`** — scans `event_collections.all` once, builds
   `{ [event_id] = best_collection }` keeping highest-priority collection per event.
   Called once per popup open inside `get_hf_events`.
@@ -223,6 +225,7 @@ Internal (local) components:
   (e.g. "during The Scraped Conflict") for 13+ collection types. `skip_site=true` omits site
   info to avoid duplication with the base description. All field access pcall-guarded.
   Unverified types (RAID, THEFT, INSURRECTION, PURGE) use safe_get fallback chains.
+  Uses `_CT` integer comparisons (no string lookup per call).
 - **`CTX_TYPES`** — `{ [event_type_int] = fn(ev)->bool }` table of event types that receive
   collection context. The function returns true when site should be skipped in the suffix.
   Covers 11 event type names (8 distinct types accounting for version aliases).
@@ -230,7 +233,8 @@ Internal (local) components:
 **Civ event history** (local to `herald-event-history.lua`):
 
 - **`civ_matches_collection(col, civ_id)`** — returns true if a collection involves the given
-  civ as attacker, defender, or participant. pcall-guarded vector/scalar field checks.
+  civ as attacker, defender, or participant. Uses `_CT` integer dispatch; pcall-guarded vector/
+  scalar field checks.
 - **`site_from_collection_events(col)`** — resolves a site name from a collection's first
   event. Used as fallback for collection types with no direct `site` field (OCCASION and its
   sub-collections: COMPETITION, PERFORMANCE, PROCESSION, CEREMONY).
@@ -238,6 +242,7 @@ Internal (local) components:
   Looks up `col.parent_collection`, verifies it is WAR type. pcall-guarded.
 - **`get_entpop_to_civ()`** — lazily builds and caches `{ [entity_population.id] = civ_id }`
   lookup from `df.global.world.entity_populations`. Used by BATTLE matching and details.
+  Invalidated by `reset_civ_caches()` on world unload.
 - **`entpop_vec_has_civ(col, field, civ_id, ep_map)`** — checks if any entity_population ID
   in a squad vector field belongs to `civ_id`. Used by `civ_matches_collection` BATTLE branch.
 - **`sum_squad_vec(col, field)`** — sums integer values from a squad vector (e.g.
@@ -252,16 +257,18 @@ Internal (local) components:
   entity_population lookup, sums squad deaths (generic population) + HF deaths (named figures),
   resolves opponent civ name.
 - **`format_collection_entry(col, focal_civ_id)`** — returns civ-perspective description text
-  for a collection. BATTLE entries use entity_population-based resolution (not `attacker_civ`/
-  `defender_civ` which are empty on BATTLEs), include death counts (`killed X, lost Y` - omitted
-  when both zero) and parent war name suffix. Lowercase-first for generated text (e.g. "conquered
-  Site from Enemy", "hosted a gathering at Site"), preserves capitalisation for proper names
-  from DF translation (e.g. "The War of X - war with Y"). No year prefix; caller handles that.
-  OCCASION collections have no `occasion_id` field; name resolved via `col_name()` fallback,
-  site resolved from own events or first child collection's events.
+  for a collection. Uses `_CT` integer dispatch. BATTLE entries use entity_population-based
+  resolution (not `attacker_civ`/`defender_civ` which are empty on BATTLEs), include death
+  counts (`killed X, lost Y` - omitted when both zero) and parent war name suffix.
+  Lowercase-first for generated text (e.g. "conquered Site from Enemy", "hosted a gathering at
+  Site"), preserves capitalisation for proper names from DF translation (e.g. "The War of X -
+  war with Y"). No year prefix; caller handles that. OCCASION collections have no `occasion_id`
+  field; name resolved via `col_name()` fallback, site resolved from own events or first child
+  collection's events.
 - **`get_civ_events(civ_id)`** — collects events relevant to a civ: collection-level summaries
   for warfare/raids/theft/kidnappings + individual position-change, entity-creation, and
-  peace/agreement events. Returns `(results, ctx_map)` matching `get_hf_events` signature.
+  peace/agreement events. Uses `build_war_event_map()` (WAR-only) instead of full
+  `build_event_to_collection()`. Returns `(results, ctx_map)` matching `get_hf_events` signature.
 
 ### Event Cache (`herald-cache.lua`)
 

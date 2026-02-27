@@ -374,6 +374,8 @@ local function cleanup()
     end
     dfhack.reqscript('herald-cache').reset()
     dprint('cleanup: event cache reset')
+    dfhack.reqscript('herald-event-history').reset_civ_caches()
+    dprint('cleanup: civ caches reset')
 end
 
 -- Lifecycle hooks -------------------------------------------------------------
