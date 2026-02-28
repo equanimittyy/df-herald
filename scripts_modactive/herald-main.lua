@@ -426,10 +426,10 @@ elseif args[1] == 'test' then
     if not dfhack.isMapLoaded() then
         dfhack.printerr('[Herald] A fort must be loaded to test announcements.')
     else
-        util.announce_death('[Herald] TEST - Death announcement (red, pauses)')
-        util.announce_appointment('[Herald] TEST - Appointment announcement (yellow, pauses)')
-        util.announce_vacated('[Herald] TEST - Vacated announcement (white, no pause)')
-        util.announce_info('[Herald] TEST - Info announcement (cyan, no pause)')
+        util.announce_death('TEST - Death announcement (red)')
+        util.announce_appointment('TEST - Appointment announcement (yellow)')
+        util.announce_vacated('TEST - Vacated announcement (white)')
+        util.announce_info('TEST - Info announcement (cyan)')
         print('[Herald] Test announcements fired.')
     end
 elseif args[1] == 'probe' then

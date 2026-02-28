@@ -44,23 +44,23 @@ end
 
 local function fmt_death(hf_name, pos_name, civ_name)
     if pos_name then
-        return ('[Herald] %s, %s of %s, has died.'):format(hf_name, pos_name, civ_name)
+        return ('%s, %s of %s, has died.'):format(hf_name, pos_name, civ_name)
     end
-    return ('[Herald] %s of %s, a position holder, has died.'):format(hf_name, civ_name)
+    return ('%s of %s, a position holder, has died.'):format(hf_name, civ_name)
 end
 
 local function fmt_appointment(hf_name, pos_name, civ_name)
     if pos_name then
-        return ('[Herald] %s has been appointed %s of %s.'):format(hf_name, pos_name, civ_name)
+        return ('%s has been appointed %s of %s.'):format(hf_name, pos_name, civ_name)
     end
-    return ('[Herald] %s has been appointed to a position in %s.'):format(hf_name, civ_name)
+    return ('%s has been appointed to a position in %s.'):format(hf_name, civ_name)
 end
 
 local function fmt_vacated(hf_name, pos_name, civ_name)
     if pos_name then
-        return ('[Herald] %s is no longer %s of %s.'):format(hf_name, pos_name, civ_name)
+        return ('%s is no longer %s of %s.'):format(hf_name, pos_name, civ_name)
     end
-    return ('[Herald] %s is no longer a position holder in %s.'):format(hf_name, civ_name)
+    return ('%s is no longer a position holder in %s.'):format(hf_name, civ_name)
 end
 
 -- Poll handler ----------------------------------------------------------------

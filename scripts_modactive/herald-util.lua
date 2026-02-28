@@ -13,7 +13,8 @@ Not intended for direct use.
 ]====]
 
 -- Announcement helpers --------------------------------------------------------
--- Centralised wrappers so callers don't hardcode colours or pause flags.
+-- Centralised wrappers so callers don't hardcode colours. Announcements go to
+-- the recent ring buffer only; the alert overlay widget notifies the player.
 
 -- Recent announcements ring buffer ------------------------------------------
 -- Debug logging here uses plain print() (console only) because herald-util
@@ -39,7 +40,7 @@ local function push_recent(msg, color)
     end
     has_unread = true
     save_recent()
-    print(('[Herald] Recent: added (%d total): %s'):format(#recent_announcements, msg))
+    print(('[Herald DEBUG] Recent: added (%d total): %s'):format(#recent_announcements, msg))
 end
 
 function save_recent()
@@ -61,7 +62,7 @@ function load_recent()
     has_unread = false
     local saved = dfhack.persistent.getSiteData(RECENT_PERSIST_KEY)
     if type(saved) ~= 'table' or type(saved.entries) ~= 'table' then
-        print('[Herald] Recent: loaded 0 entries (no saved data)')
+        print('[Herald DEBUG] Recent: loaded 0 entries (no saved data)')
         return
     end
     for _, entry in ipairs(saved.entries) do
@@ -75,14 +76,14 @@ function load_recent()
             })
         end
     end
-    print(('[Herald] Recent: loaded %d entries from save'):format(#recent_announcements))
+    print(('[Herald DEBUG] Recent: loaded %d entries from save'):format(#recent_announcements))
 end
 
 function reset_recent()
     local count = #recent_announcements
     recent_announcements = {}
     has_unread = false
-    print(('[Herald] Recent: cleared %d entries'):format(count))
+    print(('[Herald DEBUG] Recent: cleared %d entries'):format(count))
 end
 
 function get_recent_announcements()
@@ -91,7 +92,7 @@ end
 
 function clear_unread()
     has_unread = false
-    print('[Herald] Recent: unread flag cleared')
+    print('[Herald DEBUG] Recent: unread flag cleared')
 end
 
 -- Death of a tracked individual or position holder (red).

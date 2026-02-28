@@ -45,7 +45,7 @@ local function announce_death(hf_id, dprint)
         return
     end
     dprint('ind-death: firing announcement for %s (id %d) - death setting is ON', name, hf_id)
-    util.announce_death(('[Herald] %s has died.'):format(name))
+    util.announce_death(('%s has died.'):format(name))
     announced_deaths[hf_id] = true
 end
 
