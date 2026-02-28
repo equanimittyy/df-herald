@@ -124,7 +124,7 @@ function check(dprint)
                             hf_name, tostring(pos_name), civ_name)
                         util.announce_death(fmt_death(hf_name, pos_name, civ_name))
                     else
-                        dprint('world-leaders: death detected for %s (%s of %s) - announcement suppressed (positions OFF)',
+                        dprint('world-leaders: death for %s (%s of %s) - suppressed (positions OFF)',
                             hf_name, tostring(pos_name), civ_name)
                     end
                 end
@@ -141,11 +141,11 @@ function check(dprint)
                 if prev_entity and (prev == nil or prev.hf_id ~= hf_id) then
                     local hf_name = dfhack.translation.translateName(hf.name, true)
                     if announce_positions then
-                        dprint('world-leaders: appointment detected for %s (%s of %s) - firing announcement (positions ON)',
+                        dprint('world-leaders: appointment for %s (%s of %s) - announcing (positions ON)',
                             hf_name, tostring(pos_name), civ_name)
                         util.announce_appointment(fmt_appointment(hf_name, pos_name, civ_name))
                     else
-                        dprint('world-leaders: appointment detected for %s (%s of %s) - announcement suppressed (positions OFF)',
+                        dprint('world-leaders: appointment for %s (%s of %s) - suppressed (positions OFF)',
                             hf_name, tostring(pos_name), civ_name)
                     end
                 end
@@ -176,7 +176,7 @@ function check(dprint)
                             hf_name, tostring(prev.pos_name), civ_name)
                         util.announce_vacated(fmt_vacated(hf_name, prev.pos_name, civ_name))
                     else
-                        dprint('world-leaders: vacated detected for %s (%s of %s) - announcement suppressed (positions OFF)',
+                        dprint('world-leaders: vacated for %s (%s of %s) - suppressed (positions OFF)',
                             hf_name, tostring(prev.pos_name), civ_name)
                     end
                 end

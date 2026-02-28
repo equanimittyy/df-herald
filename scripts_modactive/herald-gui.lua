@@ -59,8 +59,8 @@ Tags: fort | gameplay
 
   Event History Popup
   -------------------
-  Chronological list of world-history events involving a figure. Opened via Ctrl-E from the Pinned or Historical Figures tab. 
-  Also dumps the event list to the DFHack console for debugging.
+  Chronological list of world-history events involving a figure. Opened via Ctrl-E from
+  the Pinned or Historical Figures tab. Also dumps the event list to the DFHack console.
 
 Not intended for direct use.
 ]====]
@@ -385,7 +385,7 @@ end
 
 -- FiguresPanel -----------------------------------------------------------------
 
-local FiguresPanel = defclass(FiguresPanel, widgets.Panel)
+local FiguresPanel = defclass(FiguresPanel, widgets.Panel) -- luacheck: ignore 113
 FiguresPanel.ATTRS {
     frame = { t = 2, b = 1 },
 }
@@ -409,7 +409,7 @@ function FiguresPanel:init()
         widgets.FilteredList{
             view_id   = 'fig_list',
             frame     = { t = 1, b = 13, l = 1, r = 1 },
-            on_select = function(idx, choice) self:update_detail(choice) end,
+            on_select = function(_, choice) self:update_detail(choice) end,
         },
         widgets.Label{
             frame = { t = 27, l = 0, r = 0, h = 1 },
@@ -427,7 +427,7 @@ function FiguresPanel:init()
             auto_width  = true,
             on_activate = function()
                 local fl = self.subviews.fig_list
-                local idx, choice = fl:getSelected()
+                local _, choice = fl:getSelected()
                 if choice then self:toggle_pinned(choice) end
             end,
         },
@@ -511,7 +511,7 @@ function FiguresPanel:update_detail(choice)
     local hf      = choice.hf
     local hf_id   = choice.hf_id
     local pinned  = ind_death.get_pinned()
-    local name    = dfhack.translation.translateName(hf.name, true)
+    local name    = dfhack.translation.translateName(hf.name, true) -- luacheck: ignore 311
     if name == '' then name = '(unnamed)' end
     local race    = util.get_race_name(hf)
     if race == '?' then race = 'Unknown' end
@@ -605,7 +605,7 @@ local CIVILISATIONS_ANN = {
     { key = 'kidnappings', label = 'Kidnappings', caption = 'Abductions',      impl = false },
 }
 
-local PinnedPanel = defclass(PinnedPanel, widgets.Panel)
+local PinnedPanel = defclass(PinnedPanel, widgets.Panel) -- luacheck: ignore 113
 PinnedPanel.ATTRS {
     frame = { t = 2, b = 1 },
 }
@@ -618,7 +618,7 @@ function PinnedPanel:init()
     -- Builds one ToggleHotkeyLabel per entry for a pin's announcement settings.
     -- Unimplemented categories get a " *" suffix and a no-op on_change.
     -- `local e = entry` is necessary to correctly capture each loop iteration.
-    local function make_toggle_views(entries, category)
+    local function make_toggle_views(entries, _) -- category unused
         local views = {}
         for i, entry in ipairs(entries) do
             local e   = entry  -- capture each loop variable by value
@@ -766,7 +766,7 @@ function PinnedPanel:onInput(keys)
 end
 
 -- Called when the user navigates the pinned list.
-function PinnedPanel:on_pin_select(idx, choice)
+function PinnedPanel:on_pin_select(_, choice)
     if not choice then
         self.selected_id = nil
         self:_update_right_panel(nil, nil)
@@ -930,7 +930,7 @@ end
 
 -- CivisationsPanel -------------------------------------------------------------
 
-local CivisationsPanel = defclass(CivisationsPanel, widgets.Panel)
+local CivisationsPanel = defclass(CivisationsPanel, widgets.Panel) -- luacheck: ignore 113
 CivisationsPanel.ATTRS {
     frame = { t = 2, b = 1 },
 }
@@ -953,7 +953,7 @@ function CivisationsPanel:init()
         widgets.FilteredList{
             view_id   = 'civ_list',
             frame     = { t = 1, b = 2, l = 1, r = 1 },
-            on_select = function(idx, choice) end,
+            on_select = function(_, _) end,
         },
         widgets.HotkeyLabel{
             frame       = { b = 0, l = 1 },
@@ -962,7 +962,7 @@ function CivisationsPanel:init()
             auto_width  = true,
             on_activate = function()
                 local fl = self.subviews.civ_list
-                local idx, choice = fl:getSelected()
+                local _, choice = fl:getSelected()
                 if choice and choice.entity_id then self:toggle_pinned(choice) end
             end,
         },
@@ -1039,7 +1039,7 @@ end
 -- RecentPanel ------------------------------------------------------------------
 -- Shows the last 20 Herald announcements with timestamps and colours.
 
-local RecentPanel = defclass(RecentPanel, widgets.Panel)
+local RecentPanel = defclass(RecentPanel, widgets.Panel) -- luacheck: ignore 113
 RecentPanel.ATTRS {
     frame = { t = 2, b = 1 },
 }
@@ -1108,7 +1108,7 @@ end
 
 -- HeraldWindow -----------------------------------------------------------------
 
-local HeraldWindow = defclass(HeraldWindow, widgets.Window)
+local HeraldWindow = defclass(HeraldWindow, widgets.Window) -- luacheck: ignore 113
 HeraldWindow.ATTRS {
     frame_title = 'Herald: Settings',
     frame       = { w = 76, h = 45 },
@@ -1267,7 +1267,7 @@ end
 
 -- Screen + open_gui ------------------------------------------------------------
 
-local HeraldGuiScreen = defclass(HeraldGuiScreen, gui.ZScreen)
+local HeraldGuiScreen = defclass(HeraldGuiScreen, gui.ZScreen) -- luacheck: ignore 113
 HeraldGuiScreen.ATTRS {
     focus_path = 'herald/gui',
 }
@@ -1276,12 +1276,12 @@ function HeraldGuiScreen:init()
     self:addviews{ HeraldWindow{ view_id = 'herald_window' } }
 end
 
-function HeraldGuiScreen:onDismiss()
+function HeraldGuiScreen:onDismiss() -- luacheck: no unused args
     view = nil
 end
 
 -- First-time cache build warning dialog.
-local CacheBuildWindow = defclass(CacheBuildWindow, widgets.Window)
+local CacheBuildWindow = defclass(CacheBuildWindow, widgets.Window) -- luacheck: ignore 113
 CacheBuildWindow.ATTRS {
     frame_title = 'Herald: First-Time Setup',
     frame       = { w = 52, h = 12 },
@@ -1322,7 +1322,7 @@ function CacheBuildWindow:init()
     }
 end
 
-local CacheBuildWarning = defclass(CacheBuildWarning, gui.ZScreen)
+local CacheBuildWarning = defclass(CacheBuildWarning, gui.ZScreen) -- luacheck: ignore 113
 CacheBuildWarning.ATTRS {
     focus_path = 'herald/cache-warning',
 }

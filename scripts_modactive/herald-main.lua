@@ -11,7 +11,8 @@ Command: "herald-main"
 
   Scans world history for significant events and notifies the player in-game.
 
-Announces leader deaths, succession changes, and other notable events as they happen, without requiring the player to check the legends screen.
+Announces leader deaths, succession changes, and other notable events as they happen,
+without requiring the player to check the legends screen.
 
 
 Usage
@@ -98,7 +99,7 @@ local util    = dfhack.reqscript('herald-util')
 -- not an event ID. Events are indexed by position (0-based), not by their .id field.
 -- The name is historical. It tracks how far we've scanned so far.
 local last_event_id = -1      -- array index of last processed event; -1 = uninitialised
-local scan_timer_id = nil     -- handle returned by dfhack.timeout
+-- (dfhack.timeout return value is unused; ticks-mode timers auto-cancel on unload)
 enabled = enabled or false    -- top-level var; DFHack enable/disable convention
 
 -- Named DEBUG (not debug) to avoid shadowing Lua's built-in debug library.
@@ -200,7 +201,7 @@ end
 
 -- Interval editor dialog ------------------------------------------------------
 
-local IntervalEditor = defclass(IntervalEditor, widgets.Window)
+local IntervalEditor = defclass(IntervalEditor, widgets.Window) -- luacheck: ignore 113
 IntervalEditor.ATTRS {
     frame_title = 'Herald: Scan Interval',
     frame       = { w = 44, h = 9 },
@@ -257,7 +258,7 @@ function IntervalEditor:apply()
     self.parent_view:dismiss()
 end
 
-local IntervalScreen = defclass(IntervalScreen, gui.ZScreen)
+local IntervalScreen = defclass(IntervalScreen, gui.ZScreen) -- luacheck: ignore 113
 IntervalScreen.ATTRS {
     focus_path = 'herald/interval',
 }
@@ -266,7 +267,7 @@ function IntervalScreen:init()
     self:addviews{ IntervalEditor{} }
 end
 
-function IntervalScreen:onDismiss()
+function IntervalScreen:onDismiss() -- luacheck: no unused args
     view = nil
 end
 
@@ -301,7 +302,7 @@ local function get_world_handlers()
 end
 
 -- Calls check(dprint) on every poll-based world handler.
-local function scan_world_state(dprint)
+local function scan_world_state(dprint) -- luacheck: no redefined
     local wh = get_world_handlers()
     for key, handler in pairs(wh) do
         dprint('scan_world_state: calling handler "%s"', key)
@@ -338,7 +339,7 @@ local function scan_events()
 
     scan_world_state(dprint)
 
-    scan_timer_id = dfhack.timeout(tick_interval, 'ticks', scan_events)
+    dfhack.timeout(tick_interval, 'ticks', scan_events)
 end
 
 -- Watermarks last_event_id to the current end of the events array so only future
@@ -359,14 +360,13 @@ local function init_scan()
     dprint('init_scan: event cache loaded (ready=%s)',
         tostring(dfhack.reqscript('herald-cache').cache_ready))
     dprint('init_scan: recent announcements loaded')
-    scan_timer_id = dfhack.timeout(tick_interval, 'ticks', scan_events)
+    dfhack.timeout(tick_interval, 'ticks', scan_events)
 end
 
 -- Resets all scan state; called on world unload.
--- 'ticks' timers are auto-cancelled by DFHack on unload; nil the handle anyway.
+-- 'ticks' timers are auto-cancelled by DFHack on unload.
 local function cleanup()
     dprint('cleanup: world unloaded, resetting state')
-    scan_timer_id = nil
     last_event_id = -1
     enabled = false
     handlers = nil  -- nil forces re-resolution of enums on next load

@@ -48,7 +48,7 @@ local function load_logo_pens()
     return normal_pens, hover_pens
 end
 
-local LogoButton = defclass(LogoButton, widgets.Panel)
+local LogoButton = defclass(LogoButton, widgets.Panel) -- luacheck: ignore 113
 LogoButton.ATTRS{
     normal_pens = DEFAULT_NIL,
     hover_pens  = DEFAULT_NIL,
@@ -139,7 +139,7 @@ local function load_alert_pens()
     return alert_normal, alert_hover
 end
 
-local AlertButton = defclass(AlertButton, widgets.Panel)
+local AlertButton = defclass(AlertButton, widgets.Panel) -- luacheck: ignore 113
 AlertButton.ATTRS{
     normal_pens = DEFAULT_NIL,
     hover_pens  = DEFAULT_NIL,
@@ -199,7 +199,7 @@ function HeraldAlert:init()
     end
 end
 
-function HeraldAlert:on_alert_click()
+function HeraldAlert:on_alert_click() -- luacheck: no unused args
     local util = dfhack.reqscript('herald-util')
     util.clear_unread()
     dfhack.run_command('herald-main', 'gui', 'recent')

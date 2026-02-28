@@ -5,8 +5,8 @@ herald-event-history
 ====================
 Tags: fort | gameplay
 
-  Event history subsystem for the Herald mod. Provides world-history event collection, description formatting, and the Event History 
-  popup screen for historical figures.
+  Event history subsystem for the Herald mod. Provides world-history event collection,
+  description formatting, and the Event History popup screen for historical figures.
 
   Opened via Ctrl-E from the Pinned or Historical Figures tabs in herald-gui.
 
@@ -405,7 +405,7 @@ do
         return 'Left ' .. ent_n
     end)
 
-    add('CHANGE_HF_JOB', function(ev, focal)
+    add('CHANGE_HF_JOB', function(ev, _focal)
         local old_job  = safe_get(ev, 'old_job')
         local new_job  = safe_get(ev, 'new_job')
         local site_n   = site_name_by_id(safe_get(ev, 'site'))
@@ -508,7 +508,7 @@ do
         return 'Relationship ended with ' .. other
     end)
 
-    add('CHANGE_HF_STATE', function(ev, focal)
+    add('CHANGE_HF_STATE', function(ev, _focal)
         local state    = safe_get(ev, 'state')
         local substate = safe_get(ev, 'substate')
         local site_id  = safe_get(ev, 'site')
@@ -596,7 +596,7 @@ do
         return nil
     end)
 
-    add('ADD_HF_SITE_LINK', function(ev, focal)
+    add('ADD_HF_SITE_LINK', function(ev, _focal)
         local site_n = site_name_by_id(safe_get(ev, 'site'))
         local ltype  = safe_get(ev, 'link_type')
         local loc    = site_n or 'a site'
@@ -616,7 +616,7 @@ do
         return 'Established connection at ' .. loc .. (lname and ' (' .. title_case(lname) .. ')' or '')
     end)
 
-    add('REMOVE_HF_SITE_LINK', function(ev, focal)
+    add('REMOVE_HF_SITE_LINK', function(ev, _focal)
         local site_n = site_name_by_id(safe_get(ev, 'site'))
         local ltype  = safe_get(ev, 'link_type')
         local loc    = site_n or 'a site'
@@ -747,7 +747,7 @@ do
         end
     end)
 
-    add('MASTERPIECE_CREATED_ITEM', function(ev, focal)
+    add('MASTERPIECE_CREATED_ITEM', function(ev, _focal)
         local itype  = safe_get(ev, 'item_subtype') or safe_get(ev, 'item_type')
         local iname  = itype and df.item_type and df.item_type[itype]
         local ent_n  = ent_name_by_id(safe_get(ev, 'maker_entity'))
@@ -758,7 +758,7 @@ do
         return result
     end)
 
-    add('ARTIFACT_STORED', function(ev, focal)
+    add('ARTIFACT_STORED', function(ev, _focal)
         local site_n = site_name_by_id(safe_get(ev, 'site'))
         local art_id = safe_get(ev, 'artifact') or safe_get(ev, 'artifact_id') or safe_get(ev, 'artifact_record')
         local art_n, art_desc = artifact_name_by_id(art_id)
@@ -773,7 +773,7 @@ do
         return 'Stored ' .. what .. (site_n and (' in ' .. site_n) or '')
     end)
 
-    add('CREATE_ENTITY_POSITION', function(ev, focal)
+    add('CREATE_ENTITY_POSITION', function(ev, _focal)
         local civ_id = safe_get(ev, 'civ') or safe_get(ev, 'entity_id')
         local pos_id = safe_get(ev, 'position_id') or safe_get(ev, 'assignment_id')
         local ent_n  = ent_name_by_id(civ_id) or 'an entity'
@@ -784,7 +784,7 @@ do
         return 'established a new position in ' .. ent_n
     end)
 
-    add('ASSUME_IDENTITY', function(ev, focal)
+    add('ASSUME_IDENTITY', function(ev, _focal)
         -- Fields: trickster (HF ID), identity (identity ID), target (-1 if none).
         -- df.identity: impersonated_hf = real HF being impersonated (-1 if fictitious),
         --              histfig_id = the trickster's own HF ID (NOT the impersonated person),
@@ -848,7 +848,7 @@ do
         return who .. ' stole ' .. what .. from .. loc
     end)
 
-    add('ARTIFACT_CLAIM_FORMED', function(ev, focal)
+    add('ARTIFACT_CLAIM_FORMED', function(ev, _focal)
         -- Fields: artifact (ID), histfig, entity, claim_type, position_profile.
         local art_n, art_desc = artifact_name_by_id(safe_get(ev, 'artifact'))
         local what
@@ -864,7 +864,7 @@ do
         return 'Formed ' .. what
     end)
 
-    add('GAMBLE', function(ev, focal)
+    add('GAMBLE', function(ev, _focal)
         -- Fields: hf, site, structure, account_before, account_after.
         local site_n = site_name_by_id(safe_get(ev, 'site'))
         local bld_n  = building_name_at_site(safe_get(ev, 'site'), safe_get(ev, 'structure'))
@@ -919,7 +919,7 @@ do
         return corr .. ' failed to corrupt ' .. tgt .. loc
     end)
 
-    add('HF_ACT_ON_BUILDING', function(ev, focal)
+    add('HF_ACT_ON_BUILDING', function(ev, _focal)
         -- Fields: action (enum int), histfig, site, structure.
         -- Known action values: 0=profaned, 2=prayed at (both observed on TEMPLE buildings).
         local ACT_VERBS = { [0] = 'Profaned', [2] = 'Prayed at' }
@@ -1139,7 +1139,7 @@ do
     add('HIST_FIGURE_WOUNDED', hf_wounded_fn)
     add('HF_WOUNDED',          hf_wounded_fn)
 
-    add('ARTIFACT_CREATED', function(ev, focal)
+    add('ARTIFACT_CREATED', function(ev, _focal)
         local site_n = site_name_by_id(safe_get(ev, 'site'))
         local loc    = site_n and (' in ' .. site_n) or ''
         local art_id = safe_get(ev, 'artifact_id') or safe_get(ev, 'artifact_record')
@@ -1155,13 +1155,13 @@ do
         return 'Created ' .. what .. loc
     end)
 
-    add('CREATED_SITE', function(ev, focal)
+    add('CREATED_SITE', function(ev, _focal)
         local site_n = site_name_by_id(safe_get(ev, 'site'))
         if site_n then return 'Constructed ' .. site_n end
         return 'Constructed a settlement'
     end)
 
-    local function created_structure_fn(ev, focal)
+    local function created_structure_fn(ev, _focal)
         local site_id = safe_get(ev, 'site')
         local site_n  = site_name_by_id(site_id)
         local loc     = site_n and (' in ' .. site_n) or ''
@@ -1275,7 +1275,7 @@ do
         return who .. ' ' .. verb .. ' ' .. victims_str .. loc
     end)
 
-    add('WRITTEN_CONTENT_COMPOSED', function(ev, focal)
+    add('WRITTEN_CONTENT_COMPOSED', function(ev, _focal)
         -- Fields: histfig (author), content (written_content ID), site.
         local site_n = site_name_by_id(safe_get(ev, 'site'))
         local loc    = site_n and (' in ' .. site_n) or ''
@@ -1294,7 +1294,7 @@ do
         return 'Composed a written work' .. loc
     end)
 
-    add('HF_CONFRONTED', function(ev, focal)
+    add('HF_CONFRONTED', function(ev, _focal)
         -- Fields: target (confronted HF), situation, reasons (vector), site.
         local REASON_TEXT = { [0] = 'being ageless', [1] = 'murder' }
         local site_n = site_name_by_id(safe_get(ev, 'site'))
@@ -1319,7 +1319,7 @@ do
         return 'Was confronted' .. reason_sfx .. loc
     end)
 
-    add('ARTIFACT_POSSESSED', function(ev, focal)
+    add('ARTIFACT_POSSESSED', function(ev, _focal)
         -- Fields: histfig (possessor), artifact (artifact_record ID), site.
         local site_n = site_name_by_id(safe_get(ev, 'site'))
         local loc    = site_n and (' in ' .. site_n) or ''
@@ -1336,7 +1336,7 @@ do
         return 'Claimed ' .. what .. loc
     end)
 
-    add('HF_GAINS_SECRET_GOAL', function(ev, focal)
+    add('HF_GAINS_SECRET_GOAL', function(ev, _focal)
         -- Fields: histfig, goal (goal_type enum).
         local GOAL_TEXT = {
             [0]  = 'to stay alive',
@@ -1381,7 +1381,7 @@ do
         return nil
     end
 
-    add('HF_LEARNS_SECRET', function(ev, focal)
+    add('HF_LEARNS_SECRET', function(ev, _focal)
         -- Fields: student (learner HF), teacher (HF or -1), artifact (source), interaction.
         local teacher_id = safe_get(ev, 'teacher')
         local art_id     = safe_get(ev, 'artifact')
@@ -2515,11 +2515,11 @@ end
 
 local function get_hf_events(hf_id)
     -- Try cached path first.
-    local results, added_ids = get_hf_events_cached(hf_id)
+    local results = get_hf_events_cached(hf_id)
     if not results then
         -- Full scan fallback.
-        results    = {}
-        added_ids  = {}
+        results         = {}
+        local added_ids = {}
         local battle_index = {}
 
         for _, ev in ipairs(df.global.world.history.events) do
@@ -2628,7 +2628,7 @@ end
 
 -- EventHistory popup ----------------------------------------------------------
 
-local EventHistoryWindow = defclass(EventHistoryWindow, widgets.Window)
+local EventHistoryWindow = defclass(EventHistoryWindow, widgets.Window) -- luacheck: ignore 113
 EventHistoryWindow.ATTRS {
     frame_title = 'Event History',
     frame       = { w = 76, h = 38 },
@@ -2782,7 +2782,7 @@ function EventHistoryWindow:init()
     self.subviews.event_list:setChoices(event_choices)
 end
 
-local EventHistoryScreen = defclass(EventHistoryScreen, gui.ZScreen)
+local EventHistoryScreen = defclass(EventHistoryScreen, gui.ZScreen) -- luacheck: ignore 113
 EventHistoryScreen.ATTRS {
     focus_path  = 'herald/event-history',
     hf_id       = DEFAULT_NIL,
@@ -2802,7 +2802,7 @@ function EventHistoryScreen:init()
     }
 end
 
-function EventHistoryScreen:onDismiss()
+function EventHistoryScreen:onDismiss() -- luacheck: no unused args
     event_history_view = nil
 end
 

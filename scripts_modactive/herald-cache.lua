@@ -15,8 +15,6 @@ Tags: fort | gameplay
 Not intended for direct use.
 ]====]
 
-local json = require('json')
-
 local PERSIST_KEY = 'herald_event_cache'
 local CACHE_VERSION = 1
 
