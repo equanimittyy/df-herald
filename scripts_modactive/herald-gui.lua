@@ -21,7 +21,7 @@ Tags: fort | gameplay
 
   Tab 1 - Recent
   ---------------
-  Last 10 Herald announcements with timestamps and original colours.
+  Last 20 Herald announcements with timestamps and original colours.
 
   Tab 2 - Pinned
   --------------
@@ -1037,7 +1037,7 @@ function CivisationsPanel:toggle_pinned_only()
 end
 
 -- RecentPanel ------------------------------------------------------------------
--- Shows the last 10 Herald announcements with timestamps and colours.
+-- Shows the last 20 Herald announcements with timestamps and colours.
 
 local RecentPanel = defclass(RecentPanel, widgets.Panel)
 RecentPanel.ATTRS {

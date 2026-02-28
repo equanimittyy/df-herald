@@ -40,7 +40,7 @@ and calls `build_full()` if cache is not ready.
 Settings screen (`herald-gui.lua`): 4-tab window - Ctrl-T to cycle tabs. Footer always shows
 Ctrl-J (open DFHack Journal), Ctrl-C (refresh cache), and Escape (close).
 
-- **Recent** (tab 1): last 10 Herald announcements with timestamps (Year/Season) and original
+- **Recent** (tab 1): last 20 Herald announcements with timestamps (Year/Season) and original
   colours. Populated via the ring buffer in `herald-util.lua`. `open_gui('recent')` opens directly
   to this tab; the alert overlay widget uses this to open on click.
 - **Pinned** (tab 2): left list of pinned individuals or civs; Ctrl-I toggles Individuals/
@@ -82,7 +82,7 @@ Ctrl-J (open DFHack Journal), Ctrl-C (refresh cache), and Escape (close).
 
 - Individuals: key `herald_pinned_hf_ids`; settings keys: `relationships`, `death`, `combat`, `legendary`, `positions`, `migration`
 - Civilisations: key `herald_pinned_civ_ids`; settings keys: `positions`, `diplomacy`, `warfare`, `raids`, `theft`, `kidnappings`
-- Recent announcements: key `herald_recent_announcements`; schema: `{ "entries": [ { "msg": <str>, "color": <int>, "year": <int>, "tick": <int>, "season": <str> } ] }`; max 10 entries
+- Recent announcements: key `herald_recent_announcements`; schema: `{ "entries": [ { "msg": <str>, "color": <int>, "year": <int>, "tick": <int>, "season": <str> } ] }`; max 20 entries
 - Schema (pins): `{ "pins": [ { "id": <int>, "settings": { <key>: <bool>, ... } } ] }`
 - All defaults are `true`; old saves with missing keys are filled by `merge_pin_settings` / `merge_civ_pin_settings` in herald-util
 
