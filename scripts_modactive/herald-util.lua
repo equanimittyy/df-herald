@@ -94,27 +94,23 @@ function clear_unread()
     print('[Herald] Recent: unread flag cleared')
 end
 
--- Death of a tracked individual or position holder (red, pauses game).
+-- Death of a tracked individual or position holder (red).
 function announce_death(msg)
-    dfhack.gui.showAnnouncement(msg, COLOR_RED, true)
     push_recent(msg, COLOR_RED)
 end
 
--- New appointment to a position (yellow, pauses game).
+-- New appointment to a position (yellow).
 function announce_appointment(msg)
-    dfhack.gui.showAnnouncement(msg, COLOR_YELLOW, true)
     push_recent(msg, COLOR_YELLOW)
 end
 
--- Position vacated by a living HF (white, no pause).
+-- Position vacated by a living HF (white).
 function announce_vacated(msg)
-    dfhack.gui.showAnnouncement(msg, COLOR_WHITE, false)
     push_recent(msg, COLOR_WHITE)
 end
 
--- General informational message (cyan, no pause).
+-- General informational message (cyan).
 function announce_info(msg)
-    dfhack.gui.showAnnouncement(msg, COLOR_LIGHTCYAN, false)
     if not msg:find('[Herald DEBUG]', 1, true) then
         push_recent(msg, COLOR_LIGHTCYAN)
     end

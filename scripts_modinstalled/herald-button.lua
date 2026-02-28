@@ -107,9 +107,9 @@ end
 -- HeraldAlert -----------------------------------------------------------------
 -- Appears when there are unread Herald announcements; disappears on click.
 
-local ALERT_COLS = 8   -- tiles per state
+local ALERT_COLS = 12  -- tiles per state
 local ALERT_ROWS = 2
-local ALERT_PNG_COLS = 16  -- total tile columns across the full PNG (two 8-col states)
+local ALERT_PNG_COLS = 24  -- total tile columns across the full PNG (two 12-col states)
 
 local alert_state      = 'unloaded'
 local alert_normal     = nil
@@ -169,10 +169,10 @@ end
 HeraldAlert = defclass(HeraldAlert, overlay.OverlayWidget)
 
 HeraldAlert.ATTRS{
-    default_pos     = {x=2, y=4},
+    default_pos     = {x=1, y=5},
     default_enabled = true,
     viewscreens     = {'dwarfmode', 'dwarfmode/', 'world/'},
-    frame           = {w=ALERT_COLS, h=ALERT_ROWS},
+    frame           = {w=ALERT_COLS, h=ALERT_ROWS},  -- 12x2 tiles = 96x24 px per state; PNG = 192x24 px
 }
 
 function HeraldAlert:init()

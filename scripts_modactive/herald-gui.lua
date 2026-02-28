@@ -1066,7 +1066,20 @@ function RecentPanel:init()
             text    = { { text = 'No announcements yet.', pen = COLOR_GREY } },
             visible = true,
         },
+        widgets.HotkeyLabel{
+            frame       = { b = 0, l = 1 },
+            key         = 'CUSTOM_CTRL_Z',
+            label       = 'Clear all',
+            auto_width  = true,
+            on_activate = function() self:clear_all() end,
+        },
     }
+end
+
+function RecentPanel:clear_all()
+    util.reset_recent()
+    util.save_recent()
+    self:refresh_list()
 end
 
 function RecentPanel:refresh_list()
