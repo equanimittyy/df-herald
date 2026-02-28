@@ -37,15 +37,18 @@ and calls `build_full()` if cache is not ready.
 
 ## Settings & Persistence
 
-Settings screen (`herald-gui.lua`): 3-tab window - Ctrl-T to cycle tabs. Footer always shows
+Settings screen (`herald-gui.lua`): 4-tab window - Ctrl-T to cycle tabs. Footer always shows
 Ctrl-J (open DFHack Journal), Ctrl-C (refresh cache), and Escape (close).
 
-- **Pinned** (tab 1): left list of pinned individuals or civs; Ctrl-I toggles Individuals/
+- **Recent** (tab 1): last 10 Herald announcements with timestamps (Year/Season) and original
+  colours. Populated via the ring buffer in `herald-util.lua`. `open_gui('recent')` opens directly
+  to this tab; the alert overlay widget uses this to open on click.
+- **Pinned** (tab 2): left list of pinned individuals or civs; Ctrl-I toggles Individuals/
   Civilisations view. Right panel shows per-pin announcement toggles (unimplemented categories
   marked `*`). Ctrl-E opens Event History (HF or civ depending on view). Enter unpins the selection.
-- **Historical Figures** (tab 2): Name/Race/Civ/Status/Events list with detail panel. Enter to
+- **Historical Figures** (tab 3): Name/Race/Civ/Status/Events list with detail panel. Enter to
   pin/unpin; Ctrl-E event history; Ctrl-D show-dead; Ctrl-P pinned-only.
-- **Civilisations** (tab 3): full civ list. Enter to pin/unpin; Ctrl-E event history; Ctrl-P
+- **Civilisations** (tab 4): full civ list. Enter to pin/unpin; Ctrl-E event history; Ctrl-P
   pinned-only.
 
 **Global config** (`dfhack-config/herald.json`):
@@ -79,13 +82,14 @@ Ctrl-J (open DFHack Journal), Ctrl-C (refresh cache), and Escape (close).
 
 - Individuals: key `herald_pinned_hf_ids`; settings keys: `relationships`, `death`, `combat`, `legendary`, `positions`, `migration`
 - Civilisations: key `herald_pinned_civ_ids`; settings keys: `positions`, `diplomacy`, `warfare`, `raids`, `theft`, `kidnappings`
-- Schema: `{ "pins": [ { "id": <int>, "settings": { <key>: <bool>, ... } } ] }`
+- Recent announcements: key `herald_recent_announcements`; schema: `{ "entries": [ { "msg": <str>, "color": <int>, "year": <int>, "tick": <int>, "season": <str> } ] }`; max 10 entries
+- Schema (pins): `{ "pins": [ { "id": <int>, "settings": { <key>: <bool>, ... } } ] }`
 - All defaults are `true`; old saves with missing keys are filled by `merge_pin_settings` / `merge_civ_pin_settings` in herald-util
 
 ## Overlay Button
 
 `herald-button.lua` lives in `scripts_modinstalled/` and is auto-loaded by DFHack via the mod
-install mechanism (not `onLoad.init`). It registers `OVERLAY_WIDGETS = { button = HeraldButton }`.
+install mechanism (not `onLoad.init`). It registers `OVERLAY_WIDGETS = { button = HeraldButton, alert = HeraldAlert }`.
 
 - `HeraldButton` extends `overlay.OverlayWidget`; default position `{x=10, y=1}`, shown on
   `'dwarfmode'`, frame `{w=4, h=3}`.
@@ -94,3 +98,9 @@ install mechanism (not `onLoad.init`). It registers `OVERLAY_WIDGETS = { button 
   `dfhack.textures.loadTileset(path, 8, 12, true)` - 8x12 px/tile, 4 cols x 3 rows per state.
   Left half of the PNG = normal state; right half = hover/highlighted state.
 - If the PNG fails to load, falls back to a plain `widgets.TextButton` labelled "Herald".
+
+- `HeraldAlert` extends `overlay.OverlayWidget`; default position `{x=2, y=4}`, shown on
+  `'dwarfmode'`, frame `{w=8, h=2}`. Only renders when `herald-util.has_unread` is true.
+- On click: calls `util.clear_unread()`, then `herald-main gui recent` to open GUI to Recent tab.
+- Sprite loaded from `herald-alert.png` - 8x12 px/tile, 8 cols x 2 rows per state (128x24 px total).
+  Falls back to text label `! Herald` if PNG fails.

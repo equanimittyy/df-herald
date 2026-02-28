@@ -345,6 +345,9 @@ end
 -- events are processed, then loads pinned data and starts the scan timer.
 local function init_scan()
     if enabled then return end  -- guard against double-init
+    -- Load recent first so dprint (which calls announce_info) doesn't push
+    -- debug messages into an empty buffer that then gets persisted.
+    util.load_recent()
     last_event_id = #df.global.world.history.events - 1  -- skip all pre-existing history
     enabled = true
     dprint('init_scan: watermark set to event id %d', last_event_id)
@@ -355,6 +358,7 @@ local function init_scan()
     dfhack.reqscript('herald-cache').load_cache()
     dprint('init_scan: event cache loaded (ready=%s)',
         tostring(dfhack.reqscript('herald-cache').cache_ready))
+    dprint('init_scan: recent announcements loaded')
     scan_timer_id = dfhack.timeout(tick_interval, 'ticks', scan_events)
 end
 
@@ -375,6 +379,8 @@ local function cleanup()
     end
     dfhack.reqscript('herald-cache').reset()
     dprint('cleanup: event cache reset')
+    util.reset_recent()
+    dprint('cleanup: recent announcements reset')
     dfhack.reqscript('herald-event-history').reset_civ_caches()
     dprint('cleanup: civ caches reset')
 end
@@ -414,7 +420,7 @@ elseif args[1] == 'gui' then
     if not dfhack.isMapLoaded() then
         dfhack.printerr('[Herald] A fort must be loaded to open the settings UI.')
     else
-        dfhack.reqscript('herald-gui').open_gui()
+        dfhack.reqscript('herald-gui').open_gui(args[2])
     end
 elseif args[1] == 'test' then
     if not dfhack.isMapLoaded() then
@@ -433,7 +439,9 @@ elseif args[1] == 'cache-rebuild' then
         dfhack.printerr('[Herald] A fort must be loaded to rebuild the cache.')
     else
         dfhack.reqscript('herald-cache').invalidate_cache()
-        print('[Herald] Cache cleared. Reopen the Herald GUI to rebuild.')
+        util.reset_recent()
+        util.save_recent()
+        print('[Herald] Cache and recent announcements cleared. Reopen the Herald GUI to rebuild.')
     end
 elseif args[1] == 'button' then
     -- Read current enabled state from DFHack's overlay config, then toggle.

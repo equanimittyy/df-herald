@@ -104,4 +104,112 @@ function HeraldButton:init()
     end
 end
 
-OVERLAY_WIDGETS = { button = HeraldButton }
+-- HeraldAlert -----------------------------------------------------------------
+-- Appears when there are unread Herald announcements; disappears on click.
+
+local ALERT_COLS = 8   -- tiles per state
+local ALERT_ROWS = 2
+local ALERT_PNG_COLS = 16  -- total tile columns across the full PNG (two 8-col states)
+
+local alert_state      = 'unloaded'
+local alert_normal     = nil
+local alert_hover      = nil
+
+local function load_alert_pens()
+    if alert_state == 'ok'     then return alert_normal, alert_hover end
+    if alert_state == 'failed' then return nil end
+    local path = _DIR .. 'herald-alert.png'
+    local ok, handles = pcall(dfhack.textures.loadTileset, path, TILE_W, TILE_H, true)
+    if not ok or not handles or #handles == 0 then
+        alert_state = 'failed'
+        return nil
+    end
+    alert_normal, alert_hover = {}, {}
+    for row = 0, ALERT_ROWS - 1 do
+        for col = 0, ALERT_COLS - 1 do
+            local ni = row * ALERT_PNG_COLS + col + 1
+            local hi = row * ALERT_PNG_COLS + ALERT_COLS + col + 1
+            alert_normal[#alert_normal + 1] =
+                dfhack.pen.parse{tile=dfhack.textures.getTexposByHandle(handles[ni]), ch=32}
+            alert_hover[#alert_hover + 1] =
+                dfhack.pen.parse{tile=dfhack.textures.getTexposByHandle(handles[hi]), ch=32}
+        end
+    end
+    alert_state = 'ok'
+    return alert_normal, alert_hover
+end
+
+local AlertButton = defclass(AlertButton, widgets.Panel)
+AlertButton.ATTRS{
+    normal_pens = DEFAULT_NIL,
+    hover_pens  = DEFAULT_NIL,
+    on_click    = DEFAULT_NIL,
+    cols        = ALERT_COLS,
+    rows        = ALERT_ROWS,
+}
+
+function AlertButton:onRenderBody(dc)
+    local hovered = self:getMousePos() ~= nil
+    local pens = (hovered and self.hover_pens) or self.normal_pens
+    for row = 0, self.rows - 1 do
+        for col = 0, self.cols - 1 do
+            dc:seek(col, row):char(32, pens[row * self.cols + col + 1])
+        end
+    end
+end
+
+function AlertButton:onInput(keys)
+    if keys._MOUSE_L and self:getMousePos() then
+        if self.on_click then self.on_click() end
+        return true
+    end
+    return AlertButton.super.onInput(self, keys)
+end
+
+HeraldAlert = defclass(HeraldAlert, overlay.OverlayWidget)
+
+HeraldAlert.ATTRS{
+    default_pos     = {x=2, y=4},
+    default_enabled = true,
+    viewscreens     = {'dwarfmode', 'dwarfmode/', 'world/'},
+    frame           = {w=ALERT_COLS, h=ALERT_ROWS},
+}
+
+function HeraldAlert:init()
+    self._use_png = false
+    local np, hp = load_alert_pens()
+    if np then
+        self._use_png = true
+        self:addviews{
+            AlertButton{
+                frame       = {l=0, t=0, w=ALERT_COLS, h=ALERT_ROWS},
+                normal_pens = np,
+                hover_pens  = hp,
+                on_click    = function() self:on_alert_click() end,
+            }
+        }
+    else
+        self:addviews{
+            widgets.TextButton{
+                frame       = {l=0, t=0},
+                label       = '! Herald',
+                on_activate = function() self:on_alert_click() end,
+            }
+        }
+    end
+end
+
+function HeraldAlert:on_alert_click()
+    local util = dfhack.reqscript('herald-util')
+    util.clear_unread()
+    dfhack.run_command('herald-main', 'gui', 'recent')
+end
+
+function HeraldAlert:render(dc)
+    if not dfhack.isMapLoaded() then return end
+    local util = dfhack.reqscript('herald-util')
+    if not util.has_unread then return end
+    HeraldAlert.super.render(self, dc)
+end
+
+OVERLAY_WIDGETS = { button = HeraldButton, alert = HeraldAlert }

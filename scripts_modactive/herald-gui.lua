@@ -19,7 +19,11 @@ Tags: fort | gameplay
   Ctrl-J              Open the DFHack Journal
   Escape              Close the window
 
-  Tab 1 - Pinned
+  Tab 1 - Recent
+  ---------------
+  Last 10 Herald announcements with timestamps and original colours.
+
+  Tab 2 - Pinned
   --------------
   Left pane: pinned individuals or civilisations (Ctrl-I to toggle view).
   Right pane: per-pin announcement toggles; changes are saved immediately.
@@ -30,12 +34,12 @@ Tags: fort | gameplay
   Ctrl-E              Open event history for the selected entry (HF or civ)
   Enter               Unpin the selected entry
 
-  Tab 2 - Historical Figures
+  Tab 3 - Historical Figures
   --------------------------
-  Searchable list of all historical figures. 
+  Searchable list of all historical figures.
   Detail pane shows ID, race, alive/dead status, civ, and positions.
 
-  Columns: Name, Race, Civ, Status, Events. 
+  Columns: Name, Race, Civ, Status, Events.
 
   Type to search      Filter by name, race, or civilisation
   Enter               Pin or unpin the selected figure
@@ -43,7 +47,7 @@ Tags: fort | gameplay
   Ctrl-P              Toggle "Pinned only" filter
   Ctrl-D              Toggle "Show dead" filter
 
-  Tab 3 - Civilisations
+  Tab 4 - Civilisations
   ---------------------
   Searchable list of all civilisation-level entities.
   Columns: Name, Race, Sites, Pop.
@@ -1032,6 +1036,63 @@ function CivisationsPanel:toggle_pinned_only()
     self:refresh_list()
 end
 
+-- RecentPanel ------------------------------------------------------------------
+-- Shows the last 10 Herald announcements with timestamps and colours.
+
+local RecentPanel = defclass(RecentPanel, widgets.Panel)
+RecentPanel.ATTRS {
+    frame = { t = 2, b = 1 },
+}
+
+function RecentPanel:init()
+    self._loaded = false
+
+    self:addviews{
+        widgets.Label{
+            frame = { t = 0, l = 1 },
+            text  = { { text = 'Recent Herald Announcements', pen = COLOR_WHITE } },
+        },
+        widgets.Label{
+            frame = { t = 1, l = 0, r = 0, h = 1 },
+            text  = { { text = string.rep('\xc4', 74), pen = COLOR_GREY } },
+        },
+        widgets.List{
+            view_id = 'recent_list',
+            frame   = { t = 2, b = 0, l = 1, r = 1 },
+        },
+        widgets.Label{
+            view_id = 'empty_label',
+            frame   = { t = 4, l = 1 },
+            text    = { { text = 'No announcements yet.', pen = COLOR_GREY } },
+            visible = true,
+        },
+    }
+end
+
+function RecentPanel:refresh_list()
+    local entries = util.get_recent_announcements()
+    if #entries == 0 then
+        self.subviews.recent_list:setChoices({})
+        self.subviews.empty_label.visible = true
+        return
+    end
+    self.subviews.empty_label.visible = false
+    local choices = {}
+    for _, entry in ipairs(entries) do
+        local timestamp = ('Year %d, %s'):format(entry.year, entry.season)
+        if #choices > 0 then
+            table.insert(choices, { text = '' })
+        end
+        table.insert(choices, {
+            text = {
+                { text = ('%-20s'):format(timestamp), pen = COLOR_GREY },
+                { text = entry.msg, pen = entry.color },
+            },
+        })
+    end
+    self.subviews.recent_list:setChoices(choices)
+end
+
 -- HeraldWindow -----------------------------------------------------------------
 
 local HeraldWindow = defclass(HeraldWindow, widgets.Window)
@@ -1044,20 +1105,21 @@ HeraldWindow.ATTRS {
 function HeraldWindow:init()
     self.cur_tab = 1
 
-    -- All three panels are created upfront so layout works correctly.
+    -- All four panels are created upfront so layout works correctly.
     -- FiguresPanel and CivisationsPanel skip refresh_list() in init() and load
     -- their data lazily on first tab visit (see switch_tab / _loaded flag).
     self:addviews{
         widgets.TabBar{
             frame  = { t = 0, l = 0 },
-            labels = { 'Pinned', 'Historical Figures', 'Civilisations' },
+            labels = { 'Recent', 'Pinned', 'Historical Figures', 'Civilisations' },
             key          = 'CUSTOM_CTRL_T',
             get_cur_page = function() return self.cur_tab end,
             on_select    = function(idx) self:switch_tab(idx) end,
         },
-        PinnedPanel{    view_id = 'pinned_panel',  visible = true  },
-        FiguresPanel{   view_id = 'figures_panel', visible = false },
-        CivisationsPanel{ view_id = 'civs_panel',  visible = false },
+        RecentPanel{      view_id = 'recent_panel',  visible = true  },
+        PinnedPanel{      view_id = 'pinned_panel',   visible = false },
+        FiguresPanel{     view_id = 'figures_panel',  visible = false },
+        CivisationsPanel{ view_id = 'civs_panel',     visible = false },
         widgets.HotkeyLabel{
             frame       = { b = 0, l = 1 },
             key         = 'CUSTOM_CTRL_J',
@@ -1086,21 +1148,29 @@ function HeraldWindow:init()
             on_activate = function() self.parent_view:dismiss() end,
         },
     }
+
+    -- Trigger initial load for the Recent tab (switch_tab is not called during
+    -- construction, so _loaded stays false and the list would appear empty).
+    self:switch_tab(1)
 end
 
 function HeraldWindow:switch_tab(idx)
     self.cur_tab = idx
-    self.subviews.pinned_panel.visible  = (idx == 1)
-    self.subviews.figures_panel.visible = (idx == 2)
-    self.subviews.civs_panel.visible    = (idx == 3)
+    self.subviews.recent_panel.visible  = (idx == 1)
+    self.subviews.pinned_panel.visible  = (idx == 2)
+    self.subviews.figures_panel.visible = (idx == 3)
+    self.subviews.civs_panel.visible    = (idx == 4)
 
-    -- Load data on first visit — deferred from init() to avoid the expensive
-    -- build_hf_event_counts() / build_civ_choices() scans at GUI open time.
-    if idx == 2 and not self.subviews.figures_panel._loaded then
+    -- Load data on first visit - deferred from init() to avoid expensive scans.
+    if idx == 1 and not self.subviews.recent_panel._loaded then
+        self.subviews.recent_panel._loaded = true
+        self.subviews.recent_panel:refresh_list()
+    end
+    if idx == 3 and not self.subviews.figures_panel._loaded then
         self.subviews.figures_panel._loaded = true
         self.subviews.figures_panel:refresh_list()
     end
-    if idx == 3 and not self.subviews.civs_panel._loaded then
+    if idx == 4 and not self.subviews.civs_panel._loaded then
         self.subviews.civs_panel._loaded = true
         self.subviews.civs_panel:refresh_list()
     end
@@ -1112,10 +1182,12 @@ function HeraldWindow:refresh_cache()
     print(('[Herald] Cache refreshed - %d new event(s) processed'):format(n))
     -- Refresh whichever panel is active.
     if self.cur_tab == 1 then
+        self.subviews.recent_panel:refresh_list()
+    elseif self.cur_tab == 2 then
         self.subviews.pinned_panel:refresh_pinned_list()
-    elseif self.cur_tab == 2 and self.subviews.figures_panel._loaded then
+    elseif self.cur_tab == 3 and self.subviews.figures_panel._loaded then
         self.subviews.figures_panel:refresh_list()
-    elseif self.cur_tab == 3 and self.subviews.civs_panel._loaded then
+    elseif self.cur_tab == 4 and self.subviews.civs_panel._loaded then
         self.subviews.civs_panel:refresh_list()
     end
 end
@@ -1137,6 +1209,11 @@ function HeraldWindow:on_pin_changed(change_type)
     end
 end
 
+-- External entry point to switch tabs (used by open_gui initial_tab).
+function HeraldWindow:go_to_tab(idx)
+    self:switch_tab(idx)
+end
+
 function HeraldWindow:onInput(keys)
     -- Debounce Ctrl-T: DFHack queues all pending key events and flushes them
     -- synchronously in one tick. Rapid Ctrl-T spam fires switch_tab dozens of
@@ -1154,20 +1231,20 @@ function HeraldWindow:onInput(keys)
         self:refresh_cache()
         return true
     end
-    -- Route Ctrl-E to pinned panel (individuals) when on tab 1
-    if self.cur_tab == 1 then
+    -- Route Ctrl-E to pinned panel (individuals) when on tab 2
+    if self.cur_tab == 2 then
         if keys.CUSTOM_CTRL_E then
             return self.subviews.pinned_panel:onInput(keys)
         end
     end
-    -- Route Ctrl-D, Ctrl-P, and Ctrl-E to figures panel only when on tab 2
-    if self.cur_tab == 2 then
+    -- Route Ctrl-D, Ctrl-P, and Ctrl-E to figures panel only when on tab 3
+    if self.cur_tab == 3 then
         if keys.CUSTOM_CTRL_D or keys.CUSTOM_CTRL_P or keys.CUSTOM_CTRL_E then
             return self.subviews.figures_panel:onInput(keys)
         end
     end
-    -- Route Ctrl-P and Ctrl-E to civs panel when on tab 3
-    if self.cur_tab == 3 then
+    -- Route Ctrl-P and Ctrl-E to civs panel when on tab 4
+    if self.cur_tab == 4 then
         if keys.CUSTOM_CTRL_P or keys.CUSTOM_CTRL_E then
             return self.subviews.civs_panel:onInput(keys)
         end
@@ -1183,7 +1260,7 @@ HeraldGuiScreen.ATTRS {
 }
 
 function HeraldGuiScreen:init()
-    self:addviews{ HeraldWindow{} }
+    self:addviews{ HeraldWindow{ view_id = 'herald_window' } }
 end
 
 function HeraldGuiScreen:onDismiss()
@@ -1241,9 +1318,15 @@ function CacheBuildWarning:init()
     self:addviews{ CacheBuildWindow{} }
 end
 
-function open_gui()
+local TAB_NAMES = { recent = 1, pinned = 2, figures = 3, civilisations = 4 }
+
+function open_gui(initial_tab)
+    local tab_idx = initial_tab and TAB_NAMES[initial_tab]
     if view then
         view:raise()
+        if tab_idx then
+            view.subviews.herald_window:go_to_tab(tab_idx)
+        end
         return
     end
     if cache.needs_build() then
@@ -1253,4 +1336,7 @@ function open_gui()
     -- Cache is ready; delta-process new events then open.
     cache.build_delta()
     view = HeraldGuiScreen{}:show()
+    if tab_idx then
+        view.subviews.herald_window:go_to_tab(tab_idx)
+    end
 end

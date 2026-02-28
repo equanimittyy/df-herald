@@ -15,24 +15,109 @@ Not intended for direct use.
 -- Announcement helpers --------------------------------------------------------
 -- Centralised wrappers so callers don't hardcode colours or pause flags.
 
+-- Recent announcements ring buffer ------------------------------------------
+-- Debug logging here uses plain print() (console only) because herald-util
+-- cannot reqscript herald-main for dprint without creating a circular dep.
+RECENT_PERSIST_KEY = 'herald_recent_announcements'
+MAX_RECENT = 20
+
+local recent_announcements = {}
+has_unread = false
+
+local SEASON_NAMES = { 'Spring', 'Summer', 'Autumn', 'Winter' }
+
+local function push_recent(msg, color)
+    table.insert(recent_announcements, 1, {
+        msg    = msg,
+        color  = color,
+        year   = df.global.cur_year,
+        tick   = df.global.cur_year_tick,
+        season = SEASON_NAMES[math.floor(df.global.cur_year_tick / 100800) + 1] or 'Spring',
+    })
+    while #recent_announcements > MAX_RECENT do
+        table.remove(recent_announcements)
+    end
+    has_unread = true
+    save_recent()
+    print(('[Herald] Recent: added (%d total): %s'):format(#recent_announcements, msg))
+end
+
+function save_recent()
+    local data = {}
+    for _, entry in ipairs(recent_announcements) do
+        table.insert(data, {
+            msg    = entry.msg,
+            color  = entry.color,
+            year   = entry.year,
+            tick   = entry.tick,
+            season = entry.season,
+        })
+    end
+    dfhack.persistent.saveSiteData(RECENT_PERSIST_KEY, { entries = data })
+end
+
+function load_recent()
+    recent_announcements = {}
+    has_unread = false
+    local saved = dfhack.persistent.getSiteData(RECENT_PERSIST_KEY)
+    if type(saved) ~= 'table' or type(saved.entries) ~= 'table' then
+        print('[Herald] Recent: loaded 0 entries (no saved data)')
+        return
+    end
+    for _, entry in ipairs(saved.entries) do
+        if type(entry) == 'table' and type(entry.msg) == 'string' then
+            table.insert(recent_announcements, {
+                msg    = entry.msg,
+                color  = type(entry.color) == 'number' and entry.color or COLOR_WHITE,
+                year   = type(entry.year) == 'number' and entry.year or 0,
+                tick   = type(entry.tick) == 'number' and entry.tick or 0,
+                season = type(entry.season) == 'string' and entry.season or 'Spring',
+            })
+        end
+    end
+    print(('[Herald] Recent: loaded %d entries from save'):format(#recent_announcements))
+end
+
+function reset_recent()
+    local count = #recent_announcements
+    recent_announcements = {}
+    has_unread = false
+    print(('[Herald] Recent: cleared %d entries'):format(count))
+end
+
+function get_recent_announcements()
+    return recent_announcements
+end
+
+function clear_unread()
+    has_unread = false
+    print('[Herald] Recent: unread flag cleared')
+end
+
 -- Death of a tracked individual or position holder (red, pauses game).
 function announce_death(msg)
     dfhack.gui.showAnnouncement(msg, COLOR_RED, true)
+    push_recent(msg, COLOR_RED)
 end
 
 -- New appointment to a position (yellow, pauses game).
 function announce_appointment(msg)
     dfhack.gui.showAnnouncement(msg, COLOR_YELLOW, true)
+    push_recent(msg, COLOR_YELLOW)
 end
 
 -- Position vacated by a living HF (white, no pause).
 function announce_vacated(msg)
     dfhack.gui.showAnnouncement(msg, COLOR_WHITE, false)
+    push_recent(msg, COLOR_WHITE)
 end
 
 -- General informational message (cyan, no pause).
 function announce_info(msg)
     dfhack.gui.showAnnouncement(msg, COLOR_LIGHTCYAN, false)
+    if not msg:find('[Herald DEBUG]', 1, true) then
+        push_recent(msg, COLOR_LIGHTCYAN)
+    end
 end
 
 -- Position name helpers -------------------------------------------------------

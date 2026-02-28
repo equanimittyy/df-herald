@@ -2182,7 +2182,22 @@ end
 
 -- Event formatting and collection ---------------------------------------------
 
--- format_event: returns "In the year NNN, Description" for the popup list.
+-- Season from tick value (seconds field). Returns short season string.
+local _SEASON_NAMES = { 'Spring', 'Summer', 'Autumn', 'Winter' }
+local function tick_season(seconds)
+    if not seconds or type(seconds) ~= 'number' or seconds < 0 then return nil end
+    return _SEASON_NAMES[math.floor(seconds / 100800) + 1]
+end
+
+-- Year + season timestamp string: "Year NNN, Season" or "Year NNN" if unknown.
+local function year_stamp(year_val, seconds)
+    local yr = (year_val and year_val ~= -1) and tostring(year_val) or '???'
+    local season = tick_season(seconds)
+    if season then return yr .. ', ' .. season end
+    return yr
+end
+
+-- format_event: returns "In the year NNN, Season, Description" for the popup list.
 -- focal_hf_id contextualises text (e.g. "Slew X" vs "Slain by Y").
 -- ctx_map (optional): { [event_id] = collection } for appending collection context.
 -- civ_mode: when true, skips first-char lowercasing (civ-focal descriptions start
@@ -2192,12 +2207,12 @@ local function format_event(ev, focal_hf_id, ctx_map, civ_mode)
     if type(ev) == 'table' then
         -- Collection-level entries (civ event history).
         if ev._collection then
-            local yr = (ev.year and ev.year ~= -1) and tostring(ev.year) or '???'
+            local stamp = year_stamp(ev.year, ev.seconds)
             local desc = format_collection_entry(ev.col, ev.civ_id)
-            return ('In the year %s, %s'):format(yr, desc)
+            return ('In the year %s, %s'):format(stamp, desc)
         end
         -- Relationship events from world.history.relationship_events.
-        local yr    = (ev.year and ev.year ~= -1) and tostring(ev.year) or '???'
+        local stamp = year_stamp(ev.year, ev.seconds)
         local rtype = ev.rel_type
         local rname = rtype and rtype >= 0
             and (df.vague_relationship_type[rtype] or 'unknown'):lower():gsub('_', ' ')
@@ -2206,11 +2221,11 @@ local function format_event(ev, focal_hf_id, ctx_map, civ_mode)
         local other    = hf_name_by_id(other_id) or 'someone'
         if rname:sub(1, 6) == 'former' then
             local what = rname:sub(8)  -- strip "former "
-            return ('In the year %s, ended a %s relationship with %s'):format(yr, what, other)
+            return ('In the year %s, ended a %s relationship with %s'):format(stamp, what, other)
         end
-        return ('In the year %s, formed a %s bond with %s'):format(yr, rname, other)
+        return ('In the year %s, formed a %s bond with %s'):format(stamp, rname, other)
     end
-    local year    = (ev.year and ev.year ~= -1) and tostring(ev.year) or '???'
+    local stamp = year_stamp(ev.year, ev.seconds)
     local ev_type = ev:getType()
     local desc
     local describer = EVENT_DESCRIBE[ev_type]
@@ -2250,7 +2265,7 @@ local function format_event(ev, focal_hf_id, ctx_map, civ_mode)
     if not civ_mode then
         desc = desc:sub(1,1):lower() .. desc:sub(2)
     end
-    return ('In the year %s, %s'):format(year, desc)
+    return ('In the year %s, %s'):format(stamp, desc)
 end
 
 -- Returns true if any element of a DF vector field on ev equals hf_id.
