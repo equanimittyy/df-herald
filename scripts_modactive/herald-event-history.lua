@@ -2807,13 +2807,11 @@ function EventHistoryScreen:onDismiss()
 end
 
 -- Exported: opens the Event History popup for an HF.
--- Singleton: same HF raises, different HF/civ replaces.
+-- Always delta-updates the cache and recreates the popup so new events appear.
 function open_event_history(hf_id, hf_name)
+    local cache = dfhack.reqscript('herald-cache')
+    cache.build_delta()
     if event_history_view then
-        if event_history_view.hf_id == hf_id and not event_history_view.entity_id then
-            event_history_view:raise()
-            return
-        end
         event_history_view:dismiss()
         event_history_view = nil
     end
@@ -2821,13 +2819,11 @@ function open_event_history(hf_id, hf_name)
 end
 
 -- Exported: opens the Event History popup for a civilisation.
--- Singleton: same entity raises, different entity/HF replaces.
+-- Always delta-updates the cache and recreates the popup so new events appear.
 function open_civ_event_history(entity_id, entity_name)
+    local cache = dfhack.reqscript('herald-cache')
+    cache.build_delta()
     if event_history_view then
-        if event_history_view.entity_id == entity_id then
-            event_history_view:raise()
-            return
-        end
         event_history_view:dismiss()
         event_history_view = nil
     end
