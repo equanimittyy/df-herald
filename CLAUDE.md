@@ -50,7 +50,7 @@ Each event type in its own `herald-<type>.lua`. Event-driven: `check(event, dpri
 
 Shared module, all exports non-local at module scope.
 
-- **Announcements** (use these, never `dfhack.gui.showAnnouncement` directly): `announce_death` (red, pause), `announce_appointment` (yellow, pause), `announce_vacated` (white), `announce_info` (cyan). Each also pushes to the recent ring buffer.
+- **Announcements** (use these, never `dfhack.gui.showAnnouncement` directly): `announce_death` (red), `announce_appointment` (yellow), `announce_vacated` (white), `announce_info` (cyan). Push to recent ring buffer only (no DF announcement bar); alert overlay notifies the player.
 - **Recent history:** `RECENT_PERSIST_KEY`, `MAX_RECENT=20`, `has_unread` (exported bool). `load_recent()`/`save_recent()`/`reset_recent()`/`get_recent_announcements()`/`clear_unread()`
 - **Position helpers:** `name_str(field)` normalises stl-string/string[] to string; `get_pos_name(entity, pos_id, hf_sex)` returns gendered title
 - **HF/entity:** `is_alive(hf)`, `get_race_name(hf)`, `get_entity_race_name(entity)`, `deepcopy(t)`

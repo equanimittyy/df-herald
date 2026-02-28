@@ -99,8 +99,9 @@ install mechanism (not `onLoad.init`). It registers `OVERLAY_WIDGETS = { button 
   Left half of the PNG = normal state; right half = hover/highlighted state.
 - If the PNG fails to load, falls back to a plain `widgets.TextButton` labelled "Herald".
 
-- `HeraldAlert` extends `overlay.OverlayWidget`; default position `{x=2, y=4}`, shown on
-  `'dwarfmode'`, frame `{w=8, h=2}`. Only renders when `herald-util.has_unread` is true.
+- `HeraldAlert` extends `overlay.OverlayWidget`; default position `{x=1, y=5}`, shown on
+  `'dwarfmode'`, frame `{w=12, h=2}`. Only renders when `herald-util.has_unread` is true.
+  This is the sole notification mechanism - announce functions no longer call `dfhack.gui.showAnnouncement`.
 - On click: calls `util.clear_unread()`, then `herald-main gui recent` to open GUI to Recent tab.
-- Sprite loaded from `herald-alert.png` - 8x12 px/tile, 8 cols x 2 rows per state (128x24 px total).
+- Sprite loaded from `herald-alert.png` - 8x12 px/tile, 12 cols x 2 rows per state (192x24 px total).
   Falls back to text label `! Herald` if PNG fails.
