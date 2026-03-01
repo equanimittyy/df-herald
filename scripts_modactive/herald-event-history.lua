@@ -465,9 +465,9 @@ do
             end
         elseif ltype == LT.DEITY then
             if focal_is_hf then
-                return 'Received the worship of ' .. other
-            else
                 return 'Began worshipping ' .. other
+            else
+                return 'Received the worship of ' .. other
             end
         elseif ltype == LT.PRISONER then
             if focal_is_hf then
@@ -502,6 +502,12 @@ do
                     return 'Ceased being the master of ' .. other
                 else
                     return 'Ceased being the apprentice of ' .. other
+                end
+            elseif ltype == LT.DEITY then
+                if focal_is_hf then
+                    return 'Ceased worshipping ' .. other
+                else
+                    return 'Lost the worship of ' .. other
                 end
             end
         end

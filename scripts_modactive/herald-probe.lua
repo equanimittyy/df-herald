@@ -17,86 +17,97 @@ if not main.DEBUG then
     return
 end
 
-print('=== START PROBE: Announcement Medallions ===')
+print('=== START PROBE: HF-HF Link Types (Worship) ===')
 
--- 1. Dump announcement_alertst struct fields
+-- 1. Dump histfig_hf_link_type enum
 print('')
-print('--- announcement_alertst struct ---')
-local ok1, alertst = pcall(function() return df.announcement_alertst end)
-if ok1 and alertst then
-    local a = alertst:new()
-    printall(a)
-    a:delete()
+print('--- histfig_hf_link_type enum ---')
+local ok, LT = pcall(function() return df.histfig_hf_link_type end)
+if ok and LT then
+    for i = 0, 30 do
+        local name = LT[i]
+        if name then
+            print(('  %2d = %s'):format(i, name))
+        end
+    end
 else
     print('  NOT FOUND')
 end
 
--- 2. Fire test announcements with different announcement_types that should
---    produce different medallions, then inspect the resulting alerts.
+-- 2. Scan world history for ADD/REMOVE_HF_HF_LINK events, show DEITY ones
 print('')
-print('--- Fire test announcements with makeAnnouncement ---')
+print('--- ADD/REMOVE_HF_HF_LINK events (first 20 DEITY matches) ---')
+local events = df.global.world.history.events
+local ET = df.history_event_type
+local add_type = ET.ADD_HF_HF_LINK
+local rem_type = ET.REMOVE_HF_HF_LINK
+local count = 0
+local max_show = 20
 
--- Interesting announcement_types to test (one per expected alert_type)
-local test_types = {
-    'REACHED_PEAK',           -- expect GENERAL
-    'MIGRANT_ARRIVAL_NAMED',  -- expect MIGRANT
-    'CAVE_COLLAPSE',          -- expect UNDERGROUND?
-    'DIG_CANCEL_DAMP',        -- expect UNDERGROUND?
-    'AMBUSH',                 -- expect AMBUSH
-    'CARAVAN_ARRIVAL',        -- expect TRADE
-    'BIRTH_CITIZEN',          -- expect BIRTH
-    'MOOD_BUILDING',          -- expect MOOD
-    'CREATURE_SOUND',         -- expect ANIMAL?
-    'NOBLE_ARRIVAL',          -- expect NOBLE?
-    'MASTERPIECE',            -- expect MASTERPIECE
-    'D_COMBAT_ATTACK_STRIKE', -- expect COMBAT
-    'GHOST_ATTACK',           -- expect GHOST?
-    'WEATHER_MISSING_RAIN',   -- expect WEATHER?
-    'CITIZEN_DEATH',          -- expect DEATH?
-    'ERA_CHANGE',             -- expect ERA_CHANGE
-}
+-- also collect all distinct link types seen across all HF-HF events
+local seen_types = {}
 
-local flags = df.announcement_flags:new()
-flags.D_DISPLAY = true
-flags.A_DISPLAY = true
-flags.ALERT = true
+for i = #events - 1, 0, -1 do
+    local ev = events[i]
+    local etype = ev:getType()
+    if etype == add_type or etype == rem_type then
+        local ltype = ev.type
+        local ltype_name = LT and LT[ltype] or tostring(ltype)
+        seen_types[ltype_name] = (seen_types[ltype_name] or 0) + 1
 
-local fired = {}
-for _, name in ipairs(test_types) do
-    local ok, t = pcall(function() return df.announcement_type[name] end)
-    if ok and t then
-        local idx = dfhack.gui.makeAnnouncement(
-            t, flags, {x=0,y=0,z=0},
-            '[PROBE] type=' .. name, COLOR_WHITE, false
-        )
-        print(('  Fired: %-35s type_int=%-3d report_idx=%d'):format(name, t, idx))
-        table.insert(fired, {name=name, type_int=t, report_idx=idx})
-    else
-        print(('  SKIP:  %s (not in enum)'):format(name))
+        -- show DEITY-related events
+        if LT and (ltype_name == 'DEITY' or ltype_name == 'FORMER_DEITY') then
+            if count < max_show then
+                local ename = ET[etype]
+                local yr = ev.year
+                local hf = ev.hf
+                local tgt = ev.hf_target
+                -- resolve names
+                local hf_obj = df.historical_figure.find(hf)
+                local tgt_obj = df.historical_figure.find(tgt)
+                local hf_name = hf_obj and dfhack.translation.translateName(hf_obj.name, true) or '?'
+                local tgt_name = tgt_obj and dfhack.translation.translateName(tgt_obj.name, true) or '?'
+                print(('  [yr%d] %s type=%s(%d)'):format(yr, ename, ltype_name, ltype))
+                print(('         hf=%d (%s)  hf_target=%d (%s)'):format(hf, hf_name, tgt, tgt_name))
+                -- check if target is a deity
+                if tgt_obj then
+                    local flags = tgt_obj.flags
+                    local is_deity = flags and flags.deity
+                    local is_force = flags and flags.force
+                    print(('         target flags: deity=%s force=%s'):format(
+                        tostring(is_deity), tostring(is_force)))
+                end
+                count = count + 1
+            end
+        end
     end
 end
 
-flags:delete()
-
--- 3. Now inspect the announcement_alert vector to see which alert_types appeared
 print('')
-print('--- announcement_alert after firing ---')
-local alerts = df.global.world.status.announcement_alert
-print(('  Total alerts: %d'):format(#alerts))
-for i = 0, #alerts - 1 do
-    local a = alerts[i]
-    print(('  Alert [%d]:'):format(i))
-    printall(a)
+print(('--- All HF-HF link types seen (across %d events scanned) ---'):format(#events))
+for name, c in pairs(seen_types) do
+    print(('  %-25s count=%d'):format(name, c))
 end
 
--- 4. Also inspect the report.type field for each fired announcement
+-- 3. Check a live HF's links for deity references
 print('')
-print('--- Report type field for fired announcements ---')
-local reports = df.global.world.status.reports
-for _, f in ipairs(fired) do
-    if f.report_idx >= 0 and f.report_idx < #reports then
-        local r = reports[f.report_idx]
-        print(('  %-35s report.type=%d'):format(f.name, r.type))
+print('--- Sample HF deity links (first 5 HFs with deity links) ---')
+local hf_count = 0
+for i = #df.global.world.history.figures - 1, 0, -1 do
+    if hf_count >= 5 then break end
+    local hf = df.global.world.history.figures[i]
+    if hf and hf.histfig_links then
+        for j = 0, #hf.histfig_links - 1 do
+            local link = hf.histfig_links[j]
+            local cname = link._type and tostring(link._type) or '?'
+            if cname:find('Deity') or cname:find('deity') then
+                local hf_name = dfhack.translation.translateName(hf.name, true)
+                print(('  HF %d (%s) link[%d]: %s'):format(hf.id, hf_name, j, cname))
+                printall(link)
+                hf_count = hf_count + 1
+                break
+            end
+        end
     end
 end
 
