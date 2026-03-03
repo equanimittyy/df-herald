@@ -83,7 +83,7 @@ HeraldButton.ATTRS{
 }
 
 function HeraldButton:onInput(keys)
-    if keys.CUSTOM_CTRL_SHIFT_H then
+    if keys.CUSTOM_ALT_H then
         dfhack.run_command('herald-main', 'gui')
         return true
     end
