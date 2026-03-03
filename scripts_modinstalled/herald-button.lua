@@ -82,6 +82,14 @@ HeraldButton.ATTRS{
     frame           = {w=LOGO_COLS, h=LOGO_ROWS},
 }
 
+function HeraldButton:onInput(keys)
+    if keys.CUSTOM_CTRL_SHIFT_H then
+        dfhack.run_command('herald-main', 'gui')
+        return true
+    end
+    return HeraldButton.super.onInput(self, keys)
+end
+
 function HeraldButton:init()
     local np, hp = load_logo_pens()
     if np then

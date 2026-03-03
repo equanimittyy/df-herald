@@ -12,6 +12,7 @@ Tags: fort | gameplay
   Open with:
 
     herald-main gui
+    Ctrl-Shift-H        (hotkey from main screen)
 
   Navigation
   ----------
