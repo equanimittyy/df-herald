@@ -80,6 +80,14 @@ Shared module, all exports non-local at module scope.
 - Update CLAUDE.md + relevant docs/ files when changing architecture/exports/conventions
 - **Docs hygiene:** CLAUDE.md and docs/ must stay compact. No prose, no repetition, no examples that duplicate what the code shows. Use terse reference style (signatures, key names, one-line descriptions). If a section grows beyond its current density, refactor or split to a docs/ file and link it. Every line must earn its place - if removing it wouldn't cause a mistake, remove it.
 
+## Agents (`.claude/agents/`)
+
+After completing a substantive code editing task (not minor one-line fixes), prompt the user to run review agents. If accepted, run all three in parallel.
+
+- **coupling-reviewer** (sonnet) — dependency direction, module boundaries, reqscript coupling, single responsibility
+- **dead-code-finder** (haiku) — unused exports, redundant logic, stale code
+- **robustness-reviewer** (sonnet) — DF struct safety, tick cycle resilience, save/load lifecycle, nil propagation, unbounded growth
+
 ## Future (on request only)
 
 - Adventure mode handler category
