@@ -43,10 +43,6 @@ local function announce_death(hf_id, dprint)
     -- Mark before the nil guard so a cleaned-up HF struct doesn't cause
     -- repeated nil-lookups on every poll tick.
     announced_deaths[hf_id] = true
-    if not hf then
-        dprint('ind-death: no HF found for id %d', hf_id)
-        return
-    end
     dprint('ind-death: firing announcement for %s (id %d) - death setting is ON', name, hf_id)
     util.announce_death(('%s has died.'):format(name))
 end

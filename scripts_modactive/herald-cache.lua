@@ -376,9 +376,17 @@ local function scan_rel_events(from_block, from_ne)
     local n_blocks = #rel_evs
     for i = from_block, n_blocks - 1 do
         local ok_b, block = pcall(function() return rel_evs[i] end)
-        if not ok_b then break end
+        if not ok_b then
+            rel_blocks_scanned = i
+            rel_last_block_ne  = 0
+            goto continue_block
+        end
         local ok_ne, ne = pcall(function() return block.next_element end)
-        if not ok_ne then break end
+        if not ok_ne then
+            rel_blocks_scanned = i
+            rel_last_block_ne  = 0
+            goto continue_block
+        end
 
         local start_k = (i == from_block) and from_ne or 0
         for k = start_k, ne - 1 do
@@ -396,6 +404,7 @@ local function scan_rel_events(from_block, from_ne)
 
         rel_blocks_scanned = i
         rel_last_block_ne  = ne
+        ::continue_block::
     end
 end
 

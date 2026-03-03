@@ -59,8 +59,7 @@ HF_FIELDS = {
     'maker', 'builder', 'figure', 'member', 'initiator_hf', 'mover_hf', 'moved_hf',
 }
 
--- Re-export safe_get from util (canonical definition) for internal use and
--- external consumers (herald-cache imports safe_get from this module's env).
+-- Re-export safe_get from util (canonical definition) for internal use.
 safe_get = util.safe_get
 
 -- Name / text helpers ---------------------------------------------------------
@@ -1704,12 +1703,12 @@ end
 -- Exported: full reset on world unload. Clears view and lazy civ caches.
 -- reqscript caches module environments, so these persist across loads.
 function reset()
+    if event_history_view then
+        pcall(function() event_history_view:dismiss() end)
+    end
     event_history_view = nil
     _entpop_to_civ = nil
 end
-
--- Backward-compat alias.
-reset_civ_caches = reset
 
 -- Check if any entity_population in a squad vector belongs to civ_id.
 local function entpop_vec_has_civ(col, field, civ_id, ep_map)
