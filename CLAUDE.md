@@ -82,7 +82,7 @@ Shared module, all exports non-local at module scope.
 
 ## Agents (`.claude/agents/`)
 
-After completing a substantive code editing task (not minor one-line fixes), prompt the user to run review agents. If accepted, run all three in parallel.
+After completing a substantive code editing task (not minor one-line fixes), prompt the user to run review agents. If accepted, run all three in parallel. When all complete, present a single unified summary - not three separate reports. Deduplicate overlapping findings, group by file or theme, and keep it concise.
 
 - **coupling-reviewer** (sonnet) — dependency direction, module boundaries, reqscript coupling, single responsibility
 - **dead-code-finder** (haiku) — unused exports, redundant logic, stale code
