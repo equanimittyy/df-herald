@@ -40,13 +40,15 @@ local function announce_death(hf_id, dprint)
         announced_deaths[hf_id] = true
         return
     end
+    -- Mark before the nil guard so a cleaned-up HF struct doesn't cause
+    -- repeated nil-lookups on every poll tick.
+    announced_deaths[hf_id] = true
     if not hf then
         dprint('ind-death: no HF found for id %d', hf_id)
         return
     end
     dprint('ind-death: firing announcement for %s (id %d) - death setting is ON', name, hf_id)
     util.announce_death(('%s has died.'):format(name))
-    announced_deaths[hf_id] = true
 end
 
 -- Event handler (in-fort path) ------------------------------------------------
@@ -89,15 +91,14 @@ end
 
 -- Public interface ------------------------------------------------------------
 
--- Dispatches to event or poll path depending on call signature:
---   check(event, dprint)  -> event-driven (HIST_FIGURE_DIED)
---   check(dprint)         -> poll-based (each scan cycle)
-function check(event_or_dprint, dprint_or_nil)
-    if dprint_or_nil ~= nil then
-        handle_event(event_or_dprint, dprint_or_nil)
-    else
-        handle_poll(event_or_dprint)
-    end
+-- Event-driven path: called by herald-main for HIST_FIGURE_DIED events.
+function check_event(event, dprint)
+    handle_event(event, dprint)
+end
+
+-- Poll-based path: called each scan cycle by herald-main.
+function check_poll(dprint)
+    handle_poll(dprint)
 end
 
 -- Persistence -----------------------------------------------------------------

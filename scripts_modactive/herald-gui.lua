@@ -177,7 +177,6 @@ local function build_choices(show_dead, show_pinned_only)
             },
             search_key   = search_key,
             hf_id        = hf.id,
-            hf           = hf,
             is_dead      = is_dead,
             display_name = name,
         })
@@ -508,8 +507,12 @@ function FiguresPanel:update_detail(choice)
         return
     end
 
-    local hf      = choice.hf
     local hf_id   = choice.hf_id
+    local hf      = df.historical_figure.find(hf_id)
+    if not hf then
+        self.subviews.detail_panel:setChoices({})
+        return
+    end
     local pinned  = ind_death.get_pinned()
     local name    = dfhack.translation.translateName(hf.name, true) -- luacheck: ignore 311
     if name == '' then name = '(unnamed)' end
@@ -560,10 +563,12 @@ end
 function FiguresPanel:toggle_pinned(choice)
     if not choice then return end
     local hf_id    = choice.hf_id
+    local hf       = df.historical_figure.find(hf_id)
+    if not hf then return end
     local pinned   = ind_death.get_pinned()
     local now_pinned = not pinned[hf_id]
     ind_death.set_pinned(hf_id, now_pinned or nil)
-    local name = dfhack.translation.translateName(choice.hf.name, true)
+    local name = dfhack.translation.translateName(hf.name, true)
     if name == '' then name = '(unnamed)' end
     print(('[Herald] %s (id %d) is %s pinned.'):format(
         name, hf_id, now_pinned and 'now' or 'no longer'))
@@ -877,12 +882,13 @@ function PinnedPanel:refresh_pinned_list()
             if entity then
                 local name = dfhack.translation.translateName(entity.name, true)
                 if name == '' then name = '(unnamed)' end
-                table.insert(civ_list, { entity_id = entity_id, name = name, entity = entity })
+                table.insert(civ_list, { entity_id = entity_id, name = name })
             end
         end
         table.sort(civ_list, function(a, b) return a.name < b.name end)
         for _, civ in ipairs(civ_list) do
-            local race = util.get_entity_race_name(civ.entity)
+            local ent = df.historical_entity.find(civ.entity_id)
+            local race = ent and util.get_entity_race_name(ent) or 'Unknown'
             if race == '?' then race = 'Unknown' end
             table.insert(choices, {
                 text = {

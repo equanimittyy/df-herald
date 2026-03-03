@@ -68,10 +68,10 @@ end
 -- assignments against the previous snapshot, and fires announcements
 -- when a pinned civ gains or loses a position holder.
 
-function check(dprint)
+function check_poll(dprint)
     dprint = dprint or function() end
 
-    dprint('world-leaders.check: scanning pinned entity position assignments')
+    dprint('world-leaders.check_poll: scanning pinned entity position assignments')
 
     local new_snapshot = {}
     local dbg_civs = 0
@@ -187,7 +187,7 @@ function check(dprint)
     end
 
     tracked_leaders = new_snapshot
-    dprint('world-leaders.check: civs=%d tracked=%d',
+    dprint('world-leaders.check_poll: civs=%d tracked=%d',
         dbg_civs,
         (function() local n=0 for _ in pairs(tracked_leaders) do n=n+1 end return n end)())
 end

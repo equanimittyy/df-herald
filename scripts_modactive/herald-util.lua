@@ -190,6 +190,15 @@ function get_entity_race_name(entity)
     return cr.name[0] or '?'
 end
 
+-- DF struct field access ------------------------------------------------------
+-- DFHack's __index raises an error (not nil) when accessing a field that
+-- doesn't exist on a typed DF struct. Use safe_get for any field that may
+-- not exist on the concrete subtype.
+function safe_get(obj, field)
+    local ok, val = pcall(function() return obj[field] end)
+    return ok and val or nil
+end
+
 -- Table utilities -------------------------------------------------------------
 
 -- Returns a deep copy of any Lua value (tables are copied recursively).

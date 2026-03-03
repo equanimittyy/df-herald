@@ -48,10 +48,17 @@ local function get_ev_hist()
     return dfhack.reqscript('herald-event-history')
 end
 
--- Debug printer; reads herald-main.DEBUG lazily to avoid circular dep.
+local util = dfhack.reqscript('herald-util')
+
+-- Debug flag; set by herald-main via set_debug() to avoid circular dep.
+local _debug = false
+
+function set_debug(flag)
+    _debug = flag
+end
+
 local function dprint(fmt, ...)
-    local ok, main = pcall(dfhack.reqscript, 'herald-main')
-    if not ok or not main.DEBUG then return end
+    if not _debug then return end
     local msg = ('[Herald Cache] ' .. fmt):format(...)
     print(msg)
 end
@@ -199,36 +206,33 @@ end
 
 -- Core scan logic --------------------------------------------------------------
 
--- Module-scope enum lookups (computed once at load time).
-local BATTLE_TYPES = {}
-for _, name in ipairs({'HF_SIMPLE_BATTLE_EVENT', 'HIST_FIGURE_SIMPLE_BATTLE_EVENT'}) do
-    local v = df.history_event_type[name]
-    if v ~= nil then BATTLE_TYPES[v] = true end
-end
-local COMP_TYPE = df.history_event_type['COMPETITION']
-local BODY_ABUSED_TYPE = df.history_event_type['BODY_ABUSED']
-local OVERTHROWN_TYPE  = df.history_event_type['ENTITY_OVERTHROWN']
-
--- Civ-relevant event types.
-local ADD_HF_ENTITY_LINK_TYPE    = df.history_event_type['ADD_HF_ENTITY_LINK']
-local REMOVE_HF_ENTITY_LINK_TYPE = df.history_event_type['REMOVE_HF_ENTITY_LINK']
-local ENTITY_CREATED_TYPE        = df.history_event_type['ENTITY_CREATED']
+-- Enum lookups: imported from herald-event-history (single source of truth).
+-- Resolved lazily at first use via get_ev_hist() to avoid load-order issues.
+local BATTLE_TYPES, COMP_TYPE, BODY_ABUSED_TYPE, OVERTHROWN_TYPE
+local ADD_HF_ENTITY_LINK_TYPE, REMOVE_HF_ENTITY_LINK_TYPE, ENTITY_CREATED_TYPE
+local PEACE_TYPES
 local LT_POSITION = df.histfig_entity_link_type and df.histfig_entity_link_type.POSITION
 
--- Peace/agreement event types (civ-level diplomacy).
--- Actual DF names: WAR_PEACE_*, TOPICAGREEMENT_* (probe-confirmed).
-local PEACE_TYPES = {}
-for _, name in ipairs({'WAR_PEACE_ACCEPTED', 'WAR_PEACE_REJECTED',
-                       'TOPICAGREEMENT_CONCLUDED', 'TOPICAGREEMENT_MADE',
-                       'TOPICAGREEMENT_REJECTED'}) do
-    local v = df.history_event_type[name]
-    if v ~= nil then PEACE_TYPES[v] = true end
+local _enums_loaded = false
+local function ensure_enums()
+    if _enums_loaded then return end
+    local eh = get_ev_hist()
+    BATTLE_TYPES              = eh.ENUM_BATTLE_TYPES
+    COMP_TYPE                 = eh.ENUM_COMP_TYPE
+    BODY_ABUSED_TYPE          = eh.ENUM_BODY_ABUSED_TYPE
+    OVERTHROWN_TYPE           = eh.ENUM_OVERTHROWN_TYPE
+    ADD_HF_ENTITY_LINK_TYPE   = eh.ENUM_ADD_HF_ENTITY_LINK
+    REMOVE_HF_ENTITY_LINK_TYPE = eh.ENUM_REMOVE_HF_ENTITY_LINK
+    ENTITY_CREATED_TYPE       = eh.ENUM_ENTITY_CREATED
+    PEACE_TYPES               = eh.ENUM_PEACE_TYPES
+    _enums_loaded = true
 end
 
 -- Processes a single event: updates hf_event_counts, hf_event_ids,
 -- and civ_event_ids/civ_event_counts for position/entity events.
 -- Returns nothing; mutates tables in place.
 local function process_event(ev, ev_hist)
+    ensure_enums()
     if not ev_hist.event_will_be_shown(ev) then return end
 
     local ev_type = ev:getType()
@@ -238,7 +242,7 @@ local function process_event(ev, ev_hist)
     -- Scalar HF fields (type-dispatched for speed).
     local fields = ev_hist.TYPE_HF_FIELDS[ev_type] or ev_hist.HF_FIELDS
     for _, field in ipairs(fields) do
-        local val = ev_hist.safe_get(ev, field)
+        local val = util.safe_get(ev, field)
         if type(val) == 'number' and val >= 0 and not seen[val] then
             seen[val] = true
             hf_event_counts[val] = (hf_event_counts[val] or 0) + 1
@@ -330,8 +334,8 @@ local function process_event(ev, ev_hist)
     -- Civ position events: ADD/REMOVE_HF_ENTITY_LINK with POSITION link_type.
     if (ADD_HF_ENTITY_LINK_TYPE and ev_type == ADD_HF_ENTITY_LINK_TYPE)
         or (REMOVE_HF_ENTITY_LINK_TYPE and ev_type == REMOVE_HF_ENTITY_LINK_TYPE) then
-        local civ_id = ev_hist.safe_get(ev, 'civ')
-        local ltype  = ev_hist.safe_get(ev, 'link_type')
+        local civ_id = util.safe_get(ev, 'civ')
+        local ltype  = util.safe_get(ev, 'link_type')
         if civ_id and civ_id >= 0 and LT_POSITION and ltype == LT_POSITION then
             if not civ_event_ids[civ_id] then civ_event_ids[civ_id] = {} end
             table.insert(civ_event_ids[civ_id], ev_id)
@@ -341,7 +345,7 @@ local function process_event(ev, ev_hist)
 
     -- Entity creation events.
     if ENTITY_CREATED_TYPE and ev_type == ENTITY_CREATED_TYPE then
-        local ent_id = ev_hist.safe_get(ev, 'entity')
+        local ent_id = util.safe_get(ev, 'entity')
         if ent_id and ent_id >= 0 then
             if not civ_event_ids[ent_id] then civ_event_ids[ent_id] = {} end
             table.insert(civ_event_ids[ent_id], ev_id)
@@ -352,7 +356,7 @@ local function process_event(ev, ev_hist)
     -- Peace/agreement events: cache for both source and destination civs.
     if PEACE_TYPES[ev_type] then
         for _, field in ipairs({'source', 'destination'}) do
-            local eid = ev_hist.safe_get(ev, field)
+            local eid = util.safe_get(ev, field)
             if eid and eid >= 0 then
                 if not civ_event_ids[eid] then civ_event_ids[eid] = {} end
                 table.insert(civ_event_ids[eid], ev_id)
@@ -392,15 +396,6 @@ local function scan_rel_events(from_block, from_ne)
 
         rel_blocks_scanned = i
         rel_last_block_ne  = ne
-    end
-    -- If no blocks exist yet, keep watermarks at initial values.
-    if n_blocks > 0 then
-        rel_blocks_scanned = n_blocks - 1
-        local ok_b, block = pcall(function() return rel_evs[n_blocks - 1] end)
-        if ok_b then
-            local ok_ne, ne = pcall(function() return block.next_element end)
-            if ok_ne then rel_last_block_ne = ne end
-        end
     end
 end
 
@@ -519,6 +514,10 @@ function build_delta()
         end
     end
 
+    -- Capture pre-scan watermarks to detect advancement.
+    local prev_rel = rel_blocks_scanned
+    local prev_col = last_cached_collection_idx
+
     for i = start_idx, n - 1 do
         process_event(events[i], ev_hist)
         count = count + 1
@@ -539,7 +538,10 @@ function build_delta()
     if not civ_event_counts then civ_event_counts = {} end
     scan_collections(last_cached_collection_idx, ev_hist)
 
-    if count > 0 then
+    local any_change = count > 0
+        or rel_blocks_scanned ~= prev_rel
+        or last_cached_collection_idx ~= prev_col
+    if any_change then
         dprint('build_delta: processed %d new event(s), watermark now idx=%d id=%d',
             count, last_cached_event_idx, last_cached_event_id)
         save_cache()
@@ -604,6 +606,7 @@ function reset()
     dprint('reset: clearing all cache state')
     cache_ready = false
     building    = false
+    _enums_loaded = false
     hf_event_counts = nil
     hf_event_ids    = nil
     hf_rel_counts   = nil

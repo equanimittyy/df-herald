@@ -174,16 +174,6 @@ do
     announcements = announcements or saved_ann
 end
 
--- Exported so herald-gui can read/write the global announcement flags.
-function get_announcements()
-    return announcements
-end
-
-function save_announcements(new_ann)
-    announcements = new_ann
-    save_config()
-end
-
 -- Prints to console and (if map loaded) shows a cyan announcement.
 -- Only active when DEBUG = true.
 local function dprint(fmt, ...)
@@ -193,10 +183,6 @@ local function dprint(fmt, ...)
     if dfhack.isMapLoaded() then
         util.announce_info(msg)
     end
-end
-
-function isEnabled()
-    return enabled
 end
 
 -- Interval editor dialog ------------------------------------------------------
@@ -301,12 +287,13 @@ local function get_world_handlers()
     return world_handlers
 end
 
--- Calls check(dprint) on every poll-based world handler.
+-- Calls check_poll(dprint) on every poll-based world handler.
 local function scan_world_state(dprint) -- luacheck: no redefined
     local wh = get_world_handlers()
     for key, handler in pairs(wh) do
         dprint('scan_world_state: calling handler "%s"', key)
-        handler.check(dprint)
+        local ok, err = pcall(handler.check_poll, dprint)
+        if not ok then dprint('World handler "%s" error: %s', key, tostring(err)) end
     end
 end
 
@@ -325,12 +312,17 @@ local function scan_events()
     local h = get_handlers()
     local scanned = 0
     for i = last_event_id + 1, #events - 1 do
-        local ev      = events[i]
-        local ev_type = ev:getType()
-        local handler = h[ev_type]
-        if handler then
-            dprint('Handler fired: event id=%d type=%s', i, tostring(ev_type))
-            handler.check(ev, dprint)
+        local ok, ev = pcall(function() return events[i] end)
+        if ok and ev then
+            local ok2, ev_type = pcall(function() return ev:getType() end)
+            if ok2 then
+                local handler = h[ev_type]
+                if handler then
+                    dprint('Handler fired: event id=%d type=%s', i, tostring(ev_type))
+                    local ok3, err = pcall(handler.check_event, ev, dprint)
+                    if not ok3 then dprint('Handler error at event %d: %s', i, tostring(err)) end
+                end
+            end
         end
         last_event_id = i
         scanned = scanned + 1
@@ -356,9 +348,10 @@ local function init_scan()
     dprint('init_scan: pinned HF list loaded')
     dfhack.reqscript('herald-world-leaders').load_pinned_civs()
     dprint('init_scan: pinned civ list loaded')
-    dfhack.reqscript('herald-cache').load_cache()
-    dprint('init_scan: event cache loaded (ready=%s)',
-        tostring(dfhack.reqscript('herald-cache').cache_ready))
+    local cache = dfhack.reqscript('herald-cache')
+    cache.load_cache()
+    cache.set_debug(DEBUG)
+    dprint('init_scan: event cache loaded (ready=%s)', tostring(cache.cache_ready))
     dprint('init_scan: recent announcements loaded')
     dfhack.timeout(tick_interval, 'ticks', scan_events)
 end
@@ -381,8 +374,8 @@ local function cleanup()
     dprint('cleanup: event cache reset')
     util.reset_recent()
     dprint('cleanup: recent announcements reset')
-    dfhack.reqscript('herald-event-history').reset_civ_caches()
-    dprint('cleanup: civ caches reset')
+    dfhack.reqscript('herald-event-history').reset()
+    dprint('cleanup: event history reset')
 end
 
 -- Lifecycle hooks -------------------------------------------------------------
@@ -413,6 +406,7 @@ if args[1] == 'debug' then
         DEBUG = not DEBUG
     end
     save_config()
+    pcall(function() dfhack.reqscript('herald-cache').set_debug(DEBUG) end)
     print('[Herald] Debug ' .. (DEBUG and 'enabled' or 'disabled'))
 elseif args[1] == 'interval' then
     view = view and view:raise() or IntervalScreen{}:show()

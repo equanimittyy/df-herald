@@ -59,14 +59,9 @@ HF_FIELDS = {
     'maker', 'builder', 'figure', 'member', 'initiator_hf', 'mover_hf', 'moved_hf',
 }
 
--- DFHack's __index raises an error (not nil) when accessing a field that doesn't
--- exist on a typed DF struct. Event subtypes have different fields, so direct
--- access like ev.victim_hf will crash on non-DIED events. Use safe_get for any
--- field that may not exist on the event's concrete subtype.
-function safe_get(obj, field)
-    local ok, val = pcall(function() return obj[field] end)
-    return ok and val or nil
-end
+-- Re-export safe_get from util (canonical definition) for internal use and
+-- external consumers (herald-cache imports safe_get from this module's env).
+safe_get = util.safe_get
 
 -- Name / text helpers ---------------------------------------------------------
 -- Returns the translated name of an HF, capitalised. Returns nil if unnamed.
@@ -1508,7 +1503,8 @@ local function build_war_event_map()
             local ok_n, n = pcall(function() return #col.events end)
             if ok_n then
                 for j = 0, n - 1 do
-                    ctx_map[col.events[j]] = col
+                    local ok2, eid = pcall(function() return col.events[j] end)
+                    if ok2 then ctx_map[eid] = col end
                 end
             end
         end
@@ -1705,11 +1701,15 @@ local function get_entpop_to_civ()
     return _entpop_to_civ
 end
 
--- Exported: invalidate lazy civ caches on world unload.
--- reqscript caches module environments, so _entpop_to_civ persists across loads.
-function reset_civ_caches()
+-- Exported: full reset on world unload. Clears view and lazy civ caches.
+-- reqscript caches module environments, so these persist across loads.
+function reset()
+    event_history_view = nil
     _entpop_to_civ = nil
 end
+
+-- Backward-compat alias.
+reset_civ_caches = reset
 
 -- Check if any entity_population in a squad vector belongs to civ_id.
 local function entpop_vec_has_civ(col, field, civ_id, ep_map)
@@ -1947,7 +1947,8 @@ local function format_collection_entry(col, focal_civ_id)
         if ok_ov and opp_vec then
             local ok_n, n = pcall(function() return #opp_vec end)
             if ok_n and n > 0 then
-                opp_name = civ_name_by_id(opp_vec[0], focal_civ_id)
+                local ok_v, v = pcall(function() return opp_vec[0] end)
+                if ok_v then opp_name = civ_name_by_id(v, focal_civ_id) end
             end
         end
         return opp_name, is_attacker
@@ -2390,6 +2391,16 @@ for _, name in ipairs({'WAR_PEACE_ACCEPTED', 'WAR_PEACE_REJECTED',
     local v = df.history_event_type[name]
     if v ~= nil then _PEACE_TYPES[v] = true end
 end
+
+-- Exported enum tables for herald-cache (avoid recomputing there).
+ENUM_BATTLE_TYPES           = _BATTLE_TYPES
+ENUM_COMP_TYPE              = _COMP_TYPE
+ENUM_BODY_ABUSED_TYPE       = _BODY_ABUSED_TYPE
+ENUM_OVERTHROWN_TYPE        = _OVERTHROWN_TYPE
+ENUM_ADD_HF_ENTITY_LINK     = _ADD_HF_ENTITY_LINK
+ENUM_REMOVE_HF_ENTITY_LINK  = _REMOVE_HF_ENTITY_LINK
+ENUM_ENTITY_CREATED          = _ENTITY_CREATED
+ENUM_PEACE_TYPES             = _PEACE_TYPES
 
 -- Helper: resolves a collection ID to a synthetic _collection entry.
 local function col_to_entry(col, civ_id)
