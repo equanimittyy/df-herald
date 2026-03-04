@@ -3,65 +3,9 @@
 --[====[
 herald-gui
 ==========
-Tags: fort | gameplay
+Tags: unavailable
 
-  Settings UI for the Herald mod. Tabbed window for managing pinned historical
-  figures and civilisations, configuring per-pin announcements, and browsing
-  world-history event logs.
-
-  Open with:
-
-    herald-main gui
-    Alt-H               (hotkey from main screen)
-
-  Navigation
-  ----------
-  Ctrl-T              Cycle tabs
-  Ctrl-J              Open the DFHack Journal
-  Escape              Close the window
-
-  Tab 1 - Recent
-  ---------------
-  Last 20 Herald announcements with timestamps and original colours.
-
-  Tab 2 - Pinned
-  --------------
-  Left pane: pinned individuals or civilisations (Ctrl-I to toggle view).
-  Right pane: per-pin announcement toggles; changes are saved immediately.
-
-  Categories marked "*" are not yet implemented.
-
-  Ctrl-I              Toggle between Individuals and Civilisations view
-  Ctrl-E              Open event history for the selected entry (HF or civ)
-  Enter               Unpin the selected entry
-
-  Tab 3 - Historical Figures
-  --------------------------
-  Searchable list of all historical figures.
-  Detail pane shows ID, race, alive/dead status, civ, and positions.
-
-  Columns: Name, Race, Civ, Status, Events.
-
-  Type to search      Filter by name, race, or civilisation
-  Enter               Pin or unpin the selected figure
-  Ctrl-E              Open event history for the selected figure
-  Ctrl-P              Toggle "Pinned only" filter
-  Ctrl-D              Toggle "Show dead" filter
-
-  Tab 4 - Civilisations
-  ---------------------
-  Searchable list of all civilisation-level entities.
-  Columns: Name, Race, Sites, Pop.
-
-  Type to search      Filter by name or race
-  Enter               Pin or unpin the selected civilisation
-  Ctrl-E              Open event history for the selected civilisation
-  Ctrl-P              Toggle "Pinned only" filter
-
-  Event History Popup
-  -------------------
-  Chronological list of world-history events involving a figure. Opened via Ctrl-E from
-  the Pinned or Historical Figures tab. Also dumps the event list to the DFHack console.
+  Settings UI for the Herald mod. Open with "herald gui" or Alt-H.
 
 Not intended for direct use.
 ]====]
@@ -69,8 +13,8 @@ Not intended for direct use.
 local gui         = require('gui')
 local widgets     = require('gui.widgets')
 local util        = dfhack.reqscript('herald-util')
-local ind_death   = dfhack.reqscript('herald-ind-death')
-local wld_leaders = dfhack.reqscript('herald-world-leaders')
+local ind_death   = dfhack.reqscript('herald-handlers/herald-ind-death')
+local wld_leaders = dfhack.reqscript('herald-handlers/herald-world-leaders')
 local ev_hist     = dfhack.reqscript('herald-event-history')
 local cache       = dfhack.reqscript('herald-cache')
 

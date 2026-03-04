@@ -3,7 +3,7 @@
 --[====[
 herald-event-history
 ====================
-Tags: fort | gameplay
+Tags: unavailable
 
   Event history subsystem for the Herald mod. Provides world-history event collection,
   description formatting, and the Event History popup screen for historical figures.
@@ -2714,7 +2714,7 @@ function EventHistoryWindow:init()
             display_name, self.hf_id or -1, #events))
     end
     -- Detailed per-event dump; gated behind DEBUG.
-    if dfhack.reqscript('herald-main').DEBUG then
+    if dfhack.reqscript('herald').DEBUG then
         local PROBE_FIELDS = {
             'state', 'substate', 'mood', 'reason',
             'site', 'region', 'structure',

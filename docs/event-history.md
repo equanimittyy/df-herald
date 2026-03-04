@@ -25,7 +25,7 @@ Required by `herald-gui.lua` as `local ev_hist = dfhack.reqscript('herald-event-
   theft, abductions) plus individual position-change events. Same singleton pattern as
   `open_event_history`; opening one dismisses the other.
 - **`reset_civ_caches()`** — invalidates lazy civ caches (`_entpop_to_civ`) on world unload.
-  Called from `herald-main.cleanup()`.
+  Called from `herald.cleanup()`.
 
 ## Internal (local) Components
 

@@ -32,9 +32,9 @@ Herald runs automatically in the background once enabled. Use the **Herald butto
 Console commands:
 
 ```
-herald-main enable    # manually enable
-herald-main disable   # manually disable
-herald-main debug true/false  # toggle debug output
+herald enable    # manually enable
+herald disable   # manually disable
+herald debug true/false  # toggle debug output
 ```
 
 ## Author

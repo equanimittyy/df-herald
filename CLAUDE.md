@@ -9,14 +9,15 @@ DFHack mod (Lua, v50+ Steam) - scans world history for significant events and no
 ```
 scripts_modactive/
   onLoad.init              ← auto-enables mod on world load
-  herald-main.lua          ← event loop, dispatcher; add new event types here
+  herald.lua               ← event loop, dispatcher, CLI (the only visible command)
   herald-gui.lua           ← settings UI (Recent / Pinned / Historical Figures / Civilisations)
   herald-event-history.lua ← Event History popup subsystem (describers, collection context)
   herald-cache.lua         ← persistent event cache (HF event counts + IDs, delta processing)
-  herald-ind-death.lua     ← HIST_FIGURE_DIED + poll handler for pinned individuals
-  herald-world-leaders.lua ← poll-based world leader tracking [Civilisations]
   herald-util.lua          ← shared utilities (announcements, recent history, position helpers, pin settings)
   herald-probe.lua         ← debug utility for inspecting live DF data
+  herald-handlers/
+    herald-ind-death.lua   ← HIST_FIGURE_DIED + poll handler for pinned individuals
+    herald-world-leaders.lua ← poll-based world leader tracking [Civilisations]
 
 scripts_modinstalled/
   herald-button.lua        ← DFHack overlay widgets (Herald button + alert on main screen)
@@ -36,7 +37,7 @@ Each event type in its own `herald-<type>.lua`. Event-driven: `check(event, dpri
 2. `--[====[` docblock ending with "Not intended for direct use."
 3. Exports at module scope (no `local`, no wrapper table) - `dfhack.reqscript` returns the env table
 4. Each handler has its own isolated env, so `check` in every handler is safe
-5. `herald-main.lua` uses `--@ enable=true`; all others use `--@ module=true` only
+5. `herald.lua` uses `--@ enable=true`; all others use `--@ module=true` only
 
 ## Architecture
 
@@ -66,7 +67,7 @@ Shared module, all exports non-local at module scope.
 
 - Focus string: `lua printall(dfhack.gui.getCurFocus())`
 - Struct fields: `lua printall(<object>)`
-- herald-probe: edit `herald-probe.lua`, then `herald-main debug true` + `herald-main probe`
+- herald-probe: edit `herald-probe.lua`, then `herald debug true` + `herald probe`
 
 ## Rules
 

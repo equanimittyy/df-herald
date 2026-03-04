@@ -4,7 +4,7 @@
 herald-ind-death
 ================
 
-Tags: fort | gameplay
+Tags: unavailable
 
   Dual-mode handler for pinned individual deaths.
 
@@ -48,7 +48,7 @@ local function announce_death(hf_id, dprint)
 end
 
 -- Event handler (in-fort path) ------------------------------------------------
--- Called by herald-main when a HIST_FIGURE_DIED event is dispatched.
+-- Called by herald when a HIST_FIGURE_DIED event is dispatched.
 
 local function handle_event(event, dprint)
     dprint = dprint or function() end
@@ -87,12 +87,12 @@ end
 
 -- Public interface ------------------------------------------------------------
 
--- Event-driven path: called by herald-main for HIST_FIGURE_DIED events.
+-- Event-driven path: called by herald for HIST_FIGURE_DIED events.
 function check_event(event, dprint)
     handle_event(event, dprint)
 end
 
--- Poll-based path: called each scan cycle by herald-main.
+-- Poll-based path: called each scan cycle by herald.
 function check_poll(dprint)
     handle_poll(dprint)
 end

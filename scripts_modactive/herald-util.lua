@@ -3,11 +3,11 @@
 --[====[
 herald-util
 ===========
-Tags: fort | gameplay
+Tags: unavailable
 
-  Shared utility functions for the Herald mod. Used by herald-main,
-  herald-ind-death, herald-world-leaders, herald-gui, and
-  herald-event-history to avoid code duplication.
+  Shared utility functions for the Herald mod. Used by herald,
+  herald-handlers, herald-gui, and herald-event-history to avoid
+  code duplication.
 
 Not intended for direct use.
 ]====]
@@ -18,7 +18,7 @@ Not intended for direct use.
 
 -- Recent announcements ring buffer ------------------------------------------
 -- Debug logging here uses plain print() (console only) because herald-util
--- cannot reqscript herald-main for dprint without creating a circular dep.
+-- cannot reqscript herald for dprint without creating a circular dep.
 RECENT_PERSIST_KEY = 'herald_recent_announcements'
 MAX_RECENT = 20
 
@@ -210,9 +210,9 @@ function deepcopy(t)
 end
 
 -- Pin settings ----------------------------------------------------------------
--- Default settings are defined here (not in herald-main) so handler modules
+-- Default settings are defined here (not in herald) so handler modules
 -- can call default_pin_settings() / default_civ_pin_settings() without
--- reqscript-ing herald-main, which would create a circular dependency.
+-- reqscript-ing herald, which would create a circular dependency.
 
 -- Ordered key lists; used when merging a saved settings table over defaults.
 INDIVIDUAL_SETTINGS_KEYS    = { 'relationships', 'death', 'combat', 'legendary', 'positions', 'migration' }

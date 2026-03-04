@@ -2,12 +2,12 @@
 --@ enable=true
 
 --[====[
-herald-main
-===========
+herald
+======
 
 Tags: fort | gameplay
 
-Command: "herald-main"
+Command: "herald"
 
   Scans world history for significant events and notifies the player in-game.
 
@@ -18,68 +18,112 @@ without requiring the player to check the legends screen.
 Usage
 -----
 
-   enable herald-main
-   disable herald-main
-   herald-main debug [true|false]
-   herald-main interval
-   herald-main gui
-   herald-main button
-   herald-main cache-rebuild
-   herald-main probe
+   enable herald
+   disable herald
+   herald debug [true|false]
+   herald interval
+   herald gui
+   herald button
+   herald cache-rebuild
+   herald probe
 
 Commands
 --------
 
-"enable herald-main"
+"enable herald"
    Start watching for events (done automatically on world load).
 
-"disable herald-main"
+"disable herald"
    Stop watching for events.
 
-"herald-main debug [true|false]"
+"herald debug [true|false]"
    Toggle debug output on/off, or set it explicitly. Omit the argument to
    flip the current state. Debug lines appear in both the DFHack console
    and the in-game announcements log (highlighted in cyan), covering loop
    timing, handler registration, handler dispatch, and per-handler event
    details (e.g. leader-death resolution).
 
-"herald-main interval"
+"herald interval"
    Open a dialog to set the scan interval in ticks (minimum 600, half a
    dwarf day). The value is saved to dfhack-config/herald.json and takes
    effect on the next scan cycle.
 
-"herald-main gui"
+"herald gui"
    Open the Herald settings window (requires a loaded world).
 
-"herald-main button"
+"herald button"
    Toggle the Herald overlay button on or off. Persisted by DFHack's overlay
    system so the preference survives restarts.
 
-"herald-main cache-rebuild"
+"herald cache-rebuild"
    Invalidate the event cache and instruct the user to reopen the Herald GUI
    to trigger a full rebuild. Use if the cache appears stale or corrupted.
 
-"herald-main test"
+"herald test"
    Fire one sample announcement of each style (death, appointment, vacated,
    info) so you can preview colours and pause behaviour in-game.
+
+
+Settings GUI
+------------
+
+Open with: "herald gui" or Alt-H (hotkey from main screen).
+
+Navigation:
+  Ctrl-T              Cycle tabs
+  Ctrl-J              Open the DFHack Journal
+  Escape              Close the window
+
+Tab 1 - Recent:
+  Last 20 Herald announcements with timestamps and original colours.
+
+Tab 2 - Pinned:
+  Left pane: pinned individuals or civilisations (Ctrl-I to toggle view).
+  Right pane: per-pin announcement toggles; changes are saved immediately.
+  Categories marked "*" are not yet implemented.
+  Ctrl-I              Toggle between Individuals and Civilisations view
+  Ctrl-E              Open event history for the selected entry (HF or civ)
+  Enter               Unpin the selected entry
+
+Tab 3 - Historical Figures:
+  Searchable list of all historical figures.
+  Detail pane shows ID, race, alive/dead status, civ, and positions.
+  Columns: Name, Race, Civ, Status, Events.
+  Type to search      Filter by name, race, or civilisation
+  Enter               Pin or unpin the selected figure
+  Ctrl-E              Open event history for the selected figure
+  Ctrl-P              Toggle "Pinned only" filter
+  Ctrl-D              Toggle "Show dead" filter
+
+Tab 4 - Civilisations:
+  Searchable list of all civilisation-level entities.
+  Columns: Name, Race, Sites, Pop.
+  Type to search      Filter by name or race
+  Enter               Pin or unpin the selected civilisation
+  Ctrl-E              Open event history for the selected civilisation
+  Ctrl-P              Toggle "Pinned only" filter
+
+Event History Popup:
+  Chronological list of world-history events involving a figure. Opened via Ctrl-E from
+  the Pinned or Historical Figures tab. Also dumps the event list to the DFHack console.
 
 
 Examples
 --------
 
-"herald-main debug"
+"herald debug"
    Toggle debug output (flip current state).
 
-"herald-main debug true"
+"herald debug true"
    Force debug output on.
 
-"herald-main debug false"
+"herald debug false"
    Force debug output off.
 
-"herald-main interval"
+"herald interval"
    Open the interval editor.
 
-"herald-main gui"
+"herald gui"
    Open the settings UI.
 
 ]====]
@@ -268,7 +312,7 @@ local world_handlers -- poll-based:   { [key_string] = handler_module }
 local function get_handlers()
     if handlers then return handlers end
     handlers = {
-        [df.history_event_type.HIST_FIGURE_DIED] = dfhack.reqscript('herald-ind-death'),
+        [df.history_event_type.HIST_FIGURE_DIED] = dfhack.reqscript('herald-handlers/herald-ind-death'),
     }
     dprint('Handlers registered:')
     dprint('  HIST_FIGURE_DIED -> herald-ind-death')
@@ -278,8 +322,8 @@ end
 local function get_world_handlers()
     if world_handlers then return world_handlers end
     world_handlers = {
-        leaders     = dfhack.reqscript('herald-world-leaders'),
-        individuals = dfhack.reqscript('herald-ind-death'),
+        leaders     = dfhack.reqscript('herald-handlers/herald-world-leaders'),
+        individuals = dfhack.reqscript('herald-handlers/herald-ind-death'),
     }
     dprint('World handlers registered:')
     dprint('  leaders -> herald-world-leaders')
@@ -344,9 +388,9 @@ local function init_scan()
     last_event_id = #df.global.world.history.events - 1  -- skip all pre-existing history
     enabled = true
     dprint('init_scan: watermark set to event id %d', last_event_id)
-    dfhack.reqscript('herald-ind-death').load_pinned()
+    dfhack.reqscript('herald-handlers/herald-ind-death').load_pinned()
     dprint('init_scan: pinned HF list loaded')
-    dfhack.reqscript('herald-world-leaders').load_pinned_civs()
+    dfhack.reqscript('herald-handlers/herald-world-leaders').load_pinned_civs()
     dprint('init_scan: pinned civ list loaded')
     local cache = dfhack.reqscript('herald-cache')
     cache.load_cache()
@@ -394,7 +438,7 @@ if dfhack.isMapLoaded() then
 end
 
 -- CLI argument handling -------------------------------------------------------
--- "herald-main debug [true|false]" / "herald-main interval" / "herald-main gui"
+-- "herald debug [true|false]" / "herald interval" / "herald gui"
 
 local args = {...}
 if args[1] == 'debug' then
@@ -454,7 +498,7 @@ elseif args[1] == 'button' then
     end
     if currently_enabled then
         dfhack.run_command('overlay', 'disable', WIDGET_ID)
-        print('[Herald] Button hidden. Run "herald-main button" again to show it.')
+        print('[Herald] Button hidden. Run "herald button" again to show it.')
     else
         dfhack.run_command('overlay', 'enable', WIDGET_ID)
         print('[Herald] Button shown.')

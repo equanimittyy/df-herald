@@ -2,6 +2,8 @@
 --[====[
 herald-button
 =============
+Tags: unavailable
+
 Overlay widget that adds a Herald button to the main DF screen.
 Not intended for direct use.
 ]====]
@@ -84,7 +86,7 @@ HeraldButton.ATTRS{
 
 function HeraldButton:onInput(keys)
     if keys.CUSTOM_ALT_H then
-        dfhack.run_command('herald-main', 'gui')
+        dfhack.run_command('herald', 'gui')
         return true
     end
     return HeraldButton.super.onInput(self, keys)
@@ -98,7 +100,7 @@ function HeraldButton:init()
                 frame       = {l=0, t=0, w=LOGO_COLS, h=LOGO_ROWS},
                 normal_pens = np,
                 hover_pens  = hp,
-                on_click    = function() dfhack.run_command('herald-main', 'gui') end,
+                on_click    = function() dfhack.run_command('herald', 'gui') end,
             }
         }
     else
@@ -106,7 +108,7 @@ function HeraldButton:init()
             widgets.TextButton{
                 frame       = {l=0, t=0},
                 label       = 'Herald',
-                on_activate = function() dfhack.run_command('herald-main', 'gui') end,
+                on_activate = function() dfhack.run_command('herald', 'gui') end,
             }
         }
     end
@@ -210,7 +212,7 @@ end
 function HeraldAlert:on_alert_click() -- luacheck: no unused args
     local util = dfhack.reqscript('herald-util')
     util.clear_unread()
-    dfhack.run_command('herald-main', 'gui', 'recent')
+    dfhack.run_command('herald', 'gui', 'recent')
 end
 
 function HeraldAlert:render(dc)

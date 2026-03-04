@@ -26,14 +26,14 @@ on every GUI open by caching results in the save file via `dfhack.persistent.sav
 - `reset()` — cleanup on world unload
 
 **Dependencies:** Requires `herald-event-history` only (for `HF_FIELDS`, `TYPE_HF_FIELDS`,
-`safe_get`, `event_will_be_shown`, `civ_matches_collection`). Does NOT require `herald-main`
+`safe_get`, `event_will_be_shown`, `civ_matches_collection`). Does NOT require `herald`
 or any handler module.
 
-**Lifecycle:** `load_cache()` called in `herald-main.init_scan()`; `reset()` called in
-`herald-main.cleanup()`. GUI calls `build_delta()` on open, or shows a warning dialog
+**Lifecycle:** `load_cache()` called in `herald.init_scan()`; `reset()` called in
+`herald.cleanup()`. GUI calls `build_delta()` on open, or shows a warning dialog
 and calls `build_full()` if cache is not ready.
 
-**CLI:** `herald-main cache-rebuild` invalidates the cache; next GUI open triggers rebuild.
+**CLI:** `herald cache-rebuild` invalidates the cache; next GUI open triggers rebuild.
 
 ## Settings & Persistence
 
@@ -93,7 +93,7 @@ install mechanism (not `onLoad.init`). It registers `OVERLAY_WIDGETS = { button 
 
 - `HeraldButton` extends `overlay.OverlayWidget`; default position `{x=10, y=1}`, shown on
   `'dwarfmode'`, frame `{w=4, h=3}`.
-- On click it runs `dfhack.run_command('herald-main', 'gui')`.
+- On click it runs `dfhack.run_command('herald', 'gui')`.
 - Logo loaded from `herald-logo.png` (same directory as the script) via
   `dfhack.textures.loadTileset(path, 8, 12, true)` - 8x12 px/tile, 4 cols x 3 rows per state.
   Left half of the PNG = normal state; right half = hover/highlighted state.
@@ -102,6 +102,6 @@ install mechanism (not `onLoad.init`). It registers `OVERLAY_WIDGETS = { button 
 - `HeraldAlert` extends `overlay.OverlayWidget`; default position `{x=1, y=5}`, shown on
   `'dwarfmode'`, frame `{w=12, h=2}`. Only renders when `herald-util.has_unread` is true.
   This is the sole notification mechanism - announce functions no longer call `dfhack.gui.showAnnouncement`.
-- On click: calls `util.clear_unread()`, then `herald-main gui recent` to open GUI to Recent tab.
+- On click: calls `util.clear_unread()`, then `herald gui recent` to open GUI to Recent tab.
 - Sprite loaded from `herald-alert.png` - 8x12 px/tile, 12 cols x 2 rows per state (192x24 px total).
   Falls back to text label `! Herald` if PNG fails.

@@ -3,14 +3,14 @@
 --[====[
 herald-cache
 ============
-Tags: fort | gameplay
+Tags: unavailable
 
   Persistent event cache for the Herald mod. Caches event-to-HF mappings in
   the save file so the expensive full scan only runs once per save. Subsequent
   opens delta-process only new events.
 
-  Required by herald-gui and herald-event-history. Do not require herald-main,
-  herald-ind-death, or herald-world-leaders (avoids circular deps).
+  Required by herald-gui and herald-event-history. Do not require herald
+  or handler modules (avoids circular deps).
 
 Not intended for direct use.
 ]====]
@@ -50,7 +50,7 @@ end
 
 local util = dfhack.reqscript('herald-util')
 
--- Debug flag; set by herald-main via set_debug() to avoid circular dep.
+-- Debug flag; set by herald via set_debug() to avoid circular dep.
 local _debug = false
 
 function set_debug(flag)

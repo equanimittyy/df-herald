@@ -148,6 +148,24 @@ SiteGov-to-Civ resolution in `build_civ_choices()` (5-tier fallback):
 4. SITE_CONQUERED collections -> `attacker_civ[0]`
 5. `site.civ_id` (last resort)
 
+## Command Visibility (`helpdb.lua`)
+
+DFHack hides commands from `ls` via **tag-based exclusion**, not directory structure.
+
+**Mechanism chain:**
+1. Script's RST doc (e.g. `docs/devel/kill-hf.rst`) declares `:tags: unavailable` in the `dfhack-tool` directive
+2. Sphinx renders it; `Tags: unavailable` line appears in `hack/docs/docs/tools/<name>.txt`
+3. `helpdb.lua` `update_entry()` parses the `Tags:` line into the entry's tag set
+4. `ls()` excludes entries tagged `dev` or `unavailable` when `show_dev_commands` is false
+5. `ls -a` sets `show_dev_commands = true`, bypassing the exclusion
+
+**Excluded tags** (in `ls()` when not `-a`):
+- `dev` — development tools
+- `unavailable` — tools not usable in current context
+- `armok` — god-mode tools (excluded only when `dfhack.getMortalMode()` is true)
+
+**To hide a script:** add `:tags: unavailable` (or `dev`) to its RST `dfhack-tool` directive. No code changes needed.
+
 ## Entity Populations
 
 ```

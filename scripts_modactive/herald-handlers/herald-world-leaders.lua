@@ -4,7 +4,7 @@
 herald-world-leaders
 ====================
 
-Tags: fort | gameplay
+Tags: unavailable
 
   Tracks world leadership positions by polling HF state each scan cycle.
 

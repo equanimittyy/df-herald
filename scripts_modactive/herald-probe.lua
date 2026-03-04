@@ -3,17 +3,19 @@
 --[====[
 herald-probe
 ============
+Tags: unavailable
+
 Debug utility for inspecting live DF data. Edit the probe code below as needed,
-then run via: herald-main probe
-Requires debug mode: herald-main debug true
+then run via: herald probe
+Requires debug mode: herald debug true
 
 Not intended for direct use.
 ]====]
 
-local main = dfhack.reqscript('herald-main')
+local main = dfhack.reqscript('herald')
 
 if not main.DEBUG then
-    dfhack.printerr('[Herald] Probe requires debug mode. Enable with: herald-main debug true')
+    dfhack.printerr('[Herald] Probe requires debug mode. Enable with: herald debug true')
     return
 end
 
