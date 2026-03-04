@@ -1187,7 +1187,7 @@ do
     end
 
     add('WAR_PEACE_ACCEPTED', function(ev, focal)
-        return peace_fn('made peace with', 'made peace with', ev, focal)
+        return peace_fn('mediated peace with', 'mediated peace with', ev, focal)
     end)
 
     add('WAR_PEACE_REJECTED', function(ev, focal)
@@ -1195,9 +1195,9 @@ do
         local dst  = safe_get(ev, 'destination')
         local src_n = ent_name_by_id(src) or 'an entity'
         local dst_n = ent_name_by_id(dst) or 'an entity'
-        if focal == src then return 'rejected peace with ' .. dst_n end
-        if focal == dst then return dst_n .. ' rejected peace offer' end
-        return src_n .. ' rejected peace with ' .. dst_n
+        if focal == src then return 'sought peace with ' .. dst_n .. ', but was rejected' end
+        if focal == dst then return 'rejected peace with ' .. src_n end
+        return 'peace talks collapsed between ' .. src_n .. ' and ' .. dst_n
     end)
 
     -- Topic agreement events (civ-level; same field layout as peace events).
@@ -1956,13 +1956,15 @@ local function format_collection_entry(col, focal_civ_id)
     if ct == _CT.WAR then
         local name = col_name()
         local opp, is_att = opponent_from_vecs()
-        if name then
-            local vs = opp and (' - war with ' .. opp) or ''
+        if name and opp then
+            local vs = is_att and (' - marched to war against ' .. opp)
+                                or (' - defended against ' .. opp)
             return name .. vs
         end
+        if name then return name end
         if opp then
-            return is_att and ('declared war on ' .. opp)
-                           or (opp .. ' declared war')
+            return is_att and ('marched to war against ' .. opp)
+                           or ('defended against ' .. opp)
         end
         return 'war'
 

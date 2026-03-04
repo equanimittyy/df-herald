@@ -19,99 +19,82 @@ if not main.DEBUG then
     return
 end
 
-print('=== START PROBE: HF-HF Link Types (Worship) ===')
+print('=== START PROBE: Peace/Agreement Events ===')
 
--- 1. Dump histfig_hf_link_type enum
-print('')
-print('--- histfig_hf_link_type enum ---')
-local ok, LT = pcall(function() return df.histfig_hf_link_type end)
-if ok and LT then
-    for i = 0, 30 do
-        local name = LT[i]
-        if name then
-            print(('  %2d = %s'):format(i, name))
-        end
-    end
-else
-    print('  NOT FOUND')
-end
-
--- 2. Scan world history for ADD/REMOVE_HF_HF_LINK events, show DEITY ones
-print('')
-print('--- ADD/REMOVE_HF_HF_LINK events (first 20 DEITY matches) ---')
+local util = dfhack.reqscript('herald-util')
 local events = df.global.world.history.events
 local ET = df.history_event_type
-local add_type = ET.ADD_HF_HF_LINK
-local rem_type = ET.REMOVE_HF_HF_LINK
-local count = 0
+
+-- Resolve type IDs (may not exist in all DFHack versions).
+local PEACE_ACCEPTED = ET['WAR_PEACE_ACCEPTED']
+local PEACE_REJECTED = ET['WAR_PEACE_REJECTED']
+local TOPIC_CONCLUDED = ET['TOPICAGREEMENT_CONCLUDED']
+local TOPIC_MADE = ET['TOPICAGREEMENT_MADE']
+local TOPIC_REJECTED = ET['TOPICAGREEMENT_REJECTED']
+
+local target_types = {}
+if PEACE_ACCEPTED then target_types[PEACE_ACCEPTED] = 'WAR_PEACE_ACCEPTED' end
+if PEACE_REJECTED then target_types[PEACE_REJECTED] = 'WAR_PEACE_REJECTED' end
+if TOPIC_CONCLUDED then target_types[TOPIC_CONCLUDED] = 'TOPICAGREEMENT_CONCLUDED' end
+if TOPIC_MADE then target_types[TOPIC_MADE] = 'TOPICAGREEMENT_MADE' end
+if TOPIC_REJECTED then target_types[TOPIC_REJECTED] = 'TOPICAGREEMENT_REJECTED' end
+
+print('Registered type IDs:')
+for id, name in pairs(target_types) do
+    print(('  %s = %d'):format(name, id))
+end
+print('')
+
+local shown = 0
 local max_show = 20
 
--- also collect all distinct link types seen across all HF-HF events
-local seen_types = {}
-
-for i = #events - 1, 0, -1 do
+for i = 0, #events - 1 do
+    if shown >= max_show then break end
     local ev = events[i]
-    local etype = ev:getType()
-    if etype == add_type or etype == rem_type then
-        local ltype = ev.type
-        local ltype_name = LT and LT[ltype] or tostring(ltype)
-        seen_types[ltype_name] = (seen_types[ltype_name] or 0) + 1
+    local ok_t, ev_type = pcall(function() return ev:getType() end)
+    if not ok_t then goto continue end
 
-        -- show DEITY-related events
-        if LT and (ltype_name == 'DEITY' or ltype_name == 'FORMER_DEITY') then
-            if count < max_show then
-                local ename = ET[etype]
-                local yr = ev.year
-                local hf = ev.hf
-                local tgt = ev.hf_target
-                -- resolve names
-                local hf_obj = df.historical_figure.find(hf)
-                local tgt_obj = df.historical_figure.find(tgt)
-                local hf_name = hf_obj and dfhack.translation.translateName(hf_obj.name, true) or '?'
-                local tgt_name = tgt_obj and dfhack.translation.translateName(tgt_obj.name, true) or '?'
-                print(('  [yr%d] %s type=%s(%d)'):format(yr, ename, ltype_name, ltype))
-                print(('         hf=%d (%s)  hf_target=%d (%s)'):format(hf, hf_name, tgt, tgt_name))
-                -- check if target is a deity
-                if tgt_obj then
-                    local flags = tgt_obj.flags
-                    local is_deity = flags and flags.deity
-                    local is_force = flags and flags.force
-                    print(('         target flags: deity=%s force=%s'):format(
-                        tostring(is_deity), tostring(is_force)))
-                end
-                count = count + 1
-            end
-        end
+    local type_name = target_types[ev_type]
+    if not type_name then goto continue end
+
+    shown = shown + 1
+    print(('--- [yr%d] event id=%d type=%s ---'):format(ev.year, ev.id, type_name))
+
+    -- source / destination fields
+    local src = util.safe_get(ev, 'source')
+    local dst = util.safe_get(ev, 'destination')
+    local topic = util.safe_get(ev, 'topic')
+
+    local function ent_info(eid)
+        if not eid or eid < 0 then return '(none)' end
+        local ent = df.historical_entity.find(eid)
+        if not ent then return ('id=%d (not found)'):format(eid) end
+        local name = dfhack.translation.translateName(ent.name, true)
+        if not name or name == '' then name = '(unnamed)' end
+        return ('id=%d (%s)'):format(eid, name)
     end
-end
 
-print('')
-print(('--- All HF-HF link types seen (across %d events scanned) ---'):format(#events))
-for name, c in pairs(seen_types) do
-    print(('  %-25s count=%d'):format(name, c))
-end
+    print(('  source:      %s'):format(ent_info(src)))
+    print(('  destination: %s'):format(ent_info(dst)))
+    print(('  topic:       %s'):format(topic and tostring(topic) or '(nil)'))
 
--- 3. Check a live HF's links for deity references
-print('')
-print('--- Sample HF deity links (first 5 HFs with deity links) ---')
-local hf_count = 0
-for i = #df.global.world.history.figures - 1, 0, -1 do
-    if hf_count >= 5 then break end
-    local hf = df.global.world.history.figures[i]
-    if hf and hf.histfig_links then
-        for j = 0, #hf.histfig_links - 1 do
-            local link = hf.histfig_links[j]
-            local cname = link._type and tostring(link._type) or '?'
-            if cname:find('Deity') or cname:find('deity') then
-                local hf_name = dfhack.translation.translateName(hf.name, true)
-                print(('  HF %d (%s) link[%d]: %s'):format(hf.id, hf_name, j, cname))
-                printall(link)
-                hf_count = hf_count + 1
-                break
-            end
+    -- Dump all fields
+    print('  All fields:')
+    pcall(function()
+        for k, v in pairs(ev) do
+            local vs = tostring(v)
+            if #vs > 80 then vs = vs:sub(1, 80) .. '...' end
+            print(('    %s = %s'):format(tostring(k), vs))
         end
-    end
+    end)
+    print('')
+
+    ::continue::
 end
 
-print('')
+if shown == 0 then
+    print('No peace/agreement events found.')
+end
+
+print(('Showed %d of max %d'):format(shown, max_show))
 print('=== END PROBE ===')
