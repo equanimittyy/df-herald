@@ -302,78 +302,103 @@ function IntervalScreen:onDismiss() -- luacheck: no unused args
 end
 
 -- Event loop ------------------------------------------------------------------
--- Handlers are initialised lazily (after world load) so DF enums are available.
--- To add a new event type: create herald-<type>.lua and register it in get_handlers().
--- To add a new poll-based tracker: register it in get_world_handlers().
+-- Handlers are loaded lazily (after world load) so DF enums are available.
+-- To add a new handler: create herald-<type>.lua, add its path to handler_paths,
+-- and export the appropriate contract fields (event_types, polls, init, reset,
+-- check_event, check_poll).
 
-local handlers       -- event-driven: { [event_type_enum] = handler_module }
-local world_handlers -- poll-based:   { [key_string] = handler_module }
+local handler_paths = {
+    'herald-handlers/herald-ind-death',
+    'herald-handlers/herald-world-leaders',
+}
 
-local function get_handlers()
-    if handlers then return handlers end
-    handlers = {
-        [df.history_event_type.HIST_FIGURE_DIED] = dfhack.reqscript('herald-handlers/herald-ind-death'),
-    }
-    dprint('Handlers registered:')
-    dprint('  HIST_FIGURE_DIED -> herald-ind-death')
-    return handlers
+local all_handlers  -- { handler_module, ... }
+local event_map     -- { [event_type] = { handler, ... } }
+local poll_list     -- { handler, ... }
+
+local function load_handlers()
+    if all_handlers then return end
+    all_handlers = {}
+    event_map = {}
+    poll_list = {}
+    for _, path in ipairs(handler_paths) do
+        local ok, h = pcall(dfhack.reqscript, path)
+        if not ok then
+            dfhack.printerr(('[Herald] Failed to load handler %s: %s'):format(path, tostring(h)))
+        else
+            table.insert(all_handlers, h)
+            if h.event_types then
+                for _, et in ipairs(h.event_types) do
+                    if not event_map[et] then event_map[et] = {} end
+                    table.insert(event_map[et], h)
+                end
+            end
+            if h.polls then
+                table.insert(poll_list, h)
+            end
+            dprint('Handler loaded: %s (events=%s polls=%s)',
+                path,
+                h.event_types and tostring(#h.event_types) or 'none',
+                h.polls and 'yes' or 'no')
+        end
+    end
 end
 
-local function get_world_handlers()
-    if world_handlers then return world_handlers end
-    world_handlers = {
-        leaders     = dfhack.reqscript('herald-handlers/herald-world-leaders'),
-        individuals = dfhack.reqscript('herald-handlers/herald-ind-death'),
-    }
-    dprint('World handlers registered:')
-    dprint('  leaders -> herald-world-leaders')
-    dprint('  individuals -> herald-ind-death')
-    return world_handlers
-end
-
--- Calls check_poll(dprint) on every poll-based world handler.
+-- Calls check_poll(dprint) on every poll-based handler.
 local function scan_world_state(dprint) -- luacheck: no redefined
-    local wh = get_world_handlers()
-    for key, handler in pairs(wh) do
-        dprint('scan_world_state: calling handler "%s"', key)
+    load_handlers()
+    for _, handler in ipairs(poll_list) do
         local ok, err = pcall(handler.check_poll, dprint)
-        if not ok then dprint('World handler "%s" error: %s', key, tostring(err)) end
+        if not ok then
+            dfhack.printerr('[Herald] Poll handler error: ' .. tostring(err))
+            dprint('Poll handler error: %s', tostring(err))
+        end
     end
 end
 
 -- Main scan loop: processes new history events then runs all world-state polls.
 -- Must reschedule itself at the end; dfhack.timeout fires once only.
--- Any early return would permanently kill the loop, so only return after rescheduling.
+-- Body is pcall-wrapped so the reschedule always fires.
 local function scan_events()
     if not dfhack.isMapLoaded() then return end
 
-    dprint('Loop triggered at tick %d; scanning from event id %d',
-        df.global.cur_year_tick, last_event_id + 1)
+    local ok, err = pcall(function()
+        dprint('Loop triggered at tick %d; scanning from event id %d',
+            df.global.cur_year_tick, last_event_id + 1)
 
-    -- events is a 0-indexed DF vector; #events gives count, events[i] is positional.
-    -- ev:getType() is a virtual method - NEVER use ev.type (doesn't exist on subtypes).
-    local events = df.global.world.history.events
-    local h = get_handlers()
-    local scanned = 0
-    for i = last_event_id + 1, #events - 1 do
-        local ok, ev = pcall(function() return events[i] end)
-        if ok and ev then
-            local ok2, ev_type = pcall(function() return ev:getType() end)
-            if ok2 then
-                local handler = h[ev_type]
-                if handler then
-                    dprint('Handler fired: event id=%d type=%s', i, tostring(ev_type))
-                    local ok3, err = pcall(handler.check_event, ev, dprint)
-                    if not ok3 then dprint('Handler error at event %d: %s', i, tostring(err)) end
+        -- events is a 0-indexed DF vector; #events gives count, events[i] is positional.
+        -- ev:getType() is a virtual method - NEVER use ev.type (doesn't exist on subtypes).
+        local events = df.global.world.history.events
+        load_handlers()
+        local scanned = 0
+        for i = last_event_id + 1, #events - 1 do
+            local ok2, ev = pcall(function() return events[i] end)
+            if ok2 and ev then
+                local ok3, ev_type = pcall(function() return ev:getType() end)
+                if ok3 then
+                    local handler_list = event_map[ev_type]
+                    if handler_list then
+                        for _, handler in ipairs(handler_list) do
+                            dprint('Handler fired: event idx=%d type=%s', i, tostring(ev_type))
+                            local ok4, herr = pcall(handler.check_event, ev, dprint)
+                            if not ok4 then
+                                dfhack.printerr('[Herald] Handler error at event ' .. i .. ': ' .. tostring(herr))
+                                dprint('Handler error at event %d: %s', i, tostring(herr))
+                            end
+                        end
+                    end
                 end
             end
+            last_event_id = i
+            scanned = scanned + 1
         end
-        last_event_id = i
-        scanned = scanned + 1
-    end
-    dprint('Loop complete; scanned %d event(s), last_event_id=%d', scanned, last_event_id)
+        dprint('Loop complete; scanned %d event(s), last_event_id=%d', scanned, last_event_id)
 
-    scan_world_state(dprint)
+        scan_world_state(dprint)
+    end)
+    if not ok then
+        dfhack.printerr('[Herald] scan_events error: ' .. tostring(err))
+    end
 
     dfhack.timeout(tick_interval, 'ticks', scan_events)
 end
@@ -388,10 +413,10 @@ local function init_scan()
     last_event_id = #df.global.world.history.events - 1  -- skip all pre-existing history
     enabled = true
     dprint('init_scan: watermark set to event id %d', last_event_id)
-    dfhack.reqscript('herald-handlers/herald-ind-death').load_pinned()
-    dprint('init_scan: pinned HF list loaded')
-    dfhack.reqscript('herald-handlers/herald-world-leaders').load_pinned_civs()
-    dprint('init_scan: pinned civ list loaded')
+    load_handlers()
+    for _, handler in ipairs(all_handlers) do
+        handler.init(dprint)
+    end
     local cache = dfhack.reqscript('herald-cache')
     cache.load_cache()
     cache.set_debug(DEBUG)
@@ -406,14 +431,14 @@ local function cleanup()
     dprint('cleanup: world unloaded, resetting state')
     last_event_id = -1
     enabled = false
-    handlers = nil  -- nil forces re-resolution of enums on next load
-    if world_handlers then
-        for key, handler in pairs(world_handlers) do
-            dprint('cleanup: resetting world handler "%s"', key)
+    if all_handlers then
+        for _, handler in ipairs(all_handlers) do
             handler.reset()
         end
-        world_handlers = nil
     end
+    all_handlers = nil
+    event_map = nil
+    poll_list = nil
     dfhack.reqscript('herald-cache').reset()
     dprint('cleanup: event cache reset')
     util.reset_recent()

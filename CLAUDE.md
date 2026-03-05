@@ -15,6 +15,7 @@ scripts_modactive/
   herald-cache.lua         ← persistent event cache (HF event counts + IDs, delta processing)
   herald-util.lua          ← shared utilities (announcements, recent history, position helpers, pin settings)
   herald-probe.lua         ← debug utility for inspecting live DF data
+  herald-handler-contract.lua ← handler contract factory (no-op defaults for all handler fields)
   herald-handlers/
     herald-ind-death.lua   ← HIST_FIGURE_DIED + poll handler for pinned individuals
     herald-world-leaders.lua ← poll-based world leader tracking [Civilisations]
@@ -24,7 +25,7 @@ scripts_modinstalled/
   herald-logo.png          ← 64x36 px sprite sheet (two 32x36 states: normal | hover)
 ```
 
-Each event type in its own `herald-<type>.lua`. Event-driven: `check(event, dprint)` via `get_handlers()`. Poll-based: `check(dprint)` + `reset()` via `get_world_handlers()`.
+Each handler in its own `herald-<type>.lua` under `herald-handlers/`. Handlers call `contract.apply(_ENV)` at the bottom and override contract fields they need. `herald.lua` registers handler paths in `handler_paths` and auto-wires based on exported fields.
 
 ## Handlers
 
@@ -43,9 +44,11 @@ Each event type in its own `herald-<type>.lua`. Event-driven: `check(event, dpri
 
 **Event loop:** `dfhack.timeout(tick_interval, 'ticks', cb)` - default 1200 ticks (1 dwarf day), min 600. Fires once only - `scan_events` must reschedule; early return kills the loop. `onStateChange`: start on `SC_MAP_LOADED`, stop on `SC_MAP_UNLOADED`. Ticks-mode timers auto-cancelled on unload.
 
-**Event scanning:** Incremental from `last_event_id + 1` (never re-scan from 0). Dispatch by `event:getType()`. Keep checks in separate scripts per event type. Implemented: `HIST_FIGURE_DIED` (`event.victim_hf`).
+**Event scanning:** Incremental from `last_event_id + 1` (never re-scan from 0). Dispatch by `event:getType()` through `event_map`. Keep checks in separate scripts per event type.
 
-**Civ polling:** `scan_world_state(dprint)` calls all `get_world_handlers()` each cycle. `herald-world-leaders.lua` snapshots `{ [entity_id] = { [assignment_id] = { hf_id, pos_name, civ_name } } }` to detect deaths/appointments.
+**Handler contract** (`herald-handler-contract.lua`): `apply(env)` installs no-op defaults for `event_types`, `polls`, `init`, `reset`, `check_event`, `check_poll`. Handlers override what they need; `herald.lua` iterates without nil checks. To add a handler: create the script, add its path to `handler_paths` in `herald.lua`, export contract fields, call `contract.apply(_ENV)` at the bottom.
+
+**Civ polling:** `scan_world_state(dprint)` calls `check_poll` on all handlers where `polls` is truthy. `herald-world-leaders.lua` snapshots `{ [entity_id] = { [assignment_id] = { hf_id, pos_name, civ_name } } }` to detect deaths/appointments.
 
 ### herald-util.lua
 

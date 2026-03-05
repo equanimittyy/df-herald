@@ -69,8 +69,6 @@ end
 -- when a pinned civ gains or loses a position holder.
 
 function check_poll(dprint)
-    dprint = dprint or function() end
-
     dprint('world-leaders.check_poll: scanning pinned entity position assignments')
 
     local new_snapshot = {}
@@ -235,7 +233,17 @@ function set_civ_pin_setting(entity_id, key, value)
     end
 end
 
--- Clears per-session snapshot on world unload (pinned list is reloaded on next load).
+-- Handler contract -------------------------------------------------------------
+
+polls = true
+
+function init(dprint)
+    load_pinned_civs()
+    dprint('world-leaders: pinned civ list loaded')
+end
+
 function reset()
     tracked_leaders = {}
 end
+
+dfhack.reqscript('herald-handler-contract').apply(_ENV)

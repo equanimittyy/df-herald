@@ -51,7 +51,6 @@ end
 -- Called by herald when a HIST_FIGURE_DIED event is dispatched.
 
 local function handle_event(event, dprint)
-    dprint = dprint or function() end
     -- HIST_FIGURE_DIED event: victim_hf is the HF ID of the deceased (not pcall-guarded
     -- because this handler only receives events of the correct type from the dispatcher).
     local hf_id = event.victim_hf
@@ -73,7 +72,6 @@ end
 -- without emitting a history event (common for off-screen/out-of-fort deaths).
 
 local function handle_poll(dprint)
-    dprint = dprint or function() end
     for hf_id in pairs(pinned_hf_ids) do
         if not announced_deaths[hf_id] then
             local hf = df.historical_figure.find(hf_id)
@@ -148,7 +146,18 @@ function set_pin_setting(hf_id, key, value)
     end
 end
 
--- Clears per-session state on world unload (pinned list is reloaded on next load).
+-- Handler contract -------------------------------------------------------------
+
+event_types = { df.history_event_type.HIST_FIGURE_DIED }
+polls = true
+
+function init(dprint)
+    load_pinned()
+    dprint('ind-death: pinned HF list loaded')
+end
+
 function reset()
     announced_deaths = {}
 end
+
+dfhack.reqscript('herald-handler-contract').apply(_ENV)
