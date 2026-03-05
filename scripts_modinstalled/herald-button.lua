@@ -80,7 +80,7 @@ HeraldButton = defclass(HeraldButton, overlay.OverlayWidget)
 HeraldButton.ATTRS{
     default_pos     = {x=10, y=1},
     default_enabled = true,
-    viewscreens     = {'dwarfmode', 'dwarfmode/', 'world/'},
+    viewscreens     = {'dwarfmode', 'dwarfmode/', 'dungeonmode', 'dungeonmode/', 'world/'},
     frame           = {w=LOGO_COLS, h=LOGO_ROWS},
 }
 
@@ -181,7 +181,7 @@ HeraldAlert = defclass(HeraldAlert, overlay.OverlayWidget)
 HeraldAlert.ATTRS{
     default_pos     = {x=1, y=5},
     default_enabled = true,
-    viewscreens     = {'dwarfmode', 'dwarfmode/', 'world/'},
+    viewscreens     = {'dwarfmode', 'dwarfmode/', 'dungeonmode', 'dungeonmode/', 'world/'},
     frame           = {w=ALERT_COLS, h=ALERT_ROWS},  -- 12x2 tiles = 96x24 px per state; PNG = 192x24 px
 }
 

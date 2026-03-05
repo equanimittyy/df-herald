@@ -91,6 +91,5 @@ After completing a substantive code editing task (not minor one-line fixes), pro
 
 ## Future (on request only)
 
-- Adventure mode handler category
 - Legendary citizen tracking
 - War progress summaries

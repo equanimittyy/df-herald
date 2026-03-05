@@ -5,7 +5,7 @@
 herald
 ======
 
-Tags: fort | gameplay
+Tags: fort | adventure | gameplay
 
 Command: "herald"
 
@@ -456,13 +456,13 @@ elseif args[1] == 'interval' then
     view = view and view:raise() or IntervalScreen{}:show()
 elseif args[1] == 'gui' then
     if not dfhack.isMapLoaded() then
-        dfhack.printerr('[Herald] A fort must be loaded to open the settings UI.')
+        dfhack.printerr('[Herald] A world must be loaded to open the settings UI.')
     else
         dfhack.reqscript('herald-gui').open_gui(args[2])
     end
 elseif args[1] == 'test' then
     if not dfhack.isMapLoaded() then
-        dfhack.printerr('[Herald] A fort must be loaded to test announcements.')
+        dfhack.printerr('[Herald] A world must be loaded to test announcements.')
     else
         util.announce_death('TEST - Death announcement (red)')
         util.announce_appointment('TEST - Appointment announcement (yellow)')
@@ -474,7 +474,7 @@ elseif args[1] == 'probe' then
     dfhack.run_script('herald-probe')
 elseif args[1] == 'cache-rebuild' then
     if not dfhack.isMapLoaded() then
-        dfhack.printerr('[Herald] A fort must be loaded to rebuild the cache.')
+        dfhack.printerr('[Herald] A world must be loaded to rebuild the cache.')
     else
         dfhack.reqscript('herald-cache').invalidate_cache()
         util.reset_recent()
