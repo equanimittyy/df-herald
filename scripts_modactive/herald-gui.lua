@@ -1043,7 +1043,7 @@ function RecentPanel:refresh_list()
     self.subviews.empty_label.visible = false
     local choices = {}
     local TIMESTAMP_WIDTH = 20
-    local MSG_WIDTH = 74 - TIMESTAMP_WIDTH
+    local MSG_WIDTH = 50
     for _, entry in ipairs(entries) do
         local timestamp = ('Year %d, %s'):format(entry.year, entry.season)
         if #choices > 0 then
