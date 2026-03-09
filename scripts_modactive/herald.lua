@@ -310,6 +310,7 @@ end
 local handler_paths = {
     'herald-handlers/herald-ind-death',
     'herald-handlers/herald-ind-combat',
+    'herald-handlers/herald-ind-skills',
     'herald-handlers/herald-world-leaders',
 }
 
@@ -415,6 +416,8 @@ local function init_scan()
     enabled = true
     dprint('init_scan: watermark set to event id %d', last_event_id)
     load_handlers()
+    local pins = dfhack.reqscript('herald-pins')
+    pins.load_pinned()
     for _, handler in ipairs(all_handlers) do
         handler.init(dprint)
     end

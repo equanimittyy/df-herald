@@ -172,6 +172,14 @@ end
 
 -- HF / entity helpers ---------------------------------------------------------
 
+-- Returns the translated name for a historical figure, or its numeric ID as fallback.
+function hf_name(hf_id)
+    local hf = df.historical_figure.find(hf_id)
+    if not hf then return tostring(hf_id) end
+    local translated = dfhack.translation.translateName(hf.name, true)
+    return (translated and translated ~= '') and translated or tostring(hf_id)
+end
+
 -- An HF is alive when neither died_year nor died_seconds has been set.
 -- The game may set these directly without generating a HIST_FIGURE_DIED event,
 -- which is why poll-based handlers check these fields directly.

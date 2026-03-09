@@ -126,8 +126,7 @@ event_types = { df.history_event_type.HIST_FIGURE_DIED, df.history_event_type.BO
 polls = true
 
 function init(dprint)
-    pins.load_pinned()
-    dprint('ind-death: pinned HF list loaded')
+    dprint('ind-death: handler initialised')
 end
 
 function reset()

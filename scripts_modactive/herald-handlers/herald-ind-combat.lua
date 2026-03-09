@@ -36,8 +36,7 @@ local wound_baselines = {}
 -- Helpers ---------------------------------------------------------------------
 
 local function hf_name(hf_id)
-    local hf = df.historical_figure.find(hf_id)
-    return hf and dfhack.translation.translateName(hf.name, true) or tostring(hf_id)
+    return util.hf_name(hf_id)
 end
 
 local function site_name(site_id)
@@ -502,7 +501,6 @@ polls = true
 
 function init(dprint)
     register_dispatch()
-    pins.load_pinned()
     combat_baselines = {}
     kill_baselines = {}
     wound_baselines = {}

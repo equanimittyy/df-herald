@@ -541,7 +541,7 @@ local INDIVIDUALS_ANN = {
     { key = 'relationships', label = 'Relationships', caption = 'HF bonds',  impl = false },
     { key = 'death',         label = 'Death',         caption = 'Pinned HF dies',       impl = true  },
     { key = 'combat',        label = 'Combat',        caption = 'Battles, duels etc.',      impl = true },
-    { key = 'legendary',     label = 'Legendary',     caption = 'Attained Legendary',     impl = false },
+    { key = 'legendary',     label = 'Legendary',     caption = 'Gained Legendary skills',     impl = true  },
     { key = 'positions',     label = 'Positions',     caption = 'Title gained/lost',    impl = false },
     { key = 'migration',     label = 'Migration',     caption = 'Moves settlement',     impl = false },
 }
