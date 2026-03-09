@@ -217,8 +217,8 @@ end
 
 function HeraldAlert:render(dc)
     if not dfhack.isMapLoaded() then return end
-    local util = dfhack.reqscript('herald-util')
-    if not util.has_unread then return end
+    local ok, util = pcall(dfhack.reqscript, 'herald-util')
+    if not ok or not util.has_unread then return end
     HeraldAlert.super.render(self, dc)
 end
 

@@ -3,7 +3,7 @@
 --[====[
 herald-util
 ===========
-Tags: unavailable
+Tags: dev
 
   Shared utility functions for the Herald mod. Used by herald,
   herald-handlers, herald-gui, and herald-event-history to avoid
@@ -108,6 +108,11 @@ end
 -- Position vacated by a living HF (white).
 function announce_vacated(msg)
     push_recent(msg, COLOR_WHITE)
+end
+
+-- Combat event involving a tracked individual (light red).
+function announce_combat(msg)
+    push_recent(msg, COLOR_LIGHTRED)
 end
 
 -- General informational message (cyan).

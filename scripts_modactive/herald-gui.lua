@@ -3,7 +3,7 @@
 --[====[
 herald-gui
 ==========
-Tags: unavailable
+Tags: dev
 
   Settings UI for the Herald mod. Open with "herald gui" or Alt-H.
 
@@ -13,7 +13,7 @@ Not intended for direct use.
 local gui         = require('gui')
 local widgets     = require('gui.widgets')
 local util        = dfhack.reqscript('herald-util')
-local ind_death   = dfhack.reqscript('herald-handlers/herald-ind-death')
+local pins        = dfhack.reqscript('herald-pins')
 local wld_leaders = dfhack.reqscript('herald-handlers/herald-world-leaders')
 local ev_hist     = dfhack.reqscript('herald-event-history')
 local cache       = dfhack.reqscript('herald-cache')
@@ -84,7 +84,7 @@ end
 -- Column widths: Name=22, Race=12, Civ=20, Status=7, Events=remaining.
 local function build_choices(show_dead, show_pinned_only)
     local choices = {}
-    local pinned = ind_death.get_pinned()
+    local pinned = pins.get_pinned()
     local event_counts = build_hf_event_counts()
     for _, hf in ipairs(df.global.world.history.figures) do
         local is_dead = hf.died_year ~= -1
@@ -357,7 +357,7 @@ function FiguresPanel:init()
         },
         widgets.Label{
             frame = { t = 27, l = 0, r = 0, h = 1 },
-            text  = { { text = string.rep('\xc4', 74), pen = COLOR_GREY } },
+            text  = { { text = string.rep('-', 74), pen = COLOR_GREY } },
         },
         widgets.List{
             view_id   = 'detail_panel',
@@ -458,7 +458,7 @@ function FiguresPanel:update_detail(choice)
         self.subviews.detail_panel:setChoices({})
         return
     end
-    local pinned  = ind_death.get_pinned()
+    local pinned  = pins.get_pinned()
     local name    = dfhack.translation.translateName(hf.name, true) -- luacheck: ignore 311
     if name == '' then name = '(unnamed)' end
     local race    = util.get_race_name(hf)
@@ -510,9 +510,9 @@ function FiguresPanel:toggle_pinned(choice)
     local hf_id    = choice.hf_id
     local hf       = df.historical_figure.find(hf_id)
     if not hf then return end
-    local pinned   = ind_death.get_pinned()
+    local pinned   = pins.get_pinned()
     local now_pinned = not pinned[hf_id]
-    ind_death.set_pinned(hf_id, now_pinned or nil)
+    pins.set_pinned(hf_id, now_pinned or nil)
     local name = dfhack.translation.translateName(hf.name, true)
     if name == '' then name = '(unnamed)' end
     print(('[Herald] %s (id %d) is %s pinned.'):format(
@@ -540,7 +540,7 @@ end
 local INDIVIDUALS_ANN = {
     { key = 'relationships', label = 'Relationships', caption = 'HF bonds',  impl = false },
     { key = 'death',         label = 'Death',         caption = 'Pinned HF dies',       impl = true  },
-    { key = 'combat',        label = 'Combat',        caption = 'Battles, duels etc.',      impl = false },
+    { key = 'combat',        label = 'Combat',        caption = 'Battles, duels etc.',      impl = true },
     { key = 'legendary',     label = 'Legendary',     caption = 'Attained Legendary',     impl = false },
     { key = 'positions',     label = 'Positions',     caption = 'Title gained/lost',    impl = false },
     { key = 'migration',     label = 'Migration',     caption = 'Moves settlement',     impl = false },
@@ -582,7 +582,7 @@ function PinnedPanel:init()
                 on_change      = e.impl and function(new_val)
                     if not self.selected_id then return end
                     if self.view_type == 'individuals' then
-                        ind_death.set_pin_setting(self.selected_id, e.key, new_val)
+                        pins.set_pin_setting(self.selected_id, e.key, new_val)
                     else
                         wld_leaders.set_civ_pin_setting(self.selected_id, e.key, new_val)
                     end
@@ -655,7 +655,7 @@ function PinnedPanel:init()
         -- Full-width separator
         widgets.Label{
             frame = { t = 2, l = 0, r = 0, h = 1 },
-            text  = { { text = string.rep('\xc4', 74), pen = COLOR_GREY } },
+            text  = { { text = string.rep('-', 74), pen = COLOR_GREY } },
         },
         -- Pinned figure / civ list
         widgets.List{
@@ -747,7 +747,7 @@ function PinnedPanel:_update_right_panel(name, pin_id)
     -- Update toggle option_idx values
     local settings = nil
     if pin_id then
-        settings = is_ind and ind_death.get_pin_settings(pin_id)
+        settings = is_ind and pins.get_pin_settings(pin_id)
                            or wld_leaders.get_civ_pin_settings(pin_id)
     end
     for _, e in ipairs(entries) do
@@ -786,7 +786,7 @@ end
 function PinnedPanel:refresh_pinned_list()
     local choices = {}
     if self.view_type == 'individuals' then
-        local pinned = ind_death.get_pinned()
+        local pinned = pins.get_pinned()
         local hf_list = {}
         for hf_id in pairs(pinned) do
             local hf = df.historical_figure.find(hf_id)
@@ -868,7 +868,7 @@ function PinnedPanel:unpin_selected()
     if not choice then return end
     if self.view_type == 'individuals' then
         if not choice.hf_id then return end
-        ind_death.set_pinned(choice.hf_id, nil)
+        pins.set_pinned(choice.hf_id, nil)
     else
         if not choice.entity_id then return end
         wld_leaders.set_pinned_civ(choice.entity_id, nil)
@@ -1005,7 +1005,7 @@ function RecentPanel:init()
         },
         widgets.Label{
             frame = { t = 1, l = 0, r = 0, h = 1 },
-            text  = { { text = string.rep('\xc4', 74), pen = COLOR_GREY } },
+            text  = { { text = string.rep('-', 74), pen = COLOR_GREY } },
         },
         widgets.List{
             view_id = 'recent_list',
@@ -1042,17 +1042,42 @@ function RecentPanel:refresh_list()
     end
     self.subviews.empty_label.visible = false
     local choices = {}
+    local TIMESTAMP_WIDTH = 20
+    local MSG_WIDTH = 74 - TIMESTAMP_WIDTH
     for _, entry in ipairs(entries) do
         local timestamp = ('Year %d, %s'):format(entry.year, entry.season)
         if #choices > 0 then
             table.insert(choices, { text = '' })
         end
+        -- Word-wrap long messages across multiple lines
+        local lines = {}
+        local remaining = entry.msg
+        while #remaining > MSG_WIDTH do
+            -- Find last space within the width limit
+            local break_at = remaining:sub(1, MSG_WIDTH):match('.*()%s')
+            if not break_at or break_at <= 1 then
+                break_at = MSG_WIDTH  -- no space found, hard break
+            end
+            table.insert(lines, remaining:sub(1, break_at - 1))
+            remaining = remaining:sub(break_at + 1)
+        end
+        table.insert(lines, remaining)
+        -- First line gets the timestamp
         table.insert(choices, {
             text = {
                 { text = ('%-20s'):format(timestamp), pen = COLOR_GREY },
-                { text = entry.msg, pen = entry.color },
+                { text = lines[1], pen = entry.color },
             },
         })
+        -- Continuation lines indented to align
+        for li = 2, #lines do
+            table.insert(choices, {
+                text = {
+                    { text = string.rep(' ', TIMESTAMP_WIDTH) },
+                    { text = lines[li], pen = entry.color },
+                },
+            })
+        end
     end
     self.subviews.recent_list:setChoices(choices)
 end

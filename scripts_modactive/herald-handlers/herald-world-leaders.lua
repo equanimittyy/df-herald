@@ -4,7 +4,7 @@
 herald-world-leaders
 ====================
 
-Tags: unavailable
+Tags: dev
 
   Tracks world leadership positions by polling HF state each scan cycle.
 

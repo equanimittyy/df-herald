@@ -309,6 +309,7 @@ end
 
 local handler_paths = {
     'herald-handlers/herald-ind-death',
+    'herald-handlers/herald-ind-combat',
     'herald-handlers/herald-world-leaders',
 }
 

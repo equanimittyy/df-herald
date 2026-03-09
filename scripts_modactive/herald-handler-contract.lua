@@ -4,7 +4,7 @@
 herald-handler-contract
 =======================
 
-Tags: unavailable
+Tags: dev
 
   Installs no-op defaults for the Herald handler contract into a module env.
 

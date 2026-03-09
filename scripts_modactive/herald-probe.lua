@@ -3,7 +3,7 @@
 --[====[
 herald-probe
 ============
-Tags: unavailable
+Tags: dev
 
 Debug utility for inspecting live DF data. Edit the probe code below as needed,
 then run via: herald probe
@@ -19,82 +19,218 @@ if not main.DEBUG then
     return
 end
 
-print('=== START PROBE: Peace/Agreement Events ===')
+-- ============================================================
+-- PROBE: Unit kill counter via HF info.kills
+-- Goal: verify field paths for per-unit kill data
+--   hf.info.kills -> historical_kills struct
+--   .events       -> vector of event IDs (HF death events where this HF was slayer)
+--   .killed_race  -> vector of int16 (creature_raw index, parallel to killed_count)
+--   .killed_caste -> vector of int16 (parallel)
+--   .killed_count -> vector of int32 (kill count per race slot)
+--   .killed_site  -> vector of site IDs
+--   .killed_region/.killed_underground_region -> location vecs
+--   .killed_undead -> bitfield vec
+-- Also: HIST_FIGURE_DIED event fields including slayer_hf
+-- ============================================================
 
-local util = dfhack.reqscript('herald-util')
+print('=== START PROBE: unit kill counter via hf.info.kills ===')
+print('')
+
+-- ----------------------------------------------------------------
+-- 1. Find a unit with a non-trivial kill record
+--    Try: find any HF who appears as slayer_hf in recent HIST_FIGURE_DIED events
+-- ----------------------------------------------------------------
+print('--- 1. Scan HIST_FIGURE_DIED events for slayer_hf ---')
 local events = df.global.world.history.events
-local ET = df.history_event_type
+local n_events = #events
+local sample_slayer_hf_id = -1
+local sample_victim_hf_id = -1
+local count_died = 0
 
--- Resolve type IDs (may not exist in all DFHack versions).
-local PEACE_ACCEPTED = ET['WAR_PEACE_ACCEPTED']
-local PEACE_REJECTED = ET['WAR_PEACE_REJECTED']
-local TOPIC_CONCLUDED = ET['TOPICAGREEMENT_CONCLUDED']
-local TOPIC_MADE = ET['TOPICAGREEMENT_MADE']
-local TOPIC_REJECTED = ET['TOPICAGREEMENT_REJECTED']
+-- Walk backwards through last 500 events
+local start_i = math.max(0, n_events - 500)
+for i = n_events - 1, start_i, -1 do
+    local ev = events[i]
+    if not ev then goto cont_ev end
+    local ok_t, t = pcall(function() return ev:getType() end)
+    if not ok_t then goto cont_ev end
+    if df.history_event_type[t] == 'HIST_FIGURE_DIED' then
+        count_died = count_died + 1
+        local ok_s, sid = pcall(function() return ev.slayer_hf end)
+        local ok_v, vid = pcall(function() return ev.victim_hf end)
+        if ok_s and sid and sid >= 0 and sample_slayer_hf_id < 0 then
+            sample_slayer_hf_id = sid
+            sample_victim_hf_id = (ok_v and vid) or -1
+            -- Dump all fields of this event
+            print(('  Sample HIST_FIGURE_DIED event[%d] id=%d:'):format(i, ev.id))
+            pcall(function()
+                for k, v in pairs(ev) do
+                    print(('    %s = %s'):format(tostring(k), tostring(v)))
+                end
+            end)
+        end
+        if count_died >= 20 then break end
+    end
+    ::cont_ev::
+end
+print(('  Found %d HIST_FIGURE_DIED events in last 500. Sample slayer_hf=%d victim_hf=%d'):format(
+    count_died, sample_slayer_hf_id, sample_victim_hf_id))
+print('')
 
-local target_types = {}
-if PEACE_ACCEPTED then target_types[PEACE_ACCEPTED] = 'WAR_PEACE_ACCEPTED' end
-if PEACE_REJECTED then target_types[PEACE_REJECTED] = 'WAR_PEACE_REJECTED' end
-if TOPIC_CONCLUDED then target_types[TOPIC_CONCLUDED] = 'TOPICAGREEMENT_CONCLUDED' end
-if TOPIC_MADE then target_types[TOPIC_MADE] = 'TOPICAGREEMENT_MADE' end
-if TOPIC_REJECTED then target_types[TOPIC_REJECTED] = 'TOPICAGREEMENT_REJECTED' end
+-- ----------------------------------------------------------------
+-- 2. Inspect hf.info.kills for the sample slayer
+-- ----------------------------------------------------------------
+print('--- 2. hf.info.kills struct for slayer_hf ---')
+if sample_slayer_hf_id >= 0 then
+    local hf = df.historical_figure.find(sample_slayer_hf_id)
+    if not hf then
+        print('  hf not found')
+    else
+        local hf_name = '?'
+        pcall(function() hf_name = dfhack.translation.translateName(hf.name, true) end)
+        print(('  HF id=%d name="%s"'):format(sample_slayer_hf_id, hf_name))
 
-print('Registered type IDs:')
-for id, name in pairs(target_types) do
-    print(('  %s = %d'):format(name, id))
+        -- hf.info
+        local ok_info, info = pcall(function() return hf.info end)
+        if not ok_info or not info then
+            print('  hf.info: nil or error - kills not populated for this HF')
+        else
+            print('  hf.info fields:')
+            pcall(function()
+                for k, v in pairs(info) do
+                    print(('    info.%s = %s'):format(tostring(k), tostring(v)))
+                end
+            end)
+
+            -- hf.info.kills
+            local ok_k, kills = pcall(function() return info.kills end)
+            if not ok_k or not kills then
+                print('  hf.info.kills: nil (this HF has no kill profile)')
+            else
+                print('  hf.info.kills fields:')
+                pcall(function()
+                    for k, v in pairs(kills) do
+                        print(('    kills.%s = %s'):format(tostring(k), tostring(v)))
+                    end
+                end)
+
+                -- killed_count (aggregated by race)
+                local ok_kc, kc = pcall(function() return kills.killed_count end)
+                if ok_kc and kc then
+                    local total = 0
+                    for j = 0, #kc - 1 do
+                        local ok_n, n = pcall(function() return kc[j] end)
+                        if ok_n and n then total = total + n end
+                    end
+                    print(('  kills.killed_count: #=%d, total=%d'):format(#kc, total))
+                    -- Print first 5 race/count pairs
+                    local ok_kr, kr = pcall(function() return kills.killed_race end)
+                    for j = 0, math.min(#kc - 1, 4) do
+                        local ok_n, n = pcall(function() return kc[j] end)
+                        local race_id = -1
+                        if ok_kr and kr then
+                            local ok_r, r = pcall(function() return kr[j] end)
+                            if ok_r then race_id = r end
+                        end
+                        local race_name = '?'
+                        if race_id >= 0 then
+                            local ok_rn, rn = pcall(function()
+                                return df.global.world.raws.creatures.all[race_id].name[0]
+                            end)
+                            if ok_rn then race_name = rn end
+                        end
+                        print(('    [%d] race_id=%d (%s) count=%s'):format(
+                            j, race_id, race_name,
+                            ok_n and tostring(n) or '?'))
+                    end
+                end
+
+                -- events vector (HF death events where this HF was slayer)
+                local ok_ev, ev_ids = pcall(function() return kills.events end)
+                if ok_ev and ev_ids then
+                    print(('  kills.events: #=%d'):format(#ev_ids))
+                    for j = 0, math.min(#ev_ids - 1, 3) do
+                        local ok_eid, eid = pcall(function() return ev_ids[j] end)
+                        if ok_eid and eid then
+                            print(('    events[%d] = event_id %d'):format(j, eid))
+                            local ok_de, de = pcall(function() return df.history_event.find(eid) end)
+                            if ok_de and de then
+                                local ok_tt, tt = pcall(function()
+                                    return df.history_event_type[de:getType()]
+                                end)
+                                local ok_vhf, vhf = pcall(function() return de.victim_hf end)
+                                print(('      type=%s victim_hf=%s'):format(
+                                    ok_tt and tt or '?',
+                                    ok_vhf and tostring(vhf) or '?'))
+                            end
+                        end
+                    end
+                end
+            end
+        end
+    end
+else
+    print('  No HIST_FIGURE_DIED events with slayer_hf found in last 500 events.')
+    print('  Trying: find any HF with info.kills populated...')
+    -- Brute force scan first 50 HFs
+    local figs = df.global.world.history.figures
+    local found = 0
+    for i = 0, math.min(#figs - 1, 200) do
+        if found >= 1 then break end
+        local hf = figs[i]
+        if not hf then goto cont_hf end
+        local ok_k, k = pcall(function() return hf.info and hf.info.kills end)
+        if ok_k and k then
+            local ok_kc, kc = pcall(function() return k.killed_count end)
+            if ok_kc and kc and #kc > 0 then
+                found = found + 1
+                local hf_name = '?'
+                pcall(function() hf_name = dfhack.translation.translateName(hf.name, true) end)
+                print(('  HF id=%d name="%s" has kills.killed_count #=%d'):format(
+                    hf.id, hf_name, #kc))
+                -- Show kills fields
+                for k2, v2 in pairs(k) do
+                    print(('    kills.%s = %s'):format(tostring(k2), tostring(v2)))
+                end
+            end
+        end
+        ::cont_hf::
+    end
+    if found == 0 then
+        print('  No HF with kills found in first 200 HFs. May need a more developed world.')
+    end
 end
 print('')
 
-local shown = 0
-local max_show = 20
-
-for i = 0, #events - 1 do
-    if shown >= max_show then break end
-    local ev = events[i]
-    local ok_t, ev_type = pcall(function() return ev:getType() end)
-    if not ok_t then goto continue end
-
-    local type_name = target_types[ev_type]
-    if not type_name then goto continue end
-
-    shown = shown + 1
-    print(('--- [yr%d] event id=%d type=%s ---'):format(ev.year, ev.id, type_name))
-
-    -- source / destination fields
-    local src = util.safe_get(ev, 'source')
-    local dst = util.safe_get(ev, 'destination')
-    local topic = util.safe_get(ev, 'topic')
-
-    local function ent_info(eid)
-        if not eid or eid < 0 then return '(none)' end
-        local ent = df.historical_entity.find(eid)
-        if not ent then return ('id=%d (not found)'):format(eid) end
-        local name = dfhack.translation.translateName(ent.name, true)
-        if not name or name == '' then name = '(unnamed)' end
-        return ('id=%d (%s)'):format(eid, name)
-    end
-
-    print(('  source:      %s'):format(ent_info(src)))
-    print(('  destination: %s'):format(ent_info(dst)))
-    print(('  topic:       %s'):format(topic and tostring(topic) or '(nil)'))
-
-    -- Dump all fields
-    print('  All fields:')
-    pcall(function()
-        for k, v in pairs(ev) do
-            local vs = tostring(v)
-            if #vs > 80 then vs = vs:sub(1, 80) .. '...' end
-            print(('    %s = %s'):format(tostring(k), vs))
+-- ----------------------------------------------------------------
+-- 3. Verify: use dfhack.units.getKillCount() if available
+-- ----------------------------------------------------------------
+print('--- 3. dfhack.units.getKillCount check ---')
+local ok_gkc = pcall(function()
+    local fn = dfhack.units.getKillCount
+    if fn then
+        print('  dfhack.units.getKillCount exists')
+        local active = df.global.world.units.active
+        local found_any = false
+        for i = 0, math.min(#active - 1, 30) do
+            local u = active[i]
+            if u then
+                local ok_kn, kn = pcall(fn, u)
+                if ok_kn and kn and kn > 0 then
+                    local uname = '?'
+                    pcall(function() uname = dfhack.translation.translateName(u.name, true) end)
+                    print(('  unit id=%d name="%s" getKillCount=%d'):format(u.id, uname, kn))
+                    found_any = true
+                    break
+                end
+            end
         end
-    end)
-    print('')
+        if not found_any then print('  No active unit with kills > 0 in first 30.') end
+    else
+        print('  dfhack.units.getKillCount: not available in this DFHack version')
+    end
+end)
+if not ok_gkc then print('  dfhack.units.getKillCount: error on access') end
+print('')
 
-    ::continue::
-end
-
-if shown == 0 then
-    print('No peace/agreement events found.')
-end
-
-print(('Showed %d of max %d'):format(shown, max_show))
 print('=== END PROBE ===')

@@ -3,7 +3,7 @@
 --[====[
 herald-event-history
 ====================
-Tags: unavailable
+Tags: dev
 
   Event history subsystem for the Herald mod. Provides world-history event collection,
   description formatting, and the Event History popup screen for historical figures.

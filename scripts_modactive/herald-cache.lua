@@ -3,7 +3,7 @@
 --[====[
 herald-cache
 ============
-Tags: unavailable
+Tags: dev
 
   Persistent event cache for the Herald mod. Caches event-to-HF mappings in
   the save file so the expensive full scan only runs once per save. Subsequent
@@ -81,8 +81,12 @@ function load_cache()
     last_cached_collection_idx = -1
 
     local ok, site_data = pcall(dfhack.persistent.getSiteData, PERSIST_KEY)
-    if not ok or type(site_data) ~= 'table' then
-        dprint('load_cache: no saved data found, cache empty')
+    if not ok then
+        dfhack.printerr(('[Herald Cache] load_cache read error: %s'):format(tostring(site_data)))
+        return
+    end
+    if type(site_data) ~= 'table' then
+        dprint('load_cache: no saved data found (got %s), cache empty', type(site_data))
         return
     end
     if site_data.version ~= CACHE_VERSION then
@@ -180,7 +184,10 @@ function save_cache()
         civ_collection_ids    = stringify_keys(civ_collection_ids or {}),
         civ_event_counts      = stringify_keys(civ_event_counts or {}),
     }
-    pcall(dfhack.persistent.saveSiteData, PERSIST_KEY, data)
+    local ok, err = pcall(dfhack.persistent.saveSiteData, PERSIST_KEY, data)
+    if not ok then
+        dfhack.printerr(('[Herald Cache] save_cache FAILED: %s'):format(tostring(err)))
+    end
 end
 
 function invalidate_cache()
