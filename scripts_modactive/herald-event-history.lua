@@ -1711,7 +1711,7 @@ local function describe_collection(col, skip_site)
     elseif ct == _CT.BEAST_ATTACK then
         -- attacker_hf is a vector (confirmed via probe)
         local ok_b, bv = pcall(function() return col.attacker_hf end)
-        local beast = (ok_b and #bv > 0) and hf_name_by_id(bv[0]) or 'a beast'
+        local beast = (ok_b and bv and #bv > 0) and hf_name_by_id(bv[0]) or 'a beast'
         local site  = not skip_site and site_name_by_id(safe_get(col, 'site'))
         local loc   = site and (' on ' .. site) or ''
         return 'during the rampage' .. loc .. ' by ' .. beast

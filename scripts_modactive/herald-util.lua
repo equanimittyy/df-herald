@@ -261,6 +261,15 @@ end
 
 -- HF / entity helpers ---------------------------------------------------------
 
+-- Returns the translated name for a historical entity, or numeric fallback.
+function ent_name(entity_id)
+    if not entity_id or entity_id < 0 then return 'an unknown civilisation' end
+    local entity = df.historical_entity.find(entity_id)
+    if not entity then return 'entity ' .. entity_id end
+    local name = dfhack.translation.translateName(entity.name, true)
+    return (name and name ~= '') and name or ('entity ' .. entity_id)
+end
+
 -- Returns the translated name for a historical figure, or its numeric ID as fallback.
 function hf_name(hf_id)
     local hf = df.historical_figure.find(hf_id)

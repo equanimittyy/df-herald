@@ -153,9 +153,10 @@ DEBUG = DEBUG or false
 -- These control whether an event category is tracked at all.
 local DEFAULT_ANNOUNCEMENTS = {
     individuals   = { relationships = true, death = true, combat = true,
-                      legendary = true, positions = true, migration = true },
+                      artifacts = true, legendary = true, positions = true,
+                      migration = true },
     civilisations = { positions = true, diplomacy = true, warfare = true,
-                      espionage = true },
+                      rampages = true, espionage = true },
 }
 
 -- Merges saved announcement config over defaults; fills any missing keys.
@@ -512,6 +513,8 @@ elseif args[1] == 'test' then
         util.announce_diplomacy('The Kingdoms of Quill has accepted peace with The Dagger Empire.')
         util.announce_war('The Kingdoms of Quill has declared war on The Dagger Empire!')
         util.announce_espionage('Swordtown was robbed by The Dagger Empire!')
+        util.announce_artifact('Urist McSmith created Daggerblaze, a steel short sword!')
+        util.announce_rampage('Thad Feraltorches the Chartreuse rampaged at Lancescoured!')
         print('[Herald] Test announcements fired.')
     end
 elseif args[1] == 'probe' then

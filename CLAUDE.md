@@ -78,7 +78,7 @@ Shared module, all exports non-local at module scope.
 - **Unit iteration:** `for_each_pinned_unit(pinned, callback)` — walks `units.active`, yields `(unit, hf_id, settings)` per pinned HF. Used by handler init baselines and polls.
 - **Recent history:** `RECENT_PERSIST_KEY`, `MAX_RECENT=20`, `has_unread` (exported bool). `load_recent()`/`save_recent()`/`reset_recent()`/`get_recent_announcements()`/`clear_unread()`
 - **Position helpers:** `name_str(field)` normalises stl-string/string[] to string; `get_pos_name(entity, pos_id, hf_sex)` returns gendered title
-- **HF/entity:** `is_alive(hf)`, `get_race_name(hf)`, `get_entity_race_name(entity)`, `deepcopy(t)`, `safe_get(obj, field)`
+- **HF/entity:** `ent_name(entity_id)`, `hf_name(hf_id)`, `is_alive(hf)`, `get_race_name(hf)`, `get_entity_race_name(entity)`, `deepcopy(t)`, `safe_get(obj, field)`
 - **Site helpers:** `site_name(site_id)` returns translated site name; `site_owner_civ(site_id)` resolves site -> owning Civilization via SiteGov entity_links, falls back to `civ_id`
 - **Entity population:** `get_entpop_to_civ()` (lazy cached map), `entpop_vec_has_civ(col, field, civ_id, ep_map)`, `reset_entpop_cache()`
 - **Pin settings** (here to avoid circular deps): `INDIVIDUAL_SETTINGS_KEYS` = `{relationships, death, combat, artifacts, legendary, positions, migration}`, `CIVILISATION_SETTINGS_KEYS` = `{positions, diplomacy, warfare, rampages, espionage}`, `default_pin_settings()`/`default_civ_pin_settings()` (all true), `merge_pin_settings(saved)`/`merge_civ_pin_settings(saved)`

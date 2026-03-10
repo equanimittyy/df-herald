@@ -19,17 +19,6 @@ local civ_pins = dfhack.reqscript('herald-civ-pins')
 -- Collection IDs already seen; persistent until world unload.
 local known_collections = {}
 
--- Helpers ---------------------------------------------------------------------
-
--- Translated entity name, or numeric fallback.
-local function ent_name(entity_id)
-    if not entity_id or entity_id < 0 then return 'an unknown civilisation' end
-    local entity = df.historical_entity.find(entity_id)
-    if not entity then return 'entity ' .. entity_id end
-    local name = dfhack.translation.translateName(entity.name, true)
-    return (name and name ~= '') and name or ('entity ' .. entity_id)
-end
-
 -- Collection polling ----------------------------------------------------------
 
 -- Collection type enum cache.
@@ -57,7 +46,7 @@ local function handle_theft_collection(col, dprint)
 
     -- Check thief side
     if thief_civ and pinned_civs[thief_civ] and pinned_civs[thief_civ].espionage then
-        local msg = ('%s carried out theft from %s!'):format(ent_name(thief_civ), site_str)
+        local msg = ('%s carried out theft from %s!'):format(util.ent_name(thief_civ), site_str)
         dprint('world-espionage: THEFT collection %d (thief) - %s', col.id, msg)
         util.announce_espionage(msg)
         return
@@ -65,7 +54,7 @@ local function handle_theft_collection(col, dprint)
 
     -- Check victim side
     if victim_civ and pinned_civs[victim_civ] and pinned_civs[victim_civ].espionage then
-        local by = thief_civ and (' by ' .. ent_name(thief_civ)) or ''
+        local by = thief_civ and (' by ' .. util.ent_name(thief_civ)) or ''
         local msg = ('%s was robbed%s!'):format(site_str, by)
         dprint('world-espionage: THEFT collection %d (victim) - %s', col.id, msg)
         util.announce_espionage(msg)
@@ -102,7 +91,7 @@ local function handle_abduction_collection(col, dprint)
     -- Check attacker side
     if att_civ and pinned_civs[att_civ] and pinned_civs[att_civ].espionage then
         local msg = ('%s carried out abductions from %s!'):format(
-            ent_name(att_civ), site_str)
+            util.ent_name(att_civ), site_str)
         dprint('world-espionage: ABDUCTION collection %d (attacker) - %s', col.id, msg)
         util.announce_espionage(msg)
         return

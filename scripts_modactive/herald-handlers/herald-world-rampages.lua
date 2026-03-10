@@ -16,26 +16,22 @@ Not intended for direct use.
 local util = dfhack.reqscript('herald-util')
 local civ_pins = dfhack.reqscript('herald-civ-pins')
 
--- Collection IDs already seen; persistent until world unload.
+-- High-water mark: all collections at or below this ID existed at map load.
+local baseline_max_id = -1
+-- Collections seen since load (only new ones go here).
 local known_collections = {}
 
 -- Helpers -------------------------------------------------------------------
 
-local function ent_name(entity_id)
-    if not entity_id or entity_id < 0 then return 'an unknown civilisation' end
-    local entity = df.historical_entity.find(entity_id)
-    if not entity then return 'entity ' .. entity_id end
-    local name = dfhack.translation.translateName(entity.name, true)
-    return (name and name ~= '') and name or ('entity ' .. entity_id)
-end
-
 -- Collection type enum cache.
 local CT = {}
 do
-    local ok, v = pcall(function()
-        return df.history_event_collection_type.BEAST_ATTACK
-    end)
-    if ok and v ~= nil then CT.BEAST_ATTACK = v end
+    for _, name in ipairs({'BEAST_ATTACK'}) do
+        local ok, v = pcall(function()
+            return df.history_event_collection_type[name]
+        end)
+        if ok and v ~= nil then CT[name] = v end
+    end
 end
 
 -- Collection handling -------------------------------------------------------
@@ -95,6 +91,8 @@ local function scan_collections(dprint)
         local ok2, col = pcall(function() return all[i] end)
         if not ok2 or not col then goto continue end
 
+        -- Skip everything at or below the baseline
+        if col.id <= baseline_max_id then goto continue end
         if known_collections[col.id] then goto continue end
 
         local ok3, ct = pcall(function() return col:getType() end)
@@ -118,7 +116,7 @@ end
 
 polls = true
 
--- Baseline all existing collections at map load.
+-- Record the highest BEAST_ATTACK collection ID at map load.
 local function baseline_collections(dprint)
     local ok_all, all = pcall(function()
         return df.global.world.history.event_collections.all
@@ -131,21 +129,23 @@ local function baseline_collections(dprint)
         if ok2 and col then
             local ok3, ct = pcall(function() return col:getType() end)
             if ok3 and ct == CT.BEAST_ATTACK then
-                known_collections[col.id] = true
+                if col.id > baseline_max_id then baseline_max_id = col.id end
                 count = count + 1
             end
         end
     end
-    dprint('world-rampages.init: baseline %d existing collections', count)
+    dprint('world-rampages.init: baseline %d existing collections (max_id=%d)', count, baseline_max_id)
 end
 
 function init(dprint)
+    baseline_max_id = -1
     known_collections = {}
     baseline_collections(dprint)
     dprint('world-rampages: handler initialised')
 end
 
 function reset()
+    baseline_max_id = -1
     known_collections = {}
 end
 
