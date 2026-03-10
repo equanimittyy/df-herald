@@ -16,8 +16,8 @@ Not intended for direct use.
 local util = dfhack.reqscript('herald-util')
 local civ_pins = dfhack.reqscript('herald-civ-pins')
 
--- Collection IDs already seen; persistent until world unload.
-local known_collections = {}
+-- Index into event_collections.all; scan only from here onward.
+local scan_start_idx = 0
 
 -- Collection polling ----------------------------------------------------------
 
@@ -110,7 +110,7 @@ local function handle_abduction_collection(col, dprint)
     end
 end
 
--- Scan all collections for new THEFT/ABDUCTION.
+-- Scan new collections (from scan_start_idx onward) for THEFT/ABDUCTION.
 local function scan_collections(dprint)
     if not CT.THEFT and not CT.ABDUCTION then return end
 
@@ -119,28 +119,29 @@ local function scan_collections(dprint)
     end)
     if not ok_all or not all then return end
 
+    local total = #all
+    if scan_start_idx >= total then return end
+
     local new_count = 0
-    for i = 0, #all - 1 do
+    for i = scan_start_idx, total - 1 do
         local ok2, col = pcall(function() return all[i] end)
         if not ok2 or not col then goto continue end
-
-        if known_collections[col.id] then goto continue end
 
         local ok3, ct = pcall(function() return col:getType() end)
         if not ok3 then goto continue end
 
         if ct == CT.THEFT then
-            known_collections[col.id] = true
             new_count = new_count + 1
             handle_theft_collection(col, dprint)
         elseif ct == CT.ABDUCTION then
-            known_collections[col.id] = true
             new_count = new_count + 1
             handle_abduction_collection(col, dprint)
         end
 
         ::continue::
     end
+
+    scan_start_idx = total
 
     if new_count > 0 then
         dprint('world-espionage: scan_collections found %d new collection(s)', new_count)
@@ -151,35 +152,27 @@ end
 
 polls = true
 
--- Baseline all existing collections at map load to prevent false positives.
+-- Skip all existing collections at map load to prevent false positives.
 local function baseline_collections(dprint)
     local ok_all, all = pcall(function()
         return df.global.world.history.event_collections.all
     end)
-    if not ok_all or not all then return end
-
-    local count = 0
-    for i = 0, #all - 1 do
-        local ok2, col = pcall(function() return all[i] end)
-        if ok2 and col then
-            local ok3, ct = pcall(function() return col:getType() end)
-            if ok3 and (ct == CT.THEFT or ct == CT.ABDUCTION) then
-                known_collections[col.id] = true
-                count = count + 1
-            end
-        end
+    if not ok_all or not all then
+        dfhack.printerr('[Herald] world-espionage: failed to baseline collections')
+        return
     end
-    dprint('world-espionage.init: baseline %d existing collections', count)
+    scan_start_idx = #all
+    dprint('world-espionage.init: baseline at collection index %d', scan_start_idx)
 end
 
 function init(dprint)
-    known_collections = {}
+    scan_start_idx = 0
     baseline_collections(dprint)
     dprint('world-espionage: handler initialised')
 end
 
 function reset()
-    known_collections = {}
+    scan_start_idx = 0
 end
 
 function check_poll(dprint)

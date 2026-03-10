@@ -26,8 +26,8 @@ local announced_diplo = {}
 -- (NEW_LEADER or DESTROYED) fires, it records here so TAKEN_OVER is suppressed.
 local conquest_announced = {}
 
--- Collection IDs already seen; persistent until world unload.
-local known_collections = {}
+-- Index into event_collections.all; scan only from here onward.
+local scan_start_idx = 0
 
 -- Helpers ---------------------------------------------------------------------
 
@@ -475,7 +475,7 @@ local function handle_raid_collection(col, dprint)
     end
 end
 
--- Scan all collections for new WAR/BATTLE/RAID.
+-- Scan new collections (from scan_start_idx onward) for WAR/BATTLE/RAID.
 local function scan_collections(dprint)
     if not CT.WAR and not CT.BATTLE and not CT.RAID then return end
 
@@ -484,32 +484,32 @@ local function scan_collections(dprint)
     end)
     if not ok_all or not all then return end
 
+    local total = #all
+    if scan_start_idx >= total then return end
+
     local new_count = 0
-    for i = 0, #all - 1 do
+    for i = scan_start_idx, total - 1 do
         local ok2, col = pcall(function() return all[i] end)
         if not ok2 or not col then goto continue end
-
-        if known_collections[col.id] then goto continue end
 
         local ok3, ct = pcall(function() return col:getType() end)
         if not ok3 then goto continue end
 
         if ct == CT.WAR then
-            known_collections[col.id] = true
             new_count = new_count + 1
             handle_war_collection(col, dprint)
         elseif ct == CT.BATTLE then
-            known_collections[col.id] = true
             new_count = new_count + 1
             handle_battle_collection(col, dprint)
         elseif ct == CT.RAID then
-            known_collections[col.id] = true
             new_count = new_count + 1
             handle_raid_collection(col, dprint)
         end
 
         ::continue::
     end
+
+    scan_start_idx = total
 
     if new_count > 0 then
         dprint('world-diplomacy: scan_collections found %d new collection(s)', new_count)
@@ -541,32 +541,24 @@ end
 event_types = build_event_types()
 polls = true
 
--- Baseline all existing collections at map load to prevent false positives.
+-- Skip all existing collections at map load to prevent false positives.
 local function baseline_collections(dprint)
     local ok_all, all = pcall(function()
         return df.global.world.history.event_collections.all
     end)
-    if not ok_all or not all then return end
-
-    local count = 0
-    for i = 0, #all - 1 do
-        local ok2, col = pcall(function() return all[i] end)
-        if ok2 and col then
-            local ok3, ct = pcall(function() return col:getType() end)
-            if ok3 and (ct == CT.WAR or ct == CT.BATTLE or ct == CT.RAID) then
-                known_collections[col.id] = true
-                count = count + 1
-            end
-        end
+    if not ok_all or not all then
+        dfhack.printerr('[Herald] world-diplomacy: failed to baseline collections')
+        return
     end
-    dprint('world-diplomacy.init: baseline %d existing collections', count)
+    scan_start_idx = #all
+    dprint('world-diplomacy.init: baseline at collection index %d', scan_start_idx)
 end
 
 function init(dprint)
     register_dispatch()
     announced_diplo = {}
     conquest_announced = {}
-    known_collections = {}
+    scan_start_idx = 0
     baseline_collections(dprint)
     dprint('world-diplomacy: handler initialised')
 end
@@ -574,7 +566,7 @@ end
 function reset()
     announced_diplo = {}
     conquest_announced = {}
-    known_collections = {}
+    scan_start_idx = 0
 end
 
 function check_event(ev, dprint)

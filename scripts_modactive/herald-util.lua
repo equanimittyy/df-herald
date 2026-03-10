@@ -343,21 +343,36 @@ function entpop_vec_has_civ(col, field, civ_id, ep_map)
 end
 
 -- Active-unit iteration -------------------------------------------------------
--- Shared iterator: walks df.global.world.units.active, yields each unit that
--- belongs to a pinned HF.  Callback receives (unit, hf_id, settings).
+-- Caches hf_id -> unit mapping; built lazily on first for_each_pinned_unit
+-- call, reused until reset_unit_cache(). Called in herald.lua before init
+-- baselines and before each poll phase.
+local _hf_unit_map = nil
+
+function reset_unit_cache()
+    _hf_unit_map = nil
+end
+
 function for_each_pinned_unit(pinned, callback)
-    local ok, active = pcall(function() return df.global.world.units.active end)
-    if not ok or not active then return end
-    for i = 0, #active - 1 do
-        local unit = active[i]
-        if not unit then goto continue end
-        local ok_hf, hf_id = pcall(function() return unit.hist_figure_id end)
-        if not ok_hf or not hf_id or hf_id < 0 then goto continue end
-        local settings = pinned[hf_id]
-        if settings then
+    if not _hf_unit_map then
+        _hf_unit_map = {}
+        local ok, active = pcall(function() return df.global.world.units.active end)
+        if ok and active then
+            for i = 0, #active - 1 do
+                local unit = active[i]
+                if unit then
+                    local ok_hf, hf_id = pcall(function() return unit.hist_figure_id end)
+                    if ok_hf and hf_id and hf_id >= 0 then
+                        _hf_unit_map[hf_id] = unit
+                    end
+                end
+            end
+        end
+    end
+    for hf_id, settings in pairs(pinned) do
+        local unit = _hf_unit_map[hf_id]
+        if unit then
             callback(unit, hf_id, settings)
         end
-        ::continue::
     end
 end
 

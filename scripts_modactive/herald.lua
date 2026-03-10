@@ -404,6 +404,7 @@ local function scan_events()
         end
         dprint('Loop complete; scanned %d event(s), last_event_id=%d', scanned, last_event_id)
 
+        util.reset_unit_cache()
         scan_world_state(dprint)
     end)
     if not ok then
@@ -426,6 +427,7 @@ local function init_scan()
     load_handlers()
     local pins = dfhack.reqscript('herald-pins')
     pins.load_pinned()
+    util.reset_unit_cache()
     for _, handler in ipairs(all_handlers) do
         handler.init(dprint)
     end
@@ -453,6 +455,7 @@ local function cleanup()
     poll_list = nil
     dfhack.reqscript('herald-cache').reset()
     dprint('cleanup: event cache reset')
+    util.reset_unit_cache()
     util.reset_entpop_cache()
     util.reset_recent()
     dprint('cleanup: recent announcements reset')
