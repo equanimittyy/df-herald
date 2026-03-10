@@ -52,7 +52,28 @@ local function handle_beast_attack(col, dprint)
     if not pinned_civs[owner_civ].rampages then return end
 
     local site_str = util.site_name(site_id) or 'a site'
-    local msg = ('Beast attack reported at %s!'):format(site_str)
+
+    -- Resolve beast name from attacker_hf vector
+    local beast_str = 'A beast'
+    local ok_ahf, ahf = pcall(function() return col.attacker_hf end)
+    if ok_ahf and ahf and #ahf > 0 then
+        local hf_id = ahf[0]
+        if hf_id and hf_id >= 0 then
+            local hf = df.historical_figure.find(hf_id)
+            if hf then
+                local name = dfhack.translation.translateName(hf.name, true)
+                if name and name ~= '' then
+                    beast_str = name
+                else
+                    local race = util.get_race_name(hf)
+                    local article = race:match('^[aeiouAEIOU]') and 'An ' or 'A '
+                    beast_str = article .. race
+                end
+            end
+        end
+    end
+
+    local msg = ('%s attacked %s!'):format(beast_str, site_str)
     dprint('world-rampages: BEAST_ATTACK collection %d - %s', col.id, msg)
     util.announce_rampage(msg)
 end
