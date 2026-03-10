@@ -57,7 +57,7 @@ local function handle_theft_collection(col, dprint)
 
     -- Check thief side
     if thief_civ and pinned_civs[thief_civ] and pinned_civs[thief_civ].espionage then
-        local msg = ('%s committed theft from %s!'):format(ent_name(thief_civ), site_str)
+        local msg = ('%s carried out theft from %s!'):format(ent_name(thief_civ), site_str)
         dprint('world-espionage: THEFT collection %d (thief) - %s', col.id, msg)
         util.announce_espionage(msg)
         return
