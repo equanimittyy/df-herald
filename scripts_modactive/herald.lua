@@ -499,15 +499,17 @@ elseif args[1] == 'test' then
     if not dfhack.isMapLoaded() then
         dfhack.printerr('[Herald] A world must be loaded to test announcements.')
     else
-        util.announce_death('TEST - Death announcement (red)')
-        util.announce_appointment('TEST - Appointment announcement (yellow)')
-        util.announce_vacated('TEST - Vacated announcement (white)')
-        util.announce_combat('TEST - Combat announcement (light red)')
-        util.announce_migration('TEST - Migration announcement (green)')
+        util.announce_death('Urist McHero has died.')
+        util.announce_combat('Urist McHero was wounded.')
+        util.announce_appointment('Urist McNoble has been appointed Mayor of The Fortress.')
+        util.announce_vacated('Urist McNoble is no longer Mayor of The Fortress.')
+        util.announce_legendary('Urist McSmith has become legendary in Weaponsmithing!')
+        util.announce_migration('Urist McTraveler has arrived at the fortress.')
+        util.announce_relationship('Urist McBride married Urist McGroom.')
         util.announce_info('TEST - Info announcement (cyan)')
-        util.announce_diplomacy('TEST - Diplomacy announcement (light blue)')
-        util.announce_war('TEST - War announcement (brown)')
-        util.announce_espionage('TEST - Espionage announcement (magenta)')
+        util.announce_diplomacy('The Kingdoms of Quill has accepted peace with The Dagger Empire.')
+        util.announce_war('The Kingdoms of Quill has declared war on The Dagger Empire!')
+        util.announce_espionage('Swordtown was robbed by The Dagger Empire!')
         print('[Herald] Test announcements fired.')
     end
 elseif args[1] == 'probe' then
