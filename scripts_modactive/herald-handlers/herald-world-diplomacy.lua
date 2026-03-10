@@ -22,6 +22,10 @@ local civ_pins = dfhack.reqscript('herald-civ-pins')
 -- Dedup set keyed by event.id; cleared each poll cycle.
 local announced_diplo = {}
 
+-- Conquest dedup: keyed by "att_civ:site_id". When a detailed conquest event
+-- (NEW_LEADER or DESTROYED) fires, it records here so TAKEN_OVER is suppressed.
+local conquest_announced = {}
+
 -- Collection IDs already seen; persistent until world unload.
 local known_collections = {}
 
@@ -137,28 +141,27 @@ local function handle_tribute_forced(ev, dprint)
     util.announce_war(msg)
 end
 
-local function handle_site_taken_over(ev, dprint)
-    local att = util.safe_get(ev, 'attacker_civ') or -1
-    local def = util.safe_get(ev, 'defender_civ') or util.safe_get(ev, 'site_civ') or -1
-    local pinned_id, other_id, settings = find_pinned_party(att, def)
-    if not pinned_id or not settings.warfare then return end
-
-    local site_id = util.safe_get(ev, 'site')
-    local site_str = site_id and site_id >= 0 and util.site_name(site_id)
-
-    local msg
-    if pinned_id == att then
-        msg = ('%s took control of %s from %s.'):format(
-            ent_name(pinned_id), site_str or 'a site', ent_name(other_id))
-    else
-        msg = ('%s lost %s to %s.'):format(
-            ent_name(pinned_id), site_str or 'a site', ent_name(other_id))
-    end
-
-    dprint('world-diplomacy: site taken over event %d - %s', ev.id, msg)
-    util.announce_war(msg)
+-- Helpers shared by conquest handlers.
+local function conquest_key(att, site_id)
+    return tostring(att) .. ':' .. tostring(site_id or -1)
 end
 
+local function resolve_leaders(ev)
+    local leaders = util.safe_get(ev, 'new_leaders')
+    if not leaders then return nil end
+    local ok, n = pcall(function() return #leaders end)
+    if not ok or n == 0 then return nil end
+    local names = {}
+    for i = 0, n - 1 do
+        local ok2, hf_id = pcall(function() return leaders[i] end)
+        if ok2 and hf_id and hf_id >= 0 then
+            table.insert(names, util.hf_name(hf_id))
+        end
+    end
+    return #names > 0 and table.concat(names, ', ') or nil
+end
+
+-- Most detail: conquered + installed new leadership.
 local function handle_site_new_leader(ev, dprint)
     local att = util.safe_get(ev, 'attacker_civ') or -1
     local def = util.safe_get(ev, 'defender_civ') or util.safe_get(ev, 'site_civ') or -1
@@ -167,30 +170,15 @@ local function handle_site_new_leader(ev, dprint)
 
     local site_id = util.safe_get(ev, 'site')
     local site_str = site_id and site_id >= 0 and util.site_name(site_id)
+    conquest_announced[conquest_key(att, site_id)] = true
 
-    -- Resolve new leader names from HF ID vector
-    local leaders = util.safe_get(ev, 'new_leaders')
-    local leader_str
-    if leaders then
-        local ok, n = pcall(function() return #leaders end)
-        if ok and n > 0 then
-            local names = {}
-            for i = 0, n - 1 do
-                local ok2, hf_id = pcall(function() return leaders[i] end)
-                if ok2 and hf_id and hf_id >= 0 then
-                    table.insert(names, util.hf_name(hf_id))
-                end
-            end
-            if #names > 0 then leader_str = table.concat(names, ', ') end
-        end
-    end
-
+    local leader_str = resolve_leaders(ev)
     local msg
     if pinned_id == att then
-        msg = ('%s installed new leadership at %s'):format(
+        msg = ('%s conquered %s and installed new leadership'):format(
             ent_name(pinned_id), site_str or 'a site')
     else
-        msg = ('New leadership installed at %s by %s'):format(
+        msg = ('%s was conquered by %s who installed new leadership'):format(
             site_str or 'a site', ent_name(other_id))
     end
     if leader_str then msg = msg .. ': ' .. leader_str end
@@ -200,6 +188,7 @@ local function handle_site_new_leader(ev, dprint)
     util.announce_war(msg)
 end
 
+-- Most detail: conquered + destroyed.
 local function handle_site_destroyed(ev, dprint)
     local att = util.safe_get(ev, 'attacker_civ') or -1
     local def = util.safe_get(ev, 'defender_civ') or util.safe_get(ev, 'site_civ') or -1
@@ -208,17 +197,45 @@ local function handle_site_destroyed(ev, dprint)
 
     local site_id = util.safe_get(ev, 'site')
     local site_str = site_id and site_id >= 0 and util.site_name(site_id)
+    conquest_announced[conquest_key(att, site_id)] = true
 
     local msg
     if pinned_id == att then
-        msg = ('%s destroyed %s!'):format(
+        msg = ('%s conquered and destroyed %s!'):format(
             ent_name(pinned_id), site_str or 'a site')
     else
-        msg = ('%s was destroyed by %s!'):format(
+        msg = ('%s was conquered and destroyed by %s!'):format(
             site_str or 'a site', ent_name(other_id))
     end
 
     dprint('world-diplomacy: site destroyed event %d - %s', ev.id, msg)
+    util.announce_war(msg)
+end
+
+-- Fallback: plain conquest (suppressed if NEW_LEADER or DESTROYED already fired).
+local function handle_site_taken_over(ev, dprint)
+    local att = util.safe_get(ev, 'attacker_civ') or -1
+    local def = util.safe_get(ev, 'defender_civ') or util.safe_get(ev, 'site_civ') or -1
+    local pinned_id, other_id, settings = find_pinned_party(att, def)
+    if not pinned_id or not settings.warfare then return end
+
+    local site_id = util.safe_get(ev, 'site')
+    if conquest_announced[conquest_key(att, site_id)] then
+        dprint('world-diplomacy: site taken over event %d suppressed (detailed event already fired)', ev.id)
+        return
+    end
+
+    local site_str = site_id and site_id >= 0 and util.site_name(site_id)
+    local msg
+    if pinned_id == att then
+        msg = ('%s conquered %s from %s.'):format(
+            ent_name(pinned_id), site_str or 'a site', ent_name(other_id))
+    else
+        msg = ('%s was conquered by %s.'):format(
+            site_str or 'a site', ent_name(other_id))
+    end
+
+    dprint('world-diplomacy: site taken over event %d - %s', ev.id, msg)
     util.announce_war(msg)
 end
 
@@ -584,6 +601,7 @@ end
 function init(dprint)
     register_dispatch()
     announced_diplo = {}
+    conquest_announced = {}
     known_collections = {}
     baseline_collections(dprint)
     dprint('world-diplomacy: handler initialised')
@@ -591,6 +609,7 @@ end
 
 function reset()
     announced_diplo = {}
+    conquest_announced = {}
     known_collections = {}
 end
 
@@ -603,6 +622,7 @@ end
 
 function check_poll(dprint)
     announced_diplo = {}
+    conquest_announced = {}
     scan_collections(dprint)
 end
 

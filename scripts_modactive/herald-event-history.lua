@@ -148,6 +148,36 @@ local function site_name_by_id(site_id)
     return n ~= '' and n or nil
 end
 
+-- Returns true if an HF is a member (or former member) of civ_id.
+local function hf_is_civ_member(hf_id, civ_id)
+    if not hf_id or hf_id < 0 or not civ_id then return false end
+    local hf = df.historical_figure.find(hf_id)
+    if not hf then return false end
+    local ok, links = pcall(function() return hf.entity_links end)
+    if not ok or not links then return false end
+    for _, link in ipairs(links) do
+        local lt = link:getType()
+        if lt == df.histfig_entity_link_type.MEMBER
+            or lt == df.histfig_entity_link_type.FORMER_MEMBER then
+            if link.entity_id == civ_id then return true end
+        end
+    end
+    return false
+end
+
+-- Returns true if any HF in a vector field of col is a member of civ_id.
+local function vec_hf_has_civ_member(col, field, civ_id)
+    local ok_v, vec = pcall(function() return col[field] end)
+    if not ok_v or not vec then return false end
+    local ok_n, n = pcall(function() return #vec end)
+    if not ok_n then return false end
+    for i = 0, n - 1 do
+        local ok2, hf_id = pcall(function() return vec[i] end)
+        if ok2 and hf_is_civ_member(hf_id, civ_id) then return true end
+    end
+    return false
+end
+
 -- Returns "a <s>" or "an <s>" depending on the first letter of s.
 local function article(s)
     if not s then return '' end
@@ -1064,30 +1094,36 @@ do
     end)
 
     -- Warfare site events (civ-level; unverified field names, guarded with safe_get).
+    -- Conquest events: NEW_LEADER and DESTROYED produce combined messages;
+    -- TAKEN_OVER is suppressed (returns nil) when shown alongside either.
+    -- The suppression works because all three share the same site + attacker_civ,
+    -- and events within a SITE_CONQUERED collection appear consecutively.
+
     add('WAR_DESTROYED_SITE', function(ev, focal)
         local att = ent_name_by_id(safe_get(ev, 'attacker_civ'))
-        local def = ent_name_by_id(safe_get(ev, 'defender_civ') or safe_get(ev, 'site_civ'))
         local site_n = site_name_by_id(safe_get(ev, 'site'))
         local loc = site_n or 'a site'
         if focal and focal == safe_get(ev, 'attacker_civ') then
-            return 'Destroyed ' .. loc
+            return 'conquered and destroyed ' .. loc
         elseif focal and focal == (safe_get(ev, 'defender_civ') or safe_get(ev, 'site_civ')) then
-            return loc .. ' was destroyed' .. (att and (' by ' .. att) or '')
+            return loc .. ' was conquered and destroyed' .. (att and (' by ' .. att) or '')
         end
-        return (att or 'unknown') .. ' destroyed ' .. loc
+        return (att or 'unknown') .. ' conquered and destroyed ' .. loc
     end)
 
     add('WAR_SITE_TAKEN_OVER', function(ev, focal)
+        -- Suppressed when a more detailed event (NEW_LEADER/DESTROYED) exists
+        -- in the same result set for the same site. Checked at render time via
+        -- the _conquest_sites set built per format pass.
         local att = ent_name_by_id(safe_get(ev, 'attacker_civ'))
-        local def = ent_name_by_id(safe_get(ev, 'defender_civ') or safe_get(ev, 'site_civ'))
         local site_n = site_name_by_id(safe_get(ev, 'site'))
         local loc = site_n or 'a site'
         if focal and focal == safe_get(ev, 'attacker_civ') then
-            return 'Took control of ' .. loc
+            return 'conquered ' .. loc
         elseif focal and focal == (safe_get(ev, 'defender_civ') or safe_get(ev, 'site_civ')) then
-            return 'Lost ' .. loc .. (att and (' to ' .. att) or '')
+            return loc .. ' was conquered' .. (att and (' by ' .. att) or '')
         end
-        return (att or 'unknown') .. ' took control of ' .. loc
+        return (att or 'unknown') .. ' conquered ' .. loc
     end)
 
     add('WAR_SITE_NEW_LEADER', function(ev, focal)
@@ -1111,9 +1147,9 @@ do
         end
         local suffix = leader_str and (': ' .. leader_str) or ''
         if focal and focal == safe_get(ev, 'attacker_civ') then
-            return 'Installed new leadership at ' .. loc .. suffix
+            return 'conquered ' .. loc .. ' and installed new leadership' .. suffix
         end
-        return 'New leadership installed at ' .. loc .. (att and (' by ' .. att) or '') .. suffix
+        return loc .. ' was conquered' .. (att and (' by ' .. att) or '') .. ', new leadership installed' .. suffix
     end)
 
     add('WAR_SITE_TRIBUTE_FORCED', function(ev, focal)
@@ -1122,9 +1158,9 @@ do
         local site_n = site_name_by_id(safe_get(ev, 'site') or safe_get(ev, 'site_id'))
         local loc = site_n and (' at ' .. site_n) or ''
         if focal and focal == (safe_get(ev, 'attacker_civ') or safe_get(ev, 'a_civ')) then
-            return 'Forced tribute on ' .. (def or 'unknown') .. loc
+            return 'forced tribute on ' .. (def or 'unknown') .. loc
         elseif focal and focal == (safe_get(ev, 'defender_civ') or safe_get(ev, 'd_civ')) then
-            return 'Forced to pay tribute to ' .. (att or 'unknown') .. loc
+            return 'forced to pay tribute to ' .. (att or 'unknown') .. loc
         end
         return (att or 'unknown') .. ' forced tribute on ' .. (def or 'unknown') .. loc
     end)
@@ -1800,6 +1836,7 @@ function civ_matches_collection(col, civ_id)
         return scalar_match('attacking_entity') or scalar_match('attacker_civ')
     elseif ct == _CT.ABDUCTION then
         return scalar_match('attacker_civ')
+            or vec_hf_has_civ_member(col, 'victim_hf', civ_id)
     elseif ct == _CT.ENTITY_OVERTHROWN or ct == _CT.PERSECUTION or ct == _CT.PURGE then
         return scalar_match('entity')
     elseif ct == _CT.INSURRECTION then
@@ -2063,7 +2100,13 @@ local function format_collection_entry(col, focal_civ_id)
         local victim = (ok_v and #vv > 0) and hf_name_by_id(vv[0]) or 'someone'
         local site = site_name_by_id(safe_get(col, 'site'))
         local loc  = site and (' from ' .. site) or ''
-        return 'abduction of ' .. victim .. loc
+        local ac   = safe_get(col, 'attacker_civ')
+        if ac == focal_civ_id then
+            return 'carried out the abduction of ' .. victim .. loc
+        else
+            local by = ac and ent_name_by_id(ac)
+            return victim .. ' was abducted' .. loc .. (by and (' by ' .. by) or '')
+        end
 
     elseif ct == _CT.ENTITY_OVERTHROWN then
         local ent_n = ent_name_by_id(safe_get(col, 'entity'))
@@ -2753,8 +2796,39 @@ function EventHistoryWindow:init()
         focal = self.hf_id
     end
 
+    -- Pre-scan: build conquest dedup set. If a detailed conquest event
+    -- (NEW_LEADER or DESTROYED) exists for a site, suppress TAKEN_OVER.
+    local _taken_over_type = df.history_event_type['WAR_SITE_TAKEN_OVER']
+    local _new_leader_type = df.history_event_type['WAR_SITE_NEW_LEADER']
+    local _destroyed_type  = df.history_event_type['WAR_DESTROYED_SITE']
+    local conquest_sites = {}
+    if _taken_over_type then
+        for _, ev in ipairs(events) do
+            if type(ev) ~= 'table' then
+                local et = ev:getType()
+                if (_new_leader_type and et == _new_leader_type)
+                    or (_destroyed_type and et == _destroyed_type) then
+                    local site = safe_get(ev, 'site')
+                    local att  = safe_get(ev, 'attacker_civ')
+                    if site and att then
+                        conquest_sites[tostring(att) .. ':' .. tostring(site)] = true
+                    end
+                end
+            end
+        end
+    end
+
     local event_choices = {}
     for _, ev in ipairs(events) do
+        -- Suppress TAKEN_OVER when a more detailed conquest event exists.
+        if _taken_over_type and type(ev) ~= 'table'
+            and ev:getType() == _taken_over_type then
+            local site = safe_get(ev, 'site')
+            local att  = safe_get(ev, 'attacker_civ')
+            if site and att and conquest_sites[tostring(att) .. ':' .. tostring(site)] then
+                goto next_event
+            end
+        end
         local formatted = format_event(ev, focal, ctx_map, is_civ)
         if formatted then
             local lines = wrap_text(formatted)
@@ -2765,6 +2839,7 @@ function EventHistoryWindow:init()
             end
             table.insert(event_choices, { text = '', search_key = formatted })
         end
+        ::next_event::
     end
     if #event_choices == 0 then
         table.insert(event_choices, { text = 'No events found.' })
