@@ -22,7 +22,7 @@ Required by `herald-gui.lua` as `local ev_hist = dfhack.reqscript('herald-event-
   `ev_hist.open_event_history(...)` from `FiguresPanel` and `PinnedPanel`.
 - **`open_civ_event_history(entity_id, entity_name)`** — opens (or raises) the EventHistory
   popup for a civilisation. Shows collection-level summaries (wars, battles, conquests, raids,
-  theft, abductions) plus individual position-change events. Same singleton pattern as
+  theft, abductions, espionage) plus individual position-change events. Same singleton pattern as
   `open_event_history`; opening one dismisses the other.
 - **`reset_civ_caches()`** — invalidates lazy civ caches (`_entpop_to_civ`) on world unload.
   Called from `herald.cleanup()`.
@@ -124,6 +124,6 @@ Required by `herald-gui.lua` as `local ev_hist = dfhack.reqscript('herald-event-
   field; name resolved via `col_name()` fallback, site resolved from own events or first child
   collection's events.
 - **`get_civ_events(civ_id)`** — collects events relevant to a civ: collection-level summaries
-  for warfare/raids/theft/kidnappings + individual position-change, entity-creation, and
+  for warfare/raids/theft/abductions + individual position-change, entity-creation, and
   peace/agreement events. Uses `build_war_event_map()` (WAR-only) instead of full
   `build_event_to_collection()`. Returns `(results, ctx_map)` matching `get_hf_events` signature.

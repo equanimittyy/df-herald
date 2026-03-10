@@ -550,8 +550,7 @@ local CIVILISATIONS_ANN = {
     { key = 'positions',   label = 'Positions',   caption = 'Leader changes',   impl = true  },
     { key = 'diplomacy',   label = 'Diplomacy',   caption = 'Diplomacy changes', impl = true },
     { key = 'warfare',     label = 'Warfare',     caption = 'War, battle, etc.',   impl = true },
-    { key = 'theft',       label = 'Theft',       caption = 'Artifacts stolen', impl = false },
-    { key = 'kidnappings', label = 'Kidnappings', caption = 'Abductions',      impl = false },
+    { key = 'espionage',   label = 'Espionage',   caption = 'Abductions, theft', impl = false },
 }
 
 local PinnedPanel = defclass(PinnedPanel, widgets.Panel) -- luacheck: ignore 113
