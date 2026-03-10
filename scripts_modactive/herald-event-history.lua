@@ -624,6 +624,7 @@ do
             end
         end
 
+        -- Likely dead: DF now uses CHANGE_HF_MOOD for moods; kept as fallback.
         if mood ~= nil then
             local mname = df.mood_type and df.mood_type[mood]
             local MOOD_TEXT = {
@@ -1530,25 +1531,30 @@ do
         return nil
     end
 
-    add('HF_LEARNS_SECRET', function(ev, _focal)
+    add('HF_LEARNS_SECRET', function(ev, focal)
         -- Fields: student (learner HF), teacher (HF or -1), artifact (source), interaction.
+        local student_id = safe_get(ev, 'student')
         local teacher_id = safe_get(ev, 'teacher')
         local art_id     = safe_get(ev, 'artifact')
         local inter_id   = safe_get(ev, 'interaction')
         local secret     = interaction_name(inter_id)
-        local what       = secret and ('learned ' .. secret) or 'learned a secret'
+        -- Focal is the teacher: flip perspective.
+        if teacher_id and teacher_id >= 0 and teacher_id == focal then
+            local what = secret and ('Taught ' .. secret) or 'Taught a secret'
+            local student = hf_name_by_id(student_id) or 'someone'
+            return what .. ' to ' .. student
+        end
+        local what = secret and ('Learned ' .. secret) or 'Learned a secret'
         -- Source: from a teacher, or from an artifact.
         if teacher_id and teacher_id >= 0 then
             local teacher = hf_name_by_id(teacher_id) or 'someone'
-            return what:sub(1,1):upper() .. what:sub(2) .. ' from ' .. teacher
+            return what .. ' from ' .. teacher
         end
         if art_id and art_id >= 0 then
             local art_n = artifact_name_by_id(art_id)
-            if art_n then
-                return what:sub(1,1):upper() .. what:sub(2) .. ' from ' .. art_n
-            end
+            if art_n then return what .. ' from ' .. art_n end
         end
-        return what:sub(1,1):upper() .. what:sub(2)
+        return what
     end)
 
     add('ENTITY_OVERTHROWN', function(ev, focal)
