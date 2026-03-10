@@ -39,9 +39,10 @@ local function fmt_vacated(hf_name, pos_name, civ_name)
 end
 
 -- Builds current position snapshot for a single HF by walking entity_links.
+-- Carries forward pos_name/civ_name from prev_snap for unchanged entries.
 -- Returns snap, ok.  On partial failure returns nil, false so callers can
 -- preserve the previous snapshot instead of replacing with incomplete data.
-local function build_hf_snapshot(hf)
+local function build_hf_snapshot(hf, prev_snap)
     local ok_links, links = pcall(function() return hf.entity_links end)
     if not ok_links or not links then return nil, false end
 
@@ -58,19 +59,32 @@ local function build_hf_snapshot(hf)
             local assignments = entity.positions.assignments
             if not assignments then goto next_link end
 
-            local civ_name = dfhack.translation.translateName(entity.name, true)
-            if not civ_name or civ_name == '' then civ_name = tostring(link.entity_id) end
+            local civ_name  -- deferred until needed
 
             for _, asgn in ipairs(assignments) do
                 if asgn.histfig2 == -1 then goto next_asgn end
                 if asgn.histfig2 == hf.id then
                     local key = link.entity_id .. ':' .. asgn.id
-                    snap[key] = {
-                        entity_id     = link.entity_id,
-                        assignment_id = asgn.id,
-                        pos_name      = util.get_pos_name(entity, asgn.position_id, hf.sex),
-                        civ_name      = civ_name,
-                    }
+                    local prev = prev_snap and prev_snap[key]
+                    if prev and prev.entity_id == link.entity_id
+                            and prev.assignment_id == asgn.id then
+                        -- Unchanged position: carry forward
+                        snap[key] = prev
+                    else
+                        -- New or changed: resolve names
+                        if not civ_name then
+                            civ_name = dfhack.translation.translateName(entity.name, true)
+                            if not civ_name or civ_name == '' then
+                                civ_name = tostring(link.entity_id)
+                            end
+                        end
+                        snap[key] = {
+                            entity_id     = link.entity_id,
+                            assignment_id = asgn.id,
+                            pos_name      = util.get_pos_name(entity, asgn.position_id, hf.sex),
+                            civ_name      = civ_name,
+                        }
+                    end
                 end
                 ::next_asgn::
             end
@@ -92,51 +106,45 @@ local function handle_poll(dprint)
         local hf = df.historical_figure.find(hf_id)
         if not hf or not util.is_alive(hf) then goto next_hf end
 
-        local current, snap_ok = build_hf_snapshot(hf)
+        local prev = position_snapshots[hf_id]
+        local current, snap_ok = build_hf_snapshot(hf, prev)
         if not snap_ok then
             -- Partial failure; preserve previous snapshot to avoid false vacated
-            new_snapshots[hf_id] = position_snapshots[hf_id]
+            new_snapshots[hf_id] = prev
             goto next_hf
         end
         new_snapshots[hf_id] = current
         dbg_tracked = dbg_tracked + 1
 
-        local prev = position_snapshots[hf_id]
         if not prev then
             -- First observation: baseline silently
-            local n = 0
-            for _ in pairs(current) do n = n + 1 end
-            dprint('ind-positions: baseline for hf %d: %d positions', hf_id, n)
+            dprint('ind-positions: baseline for hf %d', hf_id)
             goto next_hf
         end
 
-        local hf_name = dfhack.translation.translateName(hf.name, true) or ('HF ' .. hf_id)
+        local hf_name  -- deferred until an actual change is detected
 
         -- Detect new appointments
         for key, entry in pairs(current) do
-            if not prev[key] then
-                if settings and settings.positions then
-                    dprint('ind-positions: appointment for %s (%s of %s)',
-                        hf_name, tostring(entry.pos_name), entry.civ_name)
-                    util.announce_appointment(fmt_appointment(hf_name, entry.pos_name, entry.civ_name))
-                else
-                    dprint('ind-positions: appointment for %s (%s of %s) - suppressed (positions OFF)',
-                        hf_name, tostring(entry.pos_name), entry.civ_name)
+            if not prev[key] and settings and settings.positions then
+                if not hf_name then
+                    hf_name = dfhack.translation.translateName(hf.name, true) or ('HF ' .. hf_id)
                 end
+                dprint('ind-positions: appointment for %s (%s of %s)',
+                    hf_name, tostring(entry.pos_name), entry.civ_name)
+                util.announce_appointment(fmt_appointment(hf_name, entry.pos_name, entry.civ_name))
             end
         end
 
         -- Detect vacated positions
         for key, entry in pairs(prev) do
-            if not current[key] then
-                if settings and settings.positions then
-                    dprint('ind-positions: vacated for %s (%s of %s)',
-                        hf_name, tostring(entry.pos_name), entry.civ_name)
-                    util.announce_vacated(fmt_vacated(hf_name, entry.pos_name, entry.civ_name))
-                else
-                    dprint('ind-positions: vacated for %s (%s of %s) - suppressed (positions OFF)',
-                        hf_name, tostring(entry.pos_name), entry.civ_name)
+            if not current[key] and settings and settings.positions then
+                if not hf_name then
+                    hf_name = dfhack.translation.translateName(hf.name, true) or ('HF ' .. hf_id)
                 end
+                dprint('ind-positions: vacated for %s (%s of %s)',
+                    hf_name, tostring(entry.pos_name), entry.civ_name)
+                util.announce_vacated(fmt_vacated(hf_name, entry.pos_name, entry.civ_name))
             end
         end
 

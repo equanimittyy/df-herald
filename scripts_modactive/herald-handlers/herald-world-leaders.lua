@@ -60,30 +60,19 @@ function check_poll(dprint)
     local new_snapshot = {}
     local dbg_civs = 0
 
-    -- Iterate only pinned civs; look up each entity directly instead of scanning all entities.
-    -- Key struct fields used below:
-    --   entity.positions.assignments[i] - vector of position assignment structs
-    --   asgn.histfig2    - HF ID of the current holder (-1 if vacant)
-    --   asgn.position_id - references pos.id in the position definition lists
-    --   asgn.id          - stable assignment ID (used as snapshot key across cycles)
     for entity_id, pin_settings in pairs(civ_pins.get_pinned()) do
         local entity = df.historical_entity.find(entity_id)
-        if not entity then
-            dprint('world-leaders: entity_id=%d not found, skipping', entity_id)
-            goto continue_entity
-        end
+        if not entity then goto continue_entity end
         dbg_civs = dbg_civs + 1
 
         local ok_asgn, assignments = pcall(function() return entity.positions.assignments end)
         if not ok_asgn or not assignments or #assignments == 0 then
-            dprint('world-leaders: entity_id=%d has no/inaccessible assignments, skipping', entity_id)
             goto continue_entity
         end
 
-        local civ_name           = dfhack.translation.translateName(entity.name, true)
         local announce_positions = pin_settings.positions
-
-        dprint('world-leaders: civ "%s" has %d assignments', civ_name, #assignments)
+        local prev_entity = tracked_leaders[entity_id]
+        local civ_name  -- deferred until first live holder
 
         for _, assignment in ipairs(assignments) do
             local hf_id = assignment.histfig2
@@ -92,28 +81,31 @@ function check_poll(dprint)
             local hf = df.historical_figure.find(hf_id)
             if not hf then goto continue_assignment end
 
-            local pos_id   = assignment.position_id
-            local pos_name = util.get_pos_name(entity, pos_id, hf.sex)
-
-            dprint('world-leaders:   hf=%s pos=%s alive=%s',
-                dfhack.translation.translateName(hf.name, true), tostring(pos_name), tostring(util.is_alive(hf)))
-
-            local prev_entity  = tracked_leaders[entity_id]
-            local prev         = prev_entity and prev_entity[assignment.id]
+            local prev = prev_entity and prev_entity[assignment.id]
 
             if not util.is_alive(hf) then
-                if prev and prev.hf_id == hf_id then
+                -- Death: was tracked alive last cycle, now dead
+                if prev and prev.hf_id == hf_id and announce_positions then
                     local hf_name = dfhack.translation.translateName(hf.name, true)
-                    if announce_positions then
-                        dprint('world-leaders: death detected for %s (%s of %s) - firing announcement (positions ON)',
-                            hf_name, tostring(pos_name), civ_name)
-                        util.announce_death(fmt_death(hf_name, pos_name, civ_name))
-                    else
-                        dprint('world-leaders: death for %s (%s of %s) - suppressed (positions OFF)',
-                            hf_name, tostring(pos_name), civ_name)
-                    end
+                    dprint('world-leaders: death detected for %s (%s of %s)',
+                        hf_name, tostring(prev.pos_name), prev.civ_name)
+                    util.announce_death(fmt_death(hf_name, prev.pos_name, prev.civ_name))
                 end
             else
+                -- Carry forward pos_name for unchanged holders; resolve only on change
+                local pos_name
+                local is_new = not prev or prev.hf_id ~= hf_id
+                if is_new then
+                    pos_name = util.get_pos_name(entity, assignment.position_id, hf.sex)
+                else
+                    pos_name = prev.pos_name
+                end
+
+                if not civ_name then
+                    civ_name = dfhack.translation.translateName(entity.name, true)
+                    if not civ_name or civ_name == '' then civ_name = tostring(entity_id) end
+                end
+
                 if not new_snapshot[entity_id] then
                     new_snapshot[entity_id] = {}
                 end
@@ -123,15 +115,15 @@ function check_poll(dprint)
                     civ_name = civ_name,
                 }
 
-                if prev_entity and (prev == nil or prev.hf_id ~= hf_id) then
-                    local hf_name = dfhack.translation.translateName(hf.name, true)
+                -- New appointment: entity was tracked before but this slot is new/changed
+                if is_new and prev_entity then
                     if announce_positions then
-                        dprint('world-leaders: appointment for %s (%s of %s) - announcing (positions ON)',
+                        local hf_name = dfhack.translation.translateName(hf.name, true)
+                        dprint('world-leaders: appointment for %s (%s of %s)',
                             hf_name, tostring(pos_name), civ_name)
                         util.announce_appointment(fmt_appointment(hf_name, pos_name, civ_name))
-                    else
-                        dprint('world-leaders: appointment for %s (%s of %s) - suppressed (positions OFF)',
-                            hf_name, tostring(pos_name), civ_name)
+                    elseif DEBUG then
+                        dprint('world-leaders: appointment for hf %d - suppressed (positions OFF)', hf_id)
                     end
                 end
             end
@@ -142,13 +134,13 @@ function check_poll(dprint)
         ::continue_entity::
     end
 
-    -- Detect vacated positions: was in previous snapshot, alive, but gone or replaced this cycle.
+    -- Detect vacated positions: was in previous snapshot, alive, but gone or replaced.
+    -- Uses cached pos_name/civ_name from previous snapshot to avoid re-resolving.
     for entity_id, prev_assignments in pairs(tracked_leaders) do
         local pin_settings = civ_pins.get_pinned()[entity_id]
-        if not pin_settings then goto continue_vacate_entity end
-
-        local entity   = df.historical_entity.find(entity_id)
-        local civ_name = entity and dfhack.translation.translateName(entity.name, true) or tostring(entity_id)
+        if not pin_settings or not pin_settings.positions then
+            goto continue_vacate_entity
+        end
 
         for assignment_id, prev in pairs(prev_assignments) do
             local new_assign = new_snapshot[entity_id] and new_snapshot[entity_id][assignment_id]
@@ -156,14 +148,9 @@ function check_poll(dprint)
                 local old_hf = df.historical_figure.find(prev.hf_id)
                 if old_hf and util.is_alive(old_hf) then
                     local hf_name = dfhack.translation.translateName(old_hf.name, true)
-                    if pin_settings.positions then
-                        dprint('world-leaders: vacated detected for %s (%s of %s) - firing announcement (positions ON)',
-                            hf_name, tostring(prev.pos_name), civ_name)
-                        util.announce_vacated(fmt_vacated(hf_name, prev.pos_name, civ_name))
-                    else
-                        dprint('world-leaders: vacated for %s (%s of %s) - suppressed (positions OFF)',
-                            hf_name, tostring(prev.pos_name), civ_name)
-                    end
+                    dprint('world-leaders: vacated for %s (%s of %s)',
+                        hf_name, tostring(prev.pos_name), prev.civ_name)
+                    util.announce_vacated(fmt_vacated(hf_name, prev.pos_name, prev.civ_name))
                 end
             end
         end
@@ -172,9 +159,11 @@ function check_poll(dprint)
     end
 
     tracked_leaders = new_snapshot
-    dprint('world-leaders.check_poll: civs=%d tracked=%d',
-        dbg_civs,
-        (function() local n=0 for _ in pairs(tracked_leaders) do n=n+1 end return n end)())
+    if DEBUG then
+        local n = 0
+        for _ in pairs(tracked_leaders) do n = n + 1 end
+        dprint('world-leaders.check_poll: civs=%d tracked=%d', dbg_civs, n)
+    end
 end
 
 -- Handler contract -------------------------------------------------------------
