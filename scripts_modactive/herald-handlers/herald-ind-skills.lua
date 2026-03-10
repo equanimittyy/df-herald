@@ -18,6 +18,26 @@ local pins = dfhack.reqscript('herald-pins')
 
 local LEGENDARY = 15
 
+-- DF cumulative XP thresholds per rating level.
+-- Index = rating (0-based), value = minimum cumulative XP for that level.
+local XP_THRESHOLDS = {
+    [0]=0, 500, 1100, 1800, 2800, 4300, 6500, 9600, 14000, 20000,
+    28600, 40200, 55200, 73900, 97500, 128000,  -- 15 = Legendary
+}
+
+-- Converts raw cumulative XP to a skill rating (0-20).
+local function xp_to_rating(xp)
+    if not xp or xp < 0 then return 0 end
+    local rating = 0
+    for r = #XP_THRESHOLDS, 0, -1 do
+        if xp >= XP_THRESHOLDS[r] then
+            rating = r
+            break
+        end
+    end
+    return rating
+end
+
 -- { [hf_id] = { [skill_id] = rating } }
 -- Absent key = first observation (baseline); present = diff-ready.
 local skill_snapshots = {}
@@ -51,13 +71,18 @@ local function read_unit_skills(unit)
 end
 
 -- Reads skills from an off-map HF struct, returns { [skill_id] = rating } or nil.
+-- HF skills are parallel vectors: info.skills.skills (job_skill IDs) and
+-- info.skills.points (cumulative XP). Convert XP to rating via thresholds.
 local function read_hf_skills(hf)
-    local ok, skills = pcall(function() return hf.info.skills.skills end)
-    if not ok or not skills then return nil end
+    local ok_s, skill_ids = pcall(function() return hf.info.skills.skills end)
+    if not ok_s or not skill_ids or #skill_ids == 0 then return nil end
+    local ok_p, points = pcall(function() return hf.info.skills.points end)
+    if not ok_p or not points then return nil end
     local snap = {}
-    for i = 0, #skills - 1 do
-        local s = skills[i]
-        if s then snap[s.id] = s.rating end
+    for i = 0, #skill_ids - 1 do
+        local sid = skill_ids[i]
+        local xp  = points[i]
+        if sid then snap[sid] = xp_to_rating(xp) end
     end
     if not next(snap) then return nil end
     return snap

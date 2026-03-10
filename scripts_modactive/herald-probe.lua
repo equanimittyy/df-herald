@@ -20,174 +20,211 @@ if not main.DEBUG then
 end
 
 -- ============================================================
--- PROBE: BEAST_ATTACK collection struct fields
---   1. Find first BEAST_ATTACK collection in world history
---   2. printall() to see all fields
---   3. Probe specific suspected fields: attacker_hf (vec), site,
---      defender_civ, region, layer, region_pos
---   4. If attacker_hf[0] resolves to an HF, print its name + race
+-- PROBE: historical_figure.info.skills structure
+--
+-- Goal: determine the actual field layout.
+-- Hypothesis: parallel vectors (skills=job_skill IDs, points=experience).
+-- Null hypothesis: objects with .id and .rating (like unit soul skills).
+--
+-- Steps:
+--   1. Find any HF that has skills data (info and info.skills not nil)
+--   2. printall() the skills sub-struct to see all field names
+--   3. Check element type: is skills[0] a number or a userdata object?
+--   4. If parallel vectors: print skills[i] and points[i] for first 5
+--   5. Try to derive a skill rating: compare points values to known
+--      legendary threshold (5400 xp = Legendary per DF skill tables)
 -- ============================================================
 
-print('=== START PROBE: BEAST_ATTACK COLLECTION ===')
+print('=== START PROBE: HF INFO SKILLS ===')
 print('')
 
-local ok_CT, BA_TYPE = pcall(function()
-    return df.history_event_collection_type.BEAST_ATTACK
-end)
-if not ok_CT or BA_TYPE == nil then
-    print('ERROR: BEAST_ATTACK not in history_event_collection_type enum')
+-- Step 1: find an HF with skills populated -------------------------
+local figures = df.global.world.history.figures
+print(('Total historical figures: %d'):format(#figures))
+print('')
+
+local sample_hf = nil
+local sample_idx = 0
+
+for i = 0, math.min(#figures - 1, 2000) do
+    local ok, hf = pcall(function() return figures[i] end)
+    if not ok or not hf then goto next end
+    local ok2, info = pcall(function() return hf.info end)
+    if not ok2 or not info then goto next end
+    local ok3, skills_block = pcall(function() return info.skills end)
+    if not ok3 or not skills_block then goto next end
+    -- Check there is at least one skills entry
+    local ok4, skills_vec = pcall(function() return skills_block.skills end)
+    if not ok4 or not skills_vec then goto next end
+    local ok5, sz = pcall(function() return #skills_vec end)
+    if not ok5 or not sz or sz == 0 then goto next end
+    sample_hf = hf
+    sample_idx = i
+    break
+    ::next::
+end
+
+if not sample_hf then
+    print('ERROR: no HF with info.skills found in first 2000 figures')
     print('=== END PROBE ===')
     return
 end
-print(('BEAST_ATTACK enum value = %d'):format(BA_TYPE))
+
+local hf_name = '?'
+local ok_n, n = pcall(function()
+    return dfhack.translation.translateName(sample_hf.name, true)
+end)
+if ok_n and n and n ~= '' then hf_name = n end
+
+print(('Found HF at index %d: %s (id=%d)'):format(sample_idx, hf_name, sample_hf.id))
 print('')
 
-local ok_all, all = pcall(function()
-    return df.global.world.history.event_collections.all
-end)
-if not ok_all or not all then
-    print('ERROR: cannot access event_collections.all')
-    print('=== END PROBE ===')
-    return
+-- Step 2: printall() the skills sub-struct -------------------------
+print('[1] printall(hf.info.skills):')
+local ok_pa, skills_block = pcall(function() return sample_hf.info.skills end)
+if ok_pa and skills_block then
+    printall(skills_block)
+else
+    print('  ERROR: could not access info.skills')
 end
+print('')
 
-print(('Total collections in world: %d'):format(#all))
-
--- Find first BEAST_ATTACK and count them
-local first_ba = nil
-local ba_count = 0
-for i = 0, #all - 1 do
-    local ok_c, col = pcall(function() return all[i] end)
-    if not ok_c or not col then goto continue end
-    local ok_t, ct = pcall(function() return col:getType() end)
-    if ok_t and ct == BA_TYPE then
-        ba_count = ba_count + 1
-        if not first_ba then first_ba = col end
+-- Step 3: check element type of skills vector ----------------------
+print('[2] Checking element type of info.skills.skills[0]:')
+local ok_sv, skills_vec = pcall(function() return sample_hf.info.skills.skills end)
+if ok_sv and skills_vec then
+    print(('  #skills_vec = %d'):format(#skills_vec))
+    local ok_e, elem = pcall(function() return skills_vec[0] end)
+    if ok_e and elem ~= nil then
+        print(('  type(skills_vec[0]) = %s'):format(type(elem)))
+        print(('  tostring(skills_vec[0]) = %s'):format(tostring(elem)))
+        -- If it's userdata, try printall
+        if type(elem) == 'userdata' then
+            print('  printall(skills_vec[0]):')
+            printall(elem)
+        end
+    else
+        print('  Could not access skills_vec[0]')
     end
-    ::continue::
+else
+    print('  ERROR: could not access info.skills.skills')
 end
-
-print(('BEAST_ATTACK collections found: %d'):format(ba_count))
 print('')
 
-if not first_ba then
-    print('No BEAST_ATTACK collections in this world - nothing to probe.')
-    print('=== END PROBE ===')
-    return
-end
-
-print(('Probing collection id=%d'):format(first_ba.id))
-print('')
-
--- printall dump
-print('[1] printall(col):')
-printall(first_ba)
-print('')
-
--- Probe specific fields from XML/search research:
--- attacker_hf (vec of int32 HF IDs), site (int32), defender_civ (int32 entity ID),
--- region (int32), layer (int32), region_pos (coord2d compound)
-print('[2] Specific field probe:')
-local fields = {
-    'site', 'defender_civ', 'region', 'layer',
+-- Step 4: enumerate all named sub-fields ---------------------------
+print('[3] Probing all known field names on info.skills:')
+local CANDIDATE_FIELDS = {
+    'skills', 'points', 'skill_ids', 'skill_levels', 'ratings',
+    'experience', 'xp', 'level', 'levels', 'unk_0', 'unk_20', 'unk_30',
 }
-for _, f in ipairs(fields) do
-    local ok_f, v = pcall(function() return first_ba[f] end)
-    print(('  col.%s = %s (%s)'):format(f, ok_f and tostring(v) or 'ERROR/ABSENT', ok_f and type(v) or 'err'))
+local found_fields = {}
+for _, fname in ipairs(CANDIDATE_FIELDS) do
+    local ok_f, v = pcall(function() return sample_hf.info.skills[fname] end)
+    if ok_f and v ~= nil then
+        local sz_str = ''
+        if type(v) == 'userdata' then
+            local ok_sz, sz = pcall(function() return #v end)
+            if ok_sz then sz_str = (' [size=%d]'):format(sz) end
+        end
+        print(('  skills.%s = %s (%s)%s'):format(fname, tostring(v), type(v), sz_str))
+        table.insert(found_fields, fname)
+    end
+end
+print('')
+
+-- Step 5: if parallel vectors, dump first 5 entries ---------------
+local ok_sv2, sv2 = pcall(function() return sample_hf.info.skills.skills end)
+local ok_pv, pv  = pcall(function() return sample_hf.info.skills.points end)
+
+if ok_sv2 and sv2 and ok_pv and pv then
+    print('[4] First 5 entries of parallel vectors (skills / points):')
+    local limit = math.min(#sv2 - 1, 4)
+    for i = 0, limit do
+        local ok_s, sid = pcall(function() return sv2[i] end)
+        local ok_p, pts = pcall(function() return pv[i] end)
+        local skill_name = '?'
+        if ok_s and sid ~= nil then
+            local ok_sn, sn = pcall(function()
+                return df.job_skill.attrs[sid].caption
+            end)
+            if ok_sn and sn then skill_name = sn end
+        end
+        print(('  [%d] skill_id=%s (%s) points=%s'):format(
+            i,
+            ok_s and tostring(sid) or 'ERR',
+            skill_name,
+            ok_p and tostring(pts) or 'ERR'
+        ))
+    end
+    print('')
+
+    -- Compute approximate ratings from experience points.
+    -- DF skill experience thresholds (cumulative from level 0):
+    -- Novice=500, Adequate=900, Competent=1500, Skilled=2400, Proficient=3800,
+    -- Expert=5900, Professional=8900, Accomplished=13400, Expert2=19900,
+    -- Master=28900, High Master=41400, Grand Master=56400,
+    -- Legendary=73900, Legendary+1=..., etc.
+    -- OR simpler: rating = floor(points / some_divisor)?
+    -- The rating field on unit_skill is 0-20; Legendary=15.
+    -- At Legendary, typical total xp ~= 73900 for many skills.
+    -- Just print raw points; user/probe runner can interpret.
+    print('  (Points are raw experience; Legendary threshold ~73900 for many skills)')
+    print('  (Or points may be the 0-20 rating directly - check raw values above)')
 end
 
--- attacker_hf is a vector - probe specially
+-- Step 6: also try printall on a different sub-field name ----------
+print('[5] Checking for unk_* or other unexplored fields via _field iteration:')
+local ok_sk, sk = pcall(function() return sample_hf.info.skills end)
+if ok_sk and sk then
+    -- Try iterating pairs (only works for tables, not userdata, but try)
+    local ok_iter = pcall(function()
+        for k, v in pairs(sk) do
+            print(('  pair: %s = %s'):format(tostring(k), tostring(v)))
+        end
+    end)
+    if not ok_iter then
+        print('  (pairs() failed on userdata - expected)')
+    end
+end
 print('')
-print('[3] attacker_hf vector:')
-local ok_ahf, ahf = pcall(function() return first_ba.attacker_hf end)
-if not ok_ahf or not ahf then
-    print('  attacker_hf: ERROR or absent')
-else
-    print(('  attacker_hf: type=%s, #=%s'):format(type(ahf), tostring(#ahf)))
-    for i = 0, math.min(#ahf - 1, 4) do
-        local ok_v, v = pcall(function() return ahf[i] end)
-        local hf_name = '?'
-        if ok_v and v and v >= 0 then
-            local hf = df.historical_figure.find(v)
-            if hf then
-                local n = dfhack.translation.translateName(hf.name, true)
-                local race = hf.race
-                local race_name = '?'
-                local ok_r, robj = pcall(function() return df.global.world.raws.creatures.all[race] end)
-                if ok_r and robj then
-                    local ok_rn, rn = pcall(function() return robj.creature_id end)
-                    if ok_rn then race_name = rn end
+
+-- Step 7: compare to unit soul skills for the same HF (if on-map) -
+print('[6] Checking if sample HF has an on-map unit with soul skills for comparison:')
+local found_unit = nil
+for _, u in ipairs(df.global.world.units.active) do
+    local ok_hfid, hfid = pcall(function() return u.hist_figure_id end)
+    if ok_hfid and hfid == sample_hf.id then
+        found_unit = u
+        break
+    end
+end
+if found_unit then
+    print('  Found on-map unit. Comparing soul skills vs HF skills...')
+    local ok_soul, soul = pcall(function() return found_unit.status.current_soul end)
+    if ok_soul and soul then
+        local ok_usk, usk = pcall(function() return soul.skills end)
+        if ok_usk and usk and #usk > 0 then
+            print(('  Unit soul has %d skills. First 5:'):format(#usk))
+            for i = 0, math.min(#usk - 1, 4) do
+                local ok_s, s = pcall(function() return usk[i] end)
+                if ok_s and s then
+                    local ok_sn, sn = pcall(function()
+                        return df.job_skill.attrs[s.id].caption
+                    end)
+                    print(('    [%d] id=%s (%s) rating=%s xp=%s'):format(
+                        i, tostring(s.id),
+                        (ok_sn and sn) and sn or '?',
+                        tostring(s.rating),
+                        tostring(s.experience)
+                    ))
                 end
-                hf_name = ('%s (hf_id=%d, race=%s)'):format(n or '?', v, race_name)
-            else
-                hf_name = ('hf_id=%d (not found)'):format(v)
             end
-        elseif ok_v then
-            hf_name = ('value=%s'):format(tostring(v))
-        else
-            hf_name = 'ERROR'
         end
-        print(('  attacker_hf[%d] = %s'):format(i, hf_name))
     end
-end
-
--- region_pos compound
-print('')
-print('[4] region_pos compound:')
-local ok_rp, rp = pcall(function() return first_ba.region_pos end)
-if not ok_rp or not rp then
-    print('  region_pos: ERROR or absent')
 else
-    print(('  region_pos type=%s'):format(type(rp)))
-    local ok_x, rx = pcall(function() return rp.x end)
-    local ok_y, ry = pcall(function() return rp.y end)
-    print(('  region_pos.x=%s, y=%s'):format(
-        ok_x and tostring(rx) or 'err',
-        ok_y and tostring(ry) or 'err'
-    ))
+    print('  Sample HF is not on the active unit list (off-map). Cannot compare soul skills.')
+    print('  That is fine - the parallel vector probe above is the key finding.')
 end
-
--- Also check base collection fields
 print('')
-print('[5] Base collection fields (events, collections, parent):')
-local ok_ev, ev_vec = pcall(function() return first_ba.events end)
-print(('  events vec: ok=%s, #=%s'):format(tostring(ok_ev), ok_ev and tostring(#ev_vec) or 'err'))
-local ok_ch, ch_vec = pcall(function() return first_ba.collections end)
-print(('  collections vec: ok=%s, #=%s'):format(tostring(ok_ch), ok_ch and tostring(#ch_vec) or 'err'))
-local ok_par, par = pcall(function() return first_ba.parent_collection end)
-print(('  parent_collection: ok=%s, val=%s'):format(tostring(ok_par), ok_par and tostring(par) or 'err'))
 
--- Sample a few more beast attacks to see if defender_civ varies
-print('')
-print('[6] Sample first 5 BEAST_ATTACK collections - attacker + site:')
-local shown = 0
-for i = 0, #all - 1 do
-    if shown >= 5 then break end
-    local ok_c, col = pcall(function() return all[i] end)
-    if not ok_c or not col then goto continue2 end
-    local ok_t, ct = pcall(function() return col:getType() end)
-    if not ok_t or ct ~= BA_TYPE then goto continue2 end
-
-    shown = shown + 1
-    local ok_s, sv = pcall(function() return col.site end)
-    local ok_dc, dv = pcall(function() return col.defender_civ end)
-    local ok_ahf2, ahf2 = pcall(function() return col.attacker_hf end)
-    local beast_id = (ok_ahf2 and #ahf2 > 0) and ahf2[0] or -1
-    local beast_name = '?'
-    if beast_id >= 0 then
-        local hf = df.historical_figure.find(beast_id)
-        if hf then
-            beast_name = dfhack.translation.translateName(hf.name, true) or '?'
-        end
-    end
-    print(('  col.id=%d site=%s defender_civ=%s beast=%s (hf=%d)'):format(
-        col.id,
-        ok_s and tostring(sv) or 'err',
-        ok_dc and tostring(dv) or 'err',
-        beast_name, beast_id
-    ))
-    ::continue2::
-end
-
-print('')
 print('=== END PROBE ===')
