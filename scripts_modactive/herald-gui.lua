@@ -548,8 +548,8 @@ local INDIVIDUALS_ANN = {
 
 local CIVILISATIONS_ANN = {
     { key = 'positions',   label = 'Positions',   caption = 'Leader changes',   impl = true  },
-    { key = 'diplomacy',   label = 'Diplomacy',   caption = 'Alliances & pacts', impl = false },
-    { key = 'warfare',     label = 'Warfare',     caption = 'Wars & armies',   impl = false },
+    { key = 'diplomacy',   label = 'Diplomacy',   caption = 'Alliances & pacts', impl = true },
+    { key = 'warfare',     label = 'Warfare',     caption = 'Wars & armies',   impl = true },
     { key = 'raids',       label = 'Raids',       caption = 'Raids on sites',   impl = false },
     { key = 'theft',       label = 'Theft',       caption = 'Artifacts stolen', impl = false },
     { key = 'kidnappings', label = 'Kidnappings', caption = 'Abductions',      impl = false },

@@ -139,6 +139,16 @@ function announce_legendary(msg)
     push_recent(msg, COLOR_LIGHTGREEN)
 end
 
+-- Diplomacy event for a pinned civilisation (light blue).
+function announce_diplomacy(msg)
+    push_recent(msg, COLOR_LIGHTBLUE)
+end
+
+-- Warfare event for a pinned civilisation (brown).
+function announce_war(msg)
+    push_recent(msg, COLOR_BROWN)
+end
+
 -- Position name helpers -------------------------------------------------------
 -- DF stores position names in two different formats depending on the source:
 --   entity.positions.own      -> plain stl-string  (pos.name is a Lua string)

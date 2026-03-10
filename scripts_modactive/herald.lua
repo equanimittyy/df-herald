@@ -315,6 +315,7 @@ local handler_paths = {
     'herald-handlers/herald-ind-migration',
     'herald-handlers/herald-ind-relationships',
     'herald-handlers/herald-world-leaders',
+    'herald-handlers/herald-world-diplomacy',
 }
 
 local all_handlers  -- { handler_module, ... }
@@ -502,6 +503,8 @@ elseif args[1] == 'test' then
         util.announce_combat('TEST - Combat announcement (light red)')
         util.announce_migration('TEST - Migration announcement (green)')
         util.announce_info('TEST - Info announcement (cyan)')
+        util.announce_diplomacy('TEST - Diplomacy announcement (light blue)')
+        util.announce_war('TEST - War announcement (brown)')
         print('[Herald] Test announcements fired.')
     end
 elseif args[1] == 'probe' then
