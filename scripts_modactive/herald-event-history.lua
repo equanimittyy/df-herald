@@ -2175,11 +2175,11 @@ local function format_collection_entry(col, focal_civ_id)
             local vc_name = vc and ent_name_by_id(vc)
             local against = vc_name and (' from ' .. vc_name) or ''
             local what = loot and (' - stole ' .. loot) or ''
-            return 'committed theft in ' .. loc .. against .. what
+            return 'organised theft in ' .. loc .. against .. what
         else
             local by = tc and ent_name_by_id(tc)
             local what = loot and (' - stole ' .. loot) or ''
-            return (by or 'Unknown') .. ' committed theft from ' .. loc .. what
+            return (by or 'Unknown') .. ' organised theft from ' .. loc .. what
         end
 
     elseif ct == _CT.ABDUCTION then
