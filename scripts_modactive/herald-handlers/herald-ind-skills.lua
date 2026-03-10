@@ -156,8 +156,34 @@ end
 
 polls = true
 
+-- Set skill baselines immediately at map load for consistency with other handlers.
+local function set_initial_baselines(dprint)
+    local ok, active = pcall(function() return df.global.world.units.active end)
+    if not ok or not active then return end
+    local pinned = pins.get_pinned()
+    for i = 0, #active - 1 do
+        local unit = active[i]
+        if not unit then goto continue end
+        local ok_hf, hf_id = pcall(function() return unit.hist_figure_id end)
+        if not ok_hf or not hf_id or hf_id < 0 then goto continue end
+        if not pinned[hf_id] or not legendary_enabled(pinned[hf_id]) then goto continue end
+        local snap = read_unit_skills(unit)
+        if snap then
+            skill_snapshots[hf_id] = snap
+            local total, leg = 0, 0
+            for _, r in pairs(snap) do
+                total = total + 1
+                if r >= LEGENDARY then leg = leg + 1 end
+            end
+            dprint('ind-skills.init: baseline for hf %d: %d skills, %d legendary', hf_id, total, leg)
+        end
+        ::continue::
+    end
+end
+
 function init(dprint)
     skill_snapshots = {}
+    set_initial_baselines(dprint)
     dprint('ind-skills: handler initialised')
 end
 
