@@ -18,9 +18,13 @@ scripts_modactive/
   herald-handler-contract.lua ← handler contract factory (no-op defaults for all handler fields)
   herald-pins.lua            ← shared pinned-HF state (persistence, get/set, settings)
   herald-handlers/
-    herald-ind-death.lua   ← HIST_FIGURE_DIED + BODY_ABUSED(victim) + poll handler for pinned individuals
-    herald-ind-combat.lua  ← event-driven combat handler (battles, wounds, site attacks, overthrows)
-    herald-world-leaders.lua ← poll-based world leader tracking [Civilisations]
+    herald-ind-death.lua          ← HIST_FIGURE_DIED + BODY_ABUSED(victim) + poll for pinned individuals
+    herald-ind-combat.lua         ← event-driven (battles, wounds, sites, overthrows) + poll (fort kills)
+    herald-ind-skills.lua         ← poll-based legendary skill detection for pinned individuals
+    herald-ind-positions.lua      ← poll-based position appointment/vacation tracking for pinned individuals
+    herald-ind-migration.lua      ← event-driven (world relocation) + poll (fort arrival/departure)
+    herald-ind-relationships.lua  ← event-driven relationship events (marriage, apprentice, deity, intrigue)
+    herald-world-leaders.lua      ← poll-based world leader tracking [Civilisations]
 
 scripts_modinstalled/
   herald-button.lua        ← DFHack overlay widgets (Herald button + alert on main screen)
@@ -31,8 +35,12 @@ Each handler in its own `herald-<type>.lua` under `herald-handlers/`. Handlers c
 
 ## Handlers
 
-- **Individuals (death)** - event-driven (HIST_FIGURE_DIED, BODY_ABUSED victim) and poll-based (off-screen death detection).
-- **Individuals (combat)** - event-driven only; battles, wounds, site attacks/destructions, field battles, overthrows, body abuse (as abuser).
+- **Individuals (death)** - event-driven (HIST_FIGURE_DIED, BODY_ABUSED victim) + poll (off-screen death detection).
+- **Individuals (combat)** - event-driven (battles, wounds, sites, overthrows, body abuse as abuser) + poll (fort-level kills via hf.info.kills baseline).
+- **Individuals (skills)** - poll-based; detects legendary skill achievement.
+- **Individuals (positions)** - poll-based; detects position appointments/vacations via entity_links.
+- **Individuals (migration)** - event-driven (world relocation) + poll (fort arrival/departure via units.active).
+- **Individuals (relationships)** - event-driven only; marriage, divorce, apprenticeship, deity worship, intrigue.
 - **Civilisations** - poll-based only; snapshots civ state each cycle, detects changes by diff.
 
 ## Module Requirements
@@ -57,7 +65,8 @@ Each handler in its own `herald-<type>.lua` under `herald-handlers/`. Handlers c
 
 Shared module, all exports non-local at module scope.
 
-- **Announcements** (use these, never `dfhack.gui.showAnnouncement` directly): `announce_death` (red), `announce_combat` (light red), `announce_appointment` (yellow), `announce_vacated` (white), `announce_info` (cyan). Push to recent ring buffer only (no DF announcement bar); alert overlay notifies the player.
+- **Announcements** (use these, never `dfhack.gui.showAnnouncement` directly): `announce_death` (red), `announce_combat` (light red), `announce_appointment` (yellow), `announce_vacated` (white), `announce_info` (cyan), `announce_migration` (green), `announce_relationship` (light magenta), `announce_legendary` (light green). Push to recent ring buffer only (no DF announcement bar); alert overlay notifies the player.
+- **Unit iteration:** `for_each_pinned_unit(pinned, callback)` — walks `units.active`, yields `(unit, hf_id, settings)` per pinned HF. Used by handler init baselines and polls.
 - **Recent history:** `RECENT_PERSIST_KEY`, `MAX_RECENT=20`, `has_unread` (exported bool). `load_recent()`/`save_recent()`/`reset_recent()`/`get_recent_announcements()`/`clear_unread()`
 - **Position helpers:** `name_str(field)` normalises stl-string/string[] to string; `get_pos_name(entity, pos_id, hf_sex)` returns gendered title
 - **HF/entity:** `is_alive(hf)`, `get_race_name(hf)`, `get_entity_race_name(entity)`, `deepcopy(t)`

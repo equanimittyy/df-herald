@@ -94,8 +94,9 @@ local function handle_body_abused(ev, dprint)
         if victim_hf and pinned[victim_hf] then
             local settings = pinned[victim_hf]
             if settings and settings.death then
-                local name = df.historical_figure.find(victim_hf)
-                    and dfhack.translation.translateName(df.historical_figure.find(victim_hf).name, true)
+                local hf = df.historical_figure.find(victim_hf)
+                local name = hf
+                    and dfhack.translation.translateName(hf.name, true)
                     or tostring(victim_hf)
                 util.announce_death(("%s's corpse was desecrated."):format(name))
             end

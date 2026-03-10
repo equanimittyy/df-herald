@@ -29,10 +29,7 @@ local kill_baselines = {}
 
 -- Helpers ---------------------------------------------------------------------
 
-local function hf_name(hf_id)
-    return util.hf_name(hf_id)
-end
-
+local hf_name   = util.hf_name
 local site_name = util.site_name
 
 -- Returns true if the settings table has combat announcements enabled.

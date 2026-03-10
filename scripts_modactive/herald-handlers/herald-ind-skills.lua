@@ -74,7 +74,7 @@ local function diff_skills(hf_id, old_snap, new_snap, dprint)
                 local sname = skill_name(skill_id)
                 dprint('ind-skills: %s (hf %d) became legendary in %s (old=%s new=%s)',
                     name, hf_id, sname, tostring(old_rating), tostring(new_rating))
-                util.announce_appointment(('%s has become legendary in %s!'):format(name, sname))
+                util.announce_legendary(('%s has become legendary in %s!'):format(name, sname))
             end
         end
     end

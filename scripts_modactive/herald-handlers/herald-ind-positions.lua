@@ -39,39 +39,46 @@ local function fmt_vacated(hf_name, pos_name, civ_name)
 end
 
 -- Builds current position snapshot for a single HF by walking entity_links.
+-- Returns snap, ok.  On partial failure returns nil, false so callers can
+-- preserve the previous snapshot instead of replacing with incomplete data.
 local function build_hf_snapshot(hf)
+    local ok_links, links = pcall(function() return hf.entity_links end)
+    if not ok_links or not links then return nil, false end
+
     local snap = {}
-    for _, link in ipairs(hf.entity_links) do
-        local ok_type, ltype = pcall(function() return link:getType() end)
-        if not ok_type or ltype ~= df.histfig_entity_link_type.POSITION then
-            goto next_link
-        end
-        local entity = df.historical_entity.find(link.entity_id)
-        if not entity then goto next_link end
-
-        local ok_asgn, assignments = pcall(function() return entity.positions.assignments end)
-        if not ok_asgn or not assignments then goto next_link end
-
-        local civ_name = dfhack.translation.translateName(entity.name, true)
-        if not civ_name or civ_name == '' then civ_name = tostring(link.entity_id) end
-
-        for _, asgn in ipairs(assignments) do
-            if asgn.histfig2 == -1 then goto next_asgn end
-            if asgn.histfig2 == hf.id then
-                local key = link.entity_id .. ':' .. asgn.id
-                snap[key] = {
-                    entity_id     = link.entity_id,
-                    assignment_id = asgn.id,
-                    pos_name      = util.get_pos_name(entity, asgn.position_id, hf.sex),
-                    civ_name      = civ_name,
-                }
+    local ok = pcall(function()
+        for _, link in ipairs(links) do
+            local ltype = link:getType()
+            if ltype ~= df.histfig_entity_link_type.POSITION then
+                goto next_link
             end
-            ::next_asgn::
-        end
+            local entity = df.historical_entity.find(link.entity_id)
+            if not entity then goto next_link end
 
-        ::next_link::
-    end
-    return snap
+            local assignments = entity.positions.assignments
+            if not assignments then goto next_link end
+
+            local civ_name = dfhack.translation.translateName(entity.name, true)
+            if not civ_name or civ_name == '' then civ_name = tostring(link.entity_id) end
+
+            for _, asgn in ipairs(assignments) do
+                if asgn.histfig2 == -1 then goto next_asgn end
+                if asgn.histfig2 == hf.id then
+                    local key = link.entity_id .. ':' .. asgn.id
+                    snap[key] = {
+                        entity_id     = link.entity_id,
+                        assignment_id = asgn.id,
+                        pos_name      = util.get_pos_name(entity, asgn.position_id, hf.sex),
+                        civ_name      = civ_name,
+                    }
+                end
+                ::next_asgn::
+            end
+
+            ::next_link::
+        end
+    end)
+    return ok and snap or nil, ok
 end
 
 -- Poll handler ----------------------------------------------------------------
@@ -85,7 +92,12 @@ local function handle_poll(dprint)
         local hf = df.historical_figure.find(hf_id)
         if not hf or not util.is_alive(hf) then goto next_hf end
 
-        local current = build_hf_snapshot(hf)
+        local current, snap_ok = build_hf_snapshot(hf)
+        if not snap_ok then
+            -- Partial failure; preserve previous snapshot to avoid false vacated
+            new_snapshots[hf_id] = position_snapshots[hf_id]
+            goto next_hf
+        end
         new_snapshots[hf_id] = current
         dbg_tracked = dbg_tracked + 1
 
@@ -145,7 +157,8 @@ local function set_initial_baselines(dprint)
     for hf_id, _ in pairs(pinned) do
         local hf = df.historical_figure.find(hf_id)
         if not hf or not util.is_alive(hf) then goto next_hf end
-        local snap = build_hf_snapshot(hf)
+        local snap, snap_ok = build_hf_snapshot(hf)
+        if not snap_ok then goto next_hf end
         position_snapshots[hf_id] = snap
         local n = 0
         for _ in pairs(snap) do n = n + 1 end

@@ -25,10 +25,7 @@ local seen_on_map = {}
 
 -- Helpers ---------------------------------------------------------------------
 
-local function hf_name(hf_id)
-    return util.hf_name(hf_id)
-end
-
+local hf_name   = util.hf_name
 local site_name = util.site_name
 
 local function migration_enabled(settings)

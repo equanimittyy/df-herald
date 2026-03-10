@@ -28,12 +28,14 @@ has_unread = false
 local SEASON_NAMES = { 'Spring', 'Summer', 'Autumn', 'Winter' }
 
 local function push_recent(msg, color)
+    local year = dfhack.isMapLoaded() and df.global.cur_year or 0
+    local tick = dfhack.isMapLoaded() and df.global.cur_year_tick or 0
     table.insert(recent_announcements, 1, {
         msg    = msg,
         color  = color,
-        year   = df.global.cur_year,
-        tick   = df.global.cur_year_tick,
-        season = SEASON_NAMES[math.floor(df.global.cur_year_tick / 100800) + 1] or 'Spring',
+        year   = year,
+        tick   = tick,
+        season = SEASON_NAMES[math.floor(tick / 100800) + 1] or 'Spring',
     })
     while #recent_announcements > MAX_RECENT do
         table.remove(recent_announcements)
@@ -130,6 +132,11 @@ end
 -- Relationship event for a tracked individual (light magenta).
 function announce_relationship(msg)
     push_recent(msg, COLOR_LIGHTMAGENTA)
+end
+
+-- Legendary skill achievement (light green).
+function announce_legendary(msg)
+    push_recent(msg, COLOR_LIGHTGREEN)
 end
 
 -- Position name helpers -------------------------------------------------------

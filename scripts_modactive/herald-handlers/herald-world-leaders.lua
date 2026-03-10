@@ -88,17 +88,18 @@ function check_poll(dprint)
         end
         dbg_civs = dbg_civs + 1
 
-        if #entity.positions.assignments == 0 then
-            dprint('world-leaders: entity_id=%d has no assignments, skipping', entity_id)
+        local ok_asgn, assignments = pcall(function() return entity.positions.assignments end)
+        if not ok_asgn or not assignments or #assignments == 0 then
+            dprint('world-leaders: entity_id=%d has no/inaccessible assignments, skipping', entity_id)
             goto continue_entity
         end
 
         local civ_name           = dfhack.translation.translateName(entity.name, true)
         local announce_positions = pin_settings.positions
 
-        dprint('world-leaders: civ "%s" has %d assignments', civ_name, #entity.positions.assignments)
+        dprint('world-leaders: civ "%s" has %d assignments', civ_name, #assignments)
 
-        for _, assignment in ipairs(entity.positions.assignments) do
+        for _, assignment in ipairs(assignments) do
             local hf_id = assignment.histfig2
             if hf_id == -1 then goto continue_assignment end
 
@@ -242,9 +243,11 @@ local function set_initial_baselines(dprint)
     for entity_id, _ in pairs(pinned_civ_ids) do
         local entity = df.historical_entity.find(entity_id)
         if not entity then goto next_civ end
+        local ok_asgn, assignments = pcall(function() return entity.positions.assignments end)
+        if not ok_asgn or not assignments then goto next_civ end
         local civ_name = dfhack.translation.translateName(entity.name, true)
         local snap = {}
-        for _, assignment in ipairs(entity.positions.assignments) do
+        for _, assignment in ipairs(assignments) do
             local hf_id = assignment.histfig2
             if hf_id == -1 then goto next_asgn end
             local hf = df.historical_figure.find(hf_id)
@@ -272,6 +275,7 @@ end
 
 function reset()
     tracked_leaders = {}
+    pinned_civ_ids = {}
 end
 
 dfhack.reqscript('herald-handler-contract').apply(_ENV)
