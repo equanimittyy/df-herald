@@ -635,12 +635,36 @@ do
                 BERSERK    = 'Went berserk',
                 MELANCHOLY = 'Was stricken by melancholy',
             }
-            local mt = mname and MOOD_TEXT[mname]
+            local key = mname and mname:upper()
+            local mt = key and MOOD_TEXT[key]
             if mt then return mt .. reason_sfx() end
         end
 
         -- Return nil; falls back to enum name display.
         return nil
+    end)
+
+    add('CHANGE_HF_MOOD', function(ev, _focal)
+        local mood   = safe_get(ev, 'mood')
+        local site_n = site_name_by_id(safe_get(ev, 'site'))
+        local loc    = site_n and (' in ' .. site_n) or ''
+        if mood ~= nil then
+            local mname = df.mood_type and df.mood_type[mood]
+            local MOOD_TEXT = {
+                FEY        = 'Was taken by a fey mood',
+                SECRETIVE  = 'Withdrew from society',
+                POSSESSED  = 'Was possessed',
+                FELL       = 'Was taken by a fell mood',
+                MACABRE    = 'Began to skulk and brood',
+                BERSERK    = 'Went berserk',
+                MELANCHOLY = 'Was stricken by melancholy',
+                INSANE     = 'Went insane',
+            }
+            local key = mname and mname:upper()
+            local mt = key and MOOD_TEXT[key]
+            if mt then return mt .. loc end
+        end
+        return 'Entered a strange mood' .. loc
     end)
 
     add('ADD_HF_SITE_LINK', function(ev, _focal)
