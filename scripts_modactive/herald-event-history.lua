@@ -2570,7 +2570,7 @@ local function get_civ_events_cached(civ_id)
 end
 
 -- Collects events relevant to a civilisation: collection-level summaries for
--- warfare/raids/theft/kidnappings, plus individual position-change events.
+-- warfare/raids/espionage, plus individual position-change events.
 -- Uses cache when available; falls back to full scan.
 -- Returns (results, ctx_map) matching get_hf_events signature.
 local function get_civ_events(civ_id)

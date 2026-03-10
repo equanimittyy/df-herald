@@ -177,14 +177,6 @@ function check_poll(dprint)
         (function() local n=0 for _ in pairs(tracked_leaders) do n=n+1 end return n end)())
 end
 
--- Public interface: delegate to herald-civ-pins for backwards compat ----------
-
-function load_pinned_civs() civ_pins.load_pinned() end
-function get_pinned_civs() return civ_pins.get_pinned() end
-function set_pinned_civ(entity_id, value) civ_pins.set_pinned(entity_id, value) end
-function get_civ_pin_settings(entity_id) return civ_pins.get_pin_settings(entity_id) end
-function set_civ_pin_setting(entity_id, key, value) civ_pins.set_pin_setting(entity_id, key, value) end
-
 -- Handler contract -------------------------------------------------------------
 
 polls = true
