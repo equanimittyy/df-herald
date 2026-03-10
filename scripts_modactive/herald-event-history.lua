@@ -487,6 +487,15 @@ do
             else
                 return 'Began an apprenticeship under ' .. other
             end
+        elseif ltype == LT.FORMER_APPRENTICE or ltype == LT.FORMER_MASTER then
+            if (focal_is_hf and ltype == LT.FORMER_APPRENTICE)
+                or (not focal_is_hf and ltype == LT.FORMER_MASTER) then
+                return 'Ended mentorship of ' .. other
+            else
+                return 'Ended apprenticeship under ' .. other
+            end
+        elseif ltype == LT.FORMER_SPOUSE then
+            return 'Divorced ' .. other
         elseif ltype == LT.DEITY then
             if focal_is_hf then
                 return 'Began worshipping ' .. other
@@ -513,19 +522,27 @@ do
         local other_id    = focal_is_hf and target_id or hf_id
         local other       = hf_name_by_id(other_id) or 'someone'
         if LT then
-            if ltype == LT.FORMER_SPOUSE then
+            if ltype == LT.SPOUSE or ltype == LT.FORMER_SPOUSE then
                 return 'Divorced ' .. other
-            elseif ltype == LT.FORMER_APPRENTICE then
+            elseif ltype == LT.LOVER then
+                return 'Ended a romantic relationship with ' .. other
+            elseif ltype == LT.APPRENTICE or ltype == LT.FORMER_APPRENTICE then
                 if focal_is_hf then
-                    return 'Ceased being the master of ' .. other
+                    return 'Ended mentorship of ' .. other
                 else
-                    return 'Ceased being the apprentice of ' .. other
+                    return 'Ended apprenticeship under ' .. other
                 end
-            elseif ltype == LT.FORMER_MASTER then
+            elseif ltype == LT.MASTER or ltype == LT.FORMER_MASTER then
                 if focal_is_hf then
-                    return 'Ceased being the master of ' .. other
+                    return 'Ended mentorship of ' .. other
                 else
-                    return 'Ceased being the apprentice of ' .. other
+                    return 'Ended apprenticeship under ' .. other
+                end
+            elseif ltype == LT.PRISONER then
+                if focal_is_hf then
+                    return 'Released ' .. other
+                else
+                    return 'Was released by ' .. other
                 end
             elseif ltype == LT.DEITY then
                 if focal_is_hf then
@@ -1177,19 +1194,25 @@ do
         local seeker_id = safe_get(ev, 'seeker_hf')
         local target_id = safe_get(ev, 'target_hf')
         local rtype     = safe_get(ev, 'type')
-        local rname     = rtype and (df.unit_relationship_type[rtype] or 'unknown')
-                            or 'unknown'
-        rname = rname:lower():gsub('_', ' ')
+        local raw       = rtype and (df.unit_relationship_type[rtype] or nil)
+        -- Map role nouns to natural relationship phrases.
+        local RNAME_MAP = {
+            Apprentice = 'an apprenticeship', Master = 'a mentorship',
+            Lover = 'a romantic relationship', Spouse = 'a marriage',
+            Deity = 'a worship bond', Pet = 'a pet bond',
+            Prisoner = 'a captivity',
+        }
+        local rname = (raw and RNAME_MAP[raw]) or ('a ' .. (raw or 'unknown'):lower():gsub('_', ' ') .. ' relationship')
         if focal == seeker_id then
             local other = hf_name_by_id(target_id) or 'someone'
-            return 'Was denied a ' .. rname .. ' relationship with ' .. other
+            return 'Was denied ' .. rname .. ' with ' .. other
         elseif focal == target_id then
             local other = hf_name_by_id(seeker_id) or 'someone'
-            return 'Denied a ' .. rname .. ' relationship sought by ' .. other
+            return 'Denied ' .. rname .. ' sought by ' .. other
         end
         local seeker = hf_name_by_id(seeker_id) or 'someone'
         local target = hf_name_by_id(target_id) or 'someone'
-        return seeker .. ' was denied a ' .. rname .. ' relationship with ' .. target
+        return seeker .. ' was denied ' .. rname .. ' with ' .. target
     end)
 
     add('HFS_FORMED_INTRIGUE_RELATIONSHIP', function(ev, focal)

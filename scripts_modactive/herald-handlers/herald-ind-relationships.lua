@@ -189,17 +189,20 @@ local function handle_relationship_denied(ev, dprint)
     local target_id = util.safe_get(ev, 'target_hf') or -1
     local rtype     = util.safe_get(ev, 'type')
 
-    local rname = 'Unknown'
-    if rtype and df.unit_relationship_type then
-        local raw = df.unit_relationship_type[rtype]
-        rname = type(raw) == 'string' and title_case(raw) or 'Unknown'
-    end
+    local RNAME_MAP = {
+        Apprentice = 'an apprenticeship', Master = 'a mentorship',
+        Lover = 'a romantic relationship', Spouse = 'a marriage',
+        Deity = 'a worship bond', Pet = 'a pet bond',
+        Prisoner = 'a captivity',
+    }
+    local raw = rtype and df.unit_relationship_type and df.unit_relationship_type[rtype]
+    local rname = (raw and RNAME_MAP[raw]) or ('a ' .. (raw or 'unknown'):lower():gsub('_', ' ') .. ' relationship')
 
     if pinned[seeker_id] and relationships_enabled(pinned[seeker_id]) then
-        fire(ev.id, ('%s was denied a %s relationship with %s.'):format(
+        fire(ev.id, ('%s was denied %s with %s.'):format(
             util.hf_name(seeker_id), rname, other_name(target_id)), dprint)
     elseif pinned[target_id] and relationships_enabled(pinned[target_id]) then
-        fire(ev.id, ('%s denied a %s relationship sought by %s.'):format(
+        fire(ev.id, ('%s denied %s sought by %s.'):format(
             util.hf_name(target_id), rname, other_name(seeker_id)), dprint)
     end
 end
