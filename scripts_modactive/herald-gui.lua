@@ -879,6 +879,38 @@ function PinnedPanel:unpin_selected()
     self.parent_view:on_pin_changed(change_type)
 end
 
+-- ArtifactsPanel ---------------------------------------------------------------
+-- Exploration-only tab - no pinning. Future plans:
+-- - Populate with all artifacts in the game world
+-- - Event history window showing all history events for the selected artifact
+--   - Use herald-cache delta processing (like ind/civ event history) to
+--     incrementally build per-artifact event counts and ID lists
+-- - For weapons: show which HFs were killed using the artifact and by whom
+-- - Stat window (bottom bar) showing: artifact_id, name, creator, current
+--   location (site name), material, artifact type, item subtype, creation year, kills
+-- - No pinned functions for artifacts; this is purely an exploration window
+
+local ArtifactsPanel = defclass(ArtifactsPanel, widgets.Panel) -- luacheck: ignore 113
+ArtifactsPanel.ATTRS {
+    frame = { t = 2, b = 1 },
+}
+
+function ArtifactsPanel:init()
+    self._loaded = false
+
+    self:addviews{
+        widgets.Label{
+            frame = { t = 1, l = 1 },
+            text  = 'Artifacts - coming soon',
+            text_pen = COLOR_GREY,
+        },
+    }
+end
+
+function ArtifactsPanel:onInput(keys)
+    return ArtifactsPanel.super.onInput(self, keys)
+end
+
 -- CivisationsPanel -------------------------------------------------------------
 
 local CivisationsPanel = defclass(CivisationsPanel, widgets.Panel) -- luacheck: ignore 113
@@ -1100,7 +1132,7 @@ function HeraldWindow:init()
     self:addviews{
         widgets.TabBar{
             frame  = { t = 0, l = 0 },
-            labels = { 'Recent', 'Pinned', 'Historical Figures', 'Civilisations' },
+            labels = { 'Recent', 'Pinned', 'Historical Figures', 'Civilisations', 'Artifacts' },
             key          = 'CUSTOM_CTRL_T',
             get_cur_page = function() return self.cur_tab end,
             on_select    = function(idx) self:switch_tab(idx) end,
@@ -1109,6 +1141,7 @@ function HeraldWindow:init()
         PinnedPanel{      view_id = 'pinned_panel',   visible = false },
         FiguresPanel{     view_id = 'figures_panel',  visible = false },
         CivisationsPanel{ view_id = 'civs_panel',     visible = false },
+        ArtifactsPanel{   view_id = 'artifacts_panel', visible = false },
         widgets.HotkeyLabel{
             frame       = { b = 0, l = 1 },
             key         = 'CUSTOM_CTRL_J',
@@ -1145,10 +1178,11 @@ end
 
 function HeraldWindow:switch_tab(idx)
     self.cur_tab = idx
-    self.subviews.recent_panel.visible  = (idx == 1)
-    self.subviews.pinned_panel.visible  = (idx == 2)
-    self.subviews.figures_panel.visible = (idx == 3)
-    self.subviews.civs_panel.visible    = (idx == 4)
+    self.subviews.recent_panel.visible    = (idx == 1)
+    self.subviews.pinned_panel.visible    = (idx == 2)
+    self.subviews.figures_panel.visible   = (idx == 3)
+    self.subviews.civs_panel.visible      = (idx == 4)
+    self.subviews.artifacts_panel.visible = (idx == 5)
 
     -- Load data on first visit - deferred from init() to avoid expensive scans.
     if idx == 1 and not self.subviews.recent_panel._loaded then
@@ -1162,6 +1196,9 @@ function HeraldWindow:switch_tab(idx)
     if idx == 4 and not self.subviews.civs_panel._loaded then
         self.subviews.civs_panel._loaded = true
         self.subviews.civs_panel:refresh_list()
+    end
+    if idx == 5 and not self.subviews.artifacts_panel._loaded then
+        self.subviews.artifacts_panel._loaded = true
     end
 end
 
@@ -1178,6 +1215,7 @@ function HeraldWindow:refresh_cache()
         self.subviews.figures_panel:refresh_list()
     elseif self.cur_tab == 4 and self.subviews.civs_panel._loaded then
         self.subviews.civs_panel:refresh_list()
+    -- Tab 5 (Artifacts) - no refresh_list yet; add here when populated
     end
 end
 
