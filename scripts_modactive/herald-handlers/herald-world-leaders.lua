@@ -17,26 +17,12 @@ Not intended for direct use.
 ]====]
 
 local util = dfhack.reqscript('herald-util')
-
-local PERSIST_CIVS_KEY = 'herald_pinned_civ_ids'
-
--- { [entity_id] = settings_table }; absent key = not pinned.
-local pinned_civ_ids = {}
+local civ_pins = dfhack.reqscript('herald-civ-pins')
 
 -- Snapshot of active position holders per civ; rebuilt each scan cycle to
 -- detect deaths and new appointments by comparing against the previous cycle.
 -- Schema: { [entity_id] = { [assignment_id] = { hf_id, pos_name, civ_name } } }
 local tracked_leaders = {}
-
--- Persistence -----------------------------------------------------------------
-
-local function save_pinned_civs()
-    local pins = {}
-    for id, settings in pairs(pinned_civ_ids) do
-        table.insert(pins, { id = id, settings = settings })
-    end
-    dfhack.persistent.saveSiteData(PERSIST_CIVS_KEY, { pins = pins })
-end
 
 -- Announcement formatting -----------------------------------------------------
 -- pos_name may be nil when util.get_pos_name can't resolve a title; the
@@ -80,7 +66,7 @@ function check_poll(dprint)
     --   asgn.histfig2    - HF ID of the current holder (-1 if vacant)
     --   asgn.position_id - references pos.id in the position definition lists
     --   asgn.id          - stable assignment ID (used as snapshot key across cycles)
-    for entity_id, pin_settings in pairs(pinned_civ_ids) do
+    for entity_id, pin_settings in pairs(civ_pins.get_pinned()) do
         local entity = df.historical_entity.find(entity_id)
         if not entity then
             dprint('world-leaders: entity_id=%d not found, skipping', entity_id)
@@ -158,7 +144,7 @@ function check_poll(dprint)
 
     -- Detect vacated positions: was in previous snapshot, alive, but gone or replaced this cycle.
     for entity_id, prev_assignments in pairs(tracked_leaders) do
-        local pin_settings = pinned_civ_ids[entity_id]
+        local pin_settings = civ_pins.get_pinned()[entity_id]
         if not pin_settings then goto continue_vacate_entity end
 
         local entity   = df.historical_entity.find(entity_id)
@@ -191,48 +177,13 @@ function check_poll(dprint)
         (function() local n=0 for _ in pairs(tracked_leaders) do n=n+1 end return n end)())
 end
 
--- Public interface ------------------------------------------------------------
+-- Public interface: delegate to herald-civ-pins for backwards compat ----------
 
--- Loads pinned civs from persistence; drops stale entity entries.
-function load_pinned_civs()
-    local data = dfhack.persistent.getSiteData(PERSIST_CIVS_KEY, {})
-    pinned_civ_ids = {}
-    if type(data.pins) == 'table' then
-        for _, entry in ipairs(data.pins) do
-            if type(entry.id) == 'number' and df.historical_entity.find(entry.id) then
-                pinned_civ_ids[entry.id] = util.merge_civ_pin_settings(entry.settings)
-            end
-        end
-    end
-end
-
--- Returns the full pinned civ map: { [entity_id] = settings_table }.
-function get_pinned_civs()
-    return pinned_civ_ids
-end
-
--- Pins (truthy value) or unpins (nil/false) a civilisation.
-function set_pinned_civ(entity_id, value)
-    if value then
-        pinned_civ_ids[entity_id] = util.default_civ_pin_settings()
-    else
-        pinned_civ_ids[entity_id] = nil
-    end
-    save_pinned_civs()
-end
-
--- Returns the per-civ settings table for entity_id, or nil if not pinned.
-function get_civ_pin_settings(entity_id)
-    return pinned_civ_ids[entity_id]
-end
-
--- Updates one announcement key for a pinned civ and persists.
-function set_civ_pin_setting(entity_id, key, value)
-    if pinned_civ_ids[entity_id] then
-        pinned_civ_ids[entity_id][key] = value
-        save_pinned_civs()
-    end
-end
+function load_pinned_civs() civ_pins.load_pinned() end
+function get_pinned_civs() return civ_pins.get_pinned() end
+function set_pinned_civ(entity_id, value) civ_pins.set_pinned(entity_id, value) end
+function get_civ_pin_settings(entity_id) return civ_pins.get_pin_settings(entity_id) end
+function set_civ_pin_setting(entity_id, key, value) civ_pins.set_pin_setting(entity_id, key, value) end
 
 -- Handler contract -------------------------------------------------------------
 
@@ -240,7 +191,7 @@ polls = true
 
 -- Set leader baselines immediately at map load.
 local function set_initial_baselines(dprint)
-    for entity_id, _ in pairs(pinned_civ_ids) do
+    for entity_id, _ in pairs(civ_pins.get_pinned()) do
         local entity = df.historical_entity.find(entity_id)
         if not entity then goto next_civ end
         local ok_asgn, assignments = pcall(function() return entity.positions.assignments end)
@@ -268,14 +219,14 @@ local function set_initial_baselines(dprint)
 end
 
 function init(dprint)
-    load_pinned_civs()
+    civ_pins.load_pinned()
     set_initial_baselines(dprint)
     dprint('world-leaders: handler initialised')
 end
 
 function reset()
     tracked_leaders = {}
-    pinned_civ_ids = {}
+    civ_pins.reset()
 end
 
 dfhack.reqscript('herald-handler-contract').apply(_ENV)

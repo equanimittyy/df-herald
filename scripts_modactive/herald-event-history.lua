@@ -1063,6 +1063,72 @@ do
         return att .. ' destroyed' .. loc
     end)
 
+    -- Warfare site events (civ-level; unverified field names, guarded with safe_get).
+    add('WAR_DESTROYED_SITE', function(ev, focal)
+        local att = ent_name_by_id(safe_get(ev, 'attacker_civ'))
+        local def = ent_name_by_id(safe_get(ev, 'defender_civ') or safe_get(ev, 'site_civ'))
+        local site_n = site_name_by_id(safe_get(ev, 'site'))
+        local loc = site_n or 'a site'
+        if focal and focal == safe_get(ev, 'attacker_civ') then
+            return 'Destroyed ' .. loc
+        elseif focal and focal == (safe_get(ev, 'defender_civ') or safe_get(ev, 'site_civ')) then
+            return loc .. ' was destroyed' .. (att and (' by ' .. att) or '')
+        end
+        return (att or 'unknown') .. ' destroyed ' .. loc
+    end)
+
+    add('WAR_SITE_TAKEN_OVER', function(ev, focal)
+        local att = ent_name_by_id(safe_get(ev, 'attacker_civ'))
+        local def = ent_name_by_id(safe_get(ev, 'defender_civ') or safe_get(ev, 'site_civ'))
+        local site_n = site_name_by_id(safe_get(ev, 'site'))
+        local loc = site_n or 'a site'
+        if focal and focal == safe_get(ev, 'attacker_civ') then
+            return 'Took control of ' .. loc
+        elseif focal and focal == (safe_get(ev, 'defender_civ') or safe_get(ev, 'site_civ')) then
+            return 'Lost ' .. loc .. (att and (' to ' .. att) or '')
+        end
+        return (att or 'unknown') .. ' took control of ' .. loc
+    end)
+
+    add('WAR_SITE_NEW_LEADER', function(ev, focal)
+        local att = ent_name_by_id(safe_get(ev, 'attacker_civ'))
+        local site_n = site_name_by_id(safe_get(ev, 'site'))
+        local loc = site_n or 'a site'
+        local leaders = safe_get(ev, 'new_leaders')
+        local leader_str
+        if leaders then
+            local ok, n = pcall(function() return #leaders end)
+            if ok and n > 0 then
+                local names = {}
+                for i = 0, n - 1 do
+                    local ok2, hf_id = pcall(function() return leaders[i] end)
+                    if ok2 and hf_id and hf_id >= 0 then
+                        table.insert(names, hf_name_by_id(hf_id) or tostring(hf_id))
+                    end
+                end
+                if #names > 0 then leader_str = table.concat(names, ', ') end
+            end
+        end
+        local suffix = leader_str and (': ' .. leader_str) or ''
+        if focal and focal == safe_get(ev, 'attacker_civ') then
+            return 'Installed new leadership at ' .. loc .. suffix
+        end
+        return 'New leadership installed at ' .. loc .. (att and (' by ' .. att) or '') .. suffix
+    end)
+
+    add('WAR_SITE_TRIBUTE_FORCED', function(ev, focal)
+        local att = ent_name_by_id(safe_get(ev, 'attacker_civ') or safe_get(ev, 'a_civ'))
+        local def = ent_name_by_id(safe_get(ev, 'defender_civ') or safe_get(ev, 'd_civ'))
+        local site_n = site_name_by_id(safe_get(ev, 'site') or safe_get(ev, 'site_id'))
+        local loc = site_n and (' at ' .. site_n) or ''
+        if focal and focal == (safe_get(ev, 'attacker_civ') or safe_get(ev, 'a_civ')) then
+            return 'Forced tribute on ' .. (def or 'unknown') .. loc
+        elseif focal and focal == (safe_get(ev, 'defender_civ') or safe_get(ev, 'd_civ')) then
+            return 'Forced to pay tribute to ' .. (att or 'unknown') .. loc
+        end
+        return (att or 'unknown') .. ' forced tribute on ' .. (def or 'unknown') .. loc
+    end)
+
     -- histfig1/histfig2 may also appear as hfid1/hfid2 in older DFHack builds.
     add('HFS_FORMED_REPUTATION_RELATIONSHIP', function(ev, focal)
         local hf1   = safe_get(ev, 'histfig1') or safe_get(ev, 'hfid1')
@@ -1687,40 +1753,13 @@ end
 -- Civ event history helpers ----------------------------------------------------
 
 -- Lazily-built entity_population.id -> civ_id lookup.
--- BATTLE collections reference entity_population IDs (not civ IDs) in their
--- attacker_squad_entity_pop / defender_squad_entity_pops vectors.
-local _entpop_to_civ = nil
-local function get_entpop_to_civ()
-    if _entpop_to_civ then return _entpop_to_civ end
-    _entpop_to_civ = {}
-    for _, ep in ipairs(df.global.world.entity_populations) do
-        local cid = safe_get(ep, 'civ_id')
-        if cid and cid >= 0 then _entpop_to_civ[ep.id] = cid end
-    end
-    return _entpop_to_civ
-end
-
--- Exported: full reset on world unload. Clears view and lazy civ caches.
+-- Exported: full reset on world unload. Clears view caches.
 -- reqscript caches module environments, so these persist across loads.
 function reset()
     if event_history_view then
         pcall(function() event_history_view:dismiss() end)
     end
     event_history_view = nil
-    _entpop_to_civ = nil
-end
-
--- Check if any entity_population in a squad vector belongs to civ_id.
-local function entpop_vec_has_civ(col, field, civ_id, ep_map)
-    local ok_v, vec = pcall(function() return col[field] end)
-    if not ok_v or not vec then return false end
-    local ok_n, n = pcall(function() return #vec end)
-    if not ok_n then return false end
-    for i = 0, n - 1 do
-        local ok2, epid = pcall(function() return vec[i] end)
-        if ok2 and ep_map[epid] == civ_id then return true end
-    end
-    return false
 end
 
 -- Returns true if a collection involves the given civ_id as attacker, defender,
@@ -1752,9 +1791,9 @@ function civ_matches_collection(col, civ_id)
         -- BATTLE collections have empty attacker_civ/defender_civ; combatants
         -- are in attacker_squad_entity_pop / defender_squad_entity_pops which
         -- reference entity_population IDs (resolved to civ_id via lookup).
-        local ep_map = get_entpop_to_civ()
-        return entpop_vec_has_civ(col, 'attacker_squad_entity_pop', civ_id, ep_map)
-            or entpop_vec_has_civ(col, 'defender_squad_entity_pops', civ_id, ep_map)
+        local ep_map = util.get_entpop_to_civ()
+        return util.entpop_vec_has_civ(col, 'attacker_squad_entity_pop', civ_id, ep_map)
+            or util.entpop_vec_has_civ(col, 'defender_squad_entity_pops', civ_id, ep_map)
     elseif ct == _CT.WAR or ct == _CT.SITE_CONQUERED then
         return vec_match('attacker_civ') or vec_match('defender_civ')
     elseif ct == _CT.RAID or ct == _CT.THEFT then
@@ -1884,8 +1923,8 @@ end
 -- Deaths = squad deaths (generic population) + HF deaths (named figures).
 -- Returns (opponent_name, killed, lost) or (nil, 0, 0) on failure.
 local function get_battle_details(col, focal_civ_id)
-    local ep_map = get_entpop_to_civ()
-    local is_att = entpop_vec_has_civ(col, 'attacker_squad_entity_pop', focal_civ_id, ep_map)
+    local ep_map = util.get_entpop_to_civ()
+    local is_att = util.entpop_vec_has_civ(col, 'attacker_squad_entity_pop', focal_civ_id, ep_map)
     -- Squad (non-HF) deaths.
     local att_deaths = sum_squad_vec(col, 'attacker_squad_deaths')
     local def_deaths = sum_squad_vec(col, 'defender_squad_deaths')
@@ -2143,6 +2182,10 @@ do
     add_ctx('HF_DESTROYED_SITE',               always_true)
     add_ctx('WAR_ATTACKED_SITE',               always_true)
     add_ctx('WAR_FIELD_BATTLE',                has_site)
+    add_ctx('WAR_DESTROYED_SITE',              always_true)
+    add_ctx('WAR_SITE_TAKEN_OVER',             always_true)
+    add_ctx('WAR_SITE_NEW_LEADER',             always_true)
+    add_ctx('WAR_SITE_TRIBUTE_FORCED',         always_true)
 end
 
 -- Peace events get custom war-context suffix instead of generic CTX_TYPES.
@@ -2375,6 +2418,11 @@ do
     map('TOPICAGREEMENT_CONCLUDED',   {})
     map('TOPICAGREEMENT_MADE',        {})
     map('TOPICAGREEMENT_REJECTED',    {})
+    -- Warfare site events (civ-level; no HF fields used for matching).
+    map('WAR_DESTROYED_SITE',         {})
+    map('WAR_SITE_TAKEN_OVER',        {})
+    map('WAR_SITE_NEW_LEADER',        {})
+    map('WAR_SITE_TRIBUTE_FORCED',    {})
 end
 
 -- Civ event collection ---------------------------------------------------------
@@ -2392,6 +2440,13 @@ for _, name in ipairs({'WAR_PEACE_ACCEPTED', 'WAR_PEACE_REJECTED',
     local v = df.history_event_type[name]
     if v ~= nil then _PEACE_TYPES[v] = true end
 end
+-- Set of warfare site event types (attacker_civ/defender_civ fields).
+local _WARFARE_TYPES = {}
+for _, name in ipairs({'WAR_DESTROYED_SITE', 'WAR_SITE_TAKEN_OVER',
+                       'WAR_SITE_NEW_LEADER', 'WAR_SITE_TRIBUTE_FORCED'}) do
+    local v = df.history_event_type[name]
+    if v ~= nil then _WARFARE_TYPES[v] = true end
+end
 
 -- Exported enum tables for herald-cache (avoid recomputing there).
 ENUM_BATTLE_TYPES           = _BATTLE_TYPES
@@ -2402,6 +2457,7 @@ ENUM_ADD_HF_ENTITY_LINK     = _ADD_HF_ENTITY_LINK
 ENUM_REMOVE_HF_ENTITY_LINK  = _REMOVE_HF_ENTITY_LINK
 ENUM_ENTITY_CREATED          = _ENTITY_CREATED
 ENUM_PEACE_TYPES             = _PEACE_TYPES
+ENUM_WARFARE_TYPES           = _WARFARE_TYPES
 
 -- Helper: resolves a collection ID to a synthetic _collection entry.
 local function col_to_entry(col, civ_id)
@@ -2493,6 +2549,12 @@ local function get_civ_events(civ_id)
                 local src = safe_get(ev, 'source')
                 local dst = safe_get(ev, 'destination')
                 if src == civ_id or dst == civ_id then
+                    table.insert(results, ev)
+                end
+            elseif _WARFARE_TYPES[ev_type] then
+                local att = safe_get(ev, 'attacker_civ') or safe_get(ev, 'a_civ')
+                local def = safe_get(ev, 'defender_civ') or safe_get(ev, 'd_civ') or safe_get(ev, 'site_civ')
+                if att == civ_id or def == civ_id then
                     table.insert(results, ev)
                 end
             end

@@ -42,6 +42,8 @@ local rel_blocks_scanned    = 0
 local rel_last_block_ne     = 0
 -- Collection watermark.
 local last_cached_collection_idx = -1
+-- Cached set of all Civilization entity IDs; cleared on reset/invalidate.
+local _civ_set_cache = nil
 
 -- Lazy-loaded dependency (inside function bodies, not at module scope).
 local function get_ev_hist()
@@ -204,6 +206,7 @@ function invalidate_cache()
     rel_blocks_scanned    = 0
     rel_last_block_ne     = 0
     last_cached_collection_idx = -1
+    _civ_set_cache = nil
     pcall(dfhack.persistent.saveSiteData, PERSIST_KEY, {})
 end
 
@@ -217,7 +220,7 @@ end
 -- Resolved lazily at first use via get_ev_hist() to avoid load-order issues.
 local BATTLE_TYPES, COMP_TYPE, BODY_ABUSED_TYPE, OVERTHROWN_TYPE
 local ADD_HF_ENTITY_LINK_TYPE, REMOVE_HF_ENTITY_LINK_TYPE, ENTITY_CREATED_TYPE
-local PEACE_TYPES
+local PEACE_TYPES, WARFARE_TYPES
 local LT_POSITION = df.histfig_entity_link_type and df.histfig_entity_link_type.POSITION
 
 local _enums_loaded = false
@@ -232,6 +235,7 @@ local function ensure_enums()
     REMOVE_HF_ENTITY_LINK_TYPE = eh.ENUM_REMOVE_HF_ENTITY_LINK
     ENTITY_CREATED_TYPE       = eh.ENUM_ENTITY_CREATED
     PEACE_TYPES               = eh.ENUM_PEACE_TYPES
+    WARFARE_TYPES             = eh.ENUM_WARFARE_TYPES
     _enums_loaded = true
 end
 
@@ -371,6 +375,19 @@ local function process_event(ev, ev_hist)
             end
         end
     end
+
+    -- Warfare site events: cache for attacker and defender civs.
+    if WARFARE_TYPES[ev_type] then
+        local att = util.safe_get(ev, 'attacker_civ') or util.safe_get(ev, 'a_civ')
+        local def = util.safe_get(ev, 'defender_civ') or util.safe_get(ev, 'd_civ') or util.safe_get(ev, 'site_civ')
+        for _, eid in ipairs({att, def}) do
+            if eid and eid >= 0 then
+                if not civ_event_ids[eid] then civ_event_ids[eid] = {} end
+                table.insert(civ_event_ids[eid], ev_id)
+                civ_event_counts[eid] = (civ_event_counts[eid] or 0) + 1
+            end
+        end
+    end
 end
 
 -- Scans relationship event blocks from the given watermark.
@@ -427,13 +444,16 @@ local function scan_collections(from_idx, ev_hist)
     local n = #all
     dprint('scan_collections: scanning from idx %d, total collections=%d', from_idx + 1, n)
 
-    -- Build civ_set: all Civilization entity IDs.
-    local civ_set = {}
-    for _, entity in ipairs(df.global.world.entities.all) do
-        if entity.type == df.historical_entity_type.Civilization then
-            civ_set[entity.id] = true
+    -- Cached civ_set: all Civilization entity IDs.
+    if not _civ_set_cache then
+        _civ_set_cache = {}
+        for _, entity in ipairs(df.global.world.entities.all) do
+            if entity.type == df.historical_entity_type.Civilization then
+                _civ_set_cache[entity.id] = true
+            end
         end
     end
+    local civ_set = _civ_set_cache
 
     for ci = from_idx + 1, n - 1 do
         local col = all[ci]
@@ -634,4 +654,5 @@ function reset()
     rel_blocks_scanned    = 0
     rel_last_block_ne     = 0
     last_cached_collection_idx = -1
+    _civ_set_cache = nil
 end

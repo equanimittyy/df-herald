@@ -250,6 +250,38 @@ function safe_get(obj, field)
     return ok and val or nil
 end
 
+-- Entity population -> civ mapping -------------------------------------------
+-- Shared lazy map: entity_population.id -> civ_id. Cleared by reset_entpop_cache().
+local _entpop_to_civ = nil
+
+function get_entpop_to_civ()
+    if _entpop_to_civ then return _entpop_to_civ end
+    _entpop_to_civ = {}
+    for _, ep in ipairs(df.global.world.entity_populations) do
+        local cid = safe_get(ep, 'civ_id')
+        if cid and cid >= 0 then _entpop_to_civ[ep.id] = cid end
+    end
+    return _entpop_to_civ
+end
+
+function reset_entpop_cache()
+    _entpop_to_civ = nil
+end
+
+-- Check if any entity_population in a DF vector belongs to civ_id.
+function entpop_vec_has_civ(col, field, civ_id, ep_map)
+    ep_map = ep_map or get_entpop_to_civ()
+    local ok_v, vec = pcall(function() return col[field] end)
+    if not ok_v or not vec then return false end
+    local ok_n, n = pcall(function() return #vec end)
+    if not ok_n then return false end
+    for i = 0, n - 1 do
+        local ok2, epid = pcall(function() return vec[i] end)
+        if ok2 and ep_map[epid] == civ_id then return true end
+    end
+    return false
+end
+
 -- Active-unit iteration -------------------------------------------------------
 -- Shared iterator: walks df.global.world.units.active, yields each unit that
 -- belongs to a pinned HF.  Callback receives (unit, hf_id, settings).

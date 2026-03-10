@@ -449,6 +449,7 @@ local function cleanup()
     poll_list = nil
     dfhack.reqscript('herald-cache').reset()
     dprint('cleanup: event cache reset')
+    util.reset_entpop_cache()
     util.reset_recent()
     dprint('cleanup: recent announcements reset')
     dfhack.reqscript('herald-event-history').reset()

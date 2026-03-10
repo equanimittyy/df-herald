@@ -17,6 +17,7 @@ scripts_modactive/
   herald-probe.lua         ← debug utility for inspecting live DF data
   herald-handler-contract.lua ← handler contract factory (no-op defaults for all handler fields)
   herald-pins.lua            ← shared pinned-HF state (persistence, get/set, settings)
+  herald-civ-pins.lua        ← shared pinned-civ state (persistence, get/set, settings)
   herald-handlers/
     herald-ind-death.lua          ← HIST_FIGURE_DIED + BODY_ABUSED(victim) + poll for pinned individuals
     herald-ind-combat.lua         ← event-driven (battles, wounds, sites, overthrows) + poll (fort kills)
@@ -25,6 +26,7 @@ scripts_modactive/
     herald-ind-migration.lua      ← event-driven (world relocation) + poll (fort arrival/departure)
     herald-ind-relationships.lua  ← event-driven relationship events (marriage, apprentice, deity, intrigue)
     herald-world-leaders.lua      ← poll-based world leader tracking [Civilisations]
+    herald-world-diplomacy.lua    ← hybrid event+poll diplomacy and warfare [Civilisations]
 
 scripts_modinstalled/
   herald-button.lua        ← DFHack overlay widgets (Herald button + alert on main screen)
@@ -41,7 +43,8 @@ Each handler in its own `herald-<type>.lua` under `herald-handlers/`. Handlers c
 - **Individuals (positions)** - poll-based; detects position appointments/vacations via entity_links.
 - **Individuals (migration)** - event-driven (world relocation) + poll (fort arrival/departure via units.active).
 - **Individuals (relationships)** - event-driven only; marriage, divorce, apprenticeship, deity worship, intrigue.
-- **Civilisations** - poll-based only; snapshots civ state each cycle, detects changes by diff.
+- **Civilisations (leaders)** - poll-based only; snapshots civ state each cycle, detects changes by diff.
+- **Civilisations (diplomacy)** - hybrid event+poll; peace/agreements/tribute (event-driven) + WAR/BATTLE/RAID collections (poll-based) + site takeover/destruction/new leadership (event-driven).
 
 ## Module Requirements
 
@@ -69,7 +72,8 @@ Shared module, all exports non-local at module scope.
 - **Unit iteration:** `for_each_pinned_unit(pinned, callback)` — walks `units.active`, yields `(unit, hf_id, settings)` per pinned HF. Used by handler init baselines and polls.
 - **Recent history:** `RECENT_PERSIST_KEY`, `MAX_RECENT=20`, `has_unread` (exported bool). `load_recent()`/`save_recent()`/`reset_recent()`/`get_recent_announcements()`/`clear_unread()`
 - **Position helpers:** `name_str(field)` normalises stl-string/string[] to string; `get_pos_name(entity, pos_id, hf_sex)` returns gendered title
-- **HF/entity:** `is_alive(hf)`, `get_race_name(hf)`, `get_entity_race_name(entity)`, `deepcopy(t)`
+- **HF/entity:** `is_alive(hf)`, `get_race_name(hf)`, `get_entity_race_name(entity)`, `deepcopy(t)`, `safe_get(obj, field)`
+- **Entity population:** `get_entpop_to_civ()` (lazy cached map), `entpop_vec_has_civ(col, field, civ_id, ep_map)`, `reset_entpop_cache()`
 - **Pin settings** (here to avoid circular deps): `INDIVIDUAL_SETTINGS_KEYS` = `{relationships, death, combat, legendary, positions, migration}`, `CIVILISATION_SETTINGS_KEYS` = `{positions, diplomacy, warfare, theft, kidnappings}`, `default_pin_settings()`/`default_civ_pin_settings()` (all true), `merge_pin_settings(saved)`/`merge_civ_pin_settings(saved)`
 
 ### Detailed Docs (read on demand)

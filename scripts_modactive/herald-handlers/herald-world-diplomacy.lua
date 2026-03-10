@@ -8,16 +8,16 @@ Tags: dev
 
   Hybrid event+poll handler for civilisation diplomacy and warfare.
 
-Event-driven: peace acceptances/rejections and topic agreements between
-pinned civs (gated by diplomacy setting).
-Poll-based: detects new WAR, BATTLE, and SITE_CONQUERED collections
-involving pinned civs (gated by warfare setting).
+Event-driven: peace/agreements (diplomacy), tribute/takeover/destruction/
+new leadership (warfare).
+Poll-based: detects new WAR, BATTLE, RAID collections involving pinned
+civs (warfare).
 Not intended for direct use.
 
 ]====]
 
 local util = dfhack.reqscript('herald-util')
-local world_leaders = dfhack.reqscript('herald-handlers/herald-world-leaders')
+local civ_pins = dfhack.reqscript('herald-civ-pins')
 
 -- Dedup set keyed by event.id; cleared each poll cycle.
 local announced_diplo = {}
@@ -25,23 +25,7 @@ local announced_diplo = {}
 -- Collection IDs already seen; persistent until world unload.
 local known_collections = {}
 
--- Lazy entity_population.id -> civ_id map; cleared on reset.
-local entpop_to_civ = nil
-
 -- Helpers ---------------------------------------------------------------------
-
-local function build_entpop_map()
-    entpop_to_civ = {}
-    for _, ep in ipairs(df.global.world.entity_populations) do
-        local cid = util.safe_get(ep, 'civ_id')
-        if cid and cid >= 0 then entpop_to_civ[ep.id] = cid end
-    end
-end
-
-local function get_entpop_map()
-    if not entpop_to_civ then build_entpop_map() end
-    return entpop_to_civ
-end
 
 -- Translated entity name, or numeric fallback.
 local function ent_name(entity_id)
@@ -55,7 +39,7 @@ end
 -- Returns (pinned_entity_id, other_entity_id, settings) if either src or dst
 -- is a pinned civ, nil otherwise.
 local function find_pinned_party(src, dst)
-    local pinned_civs = world_leaders.get_pinned_civs()
+    local pinned_civs = civ_pins.get_pinned()
     if pinned_civs[src] then return src, dst, pinned_civs[src] end
     if pinned_civs[dst] then return dst, src, pinned_civs[dst] end
     return nil
@@ -272,23 +256,10 @@ do
     end
 end
 
--- Check if any entity_population in a squad vector belongs to civ_id.
-local function entpop_vec_has_civ(col, field, civ_id, ep_map)
-    local ok_v, vec = pcall(function() return col[field] end)
-    if not ok_v or not vec then return false end
-    local ok_n, n = pcall(function() return #vec end)
-    if not ok_n then return false end
-    for i = 0, n - 1 do
-        local ok2, epid = pcall(function() return vec[i] end)
-        if ok2 and ep_map[epid] == civ_id then return true end
-    end
-    return false
-end
-
 -- Check direct civ vectors (attacker_civ/defender_civ) for a pinned civ.
 -- Returns (pinned_id, other_id, settings, is_attacker) or nil.
 local function check_direct_civ_vecs(col, att_field, def_field)
-    local pinned_civs = world_leaders.get_pinned_civs()
+    local pinned_civs = civ_pins.get_pinned()
     local ok_a, att_vec = pcall(function() return col[att_field] end)
     local ok_d, def_vec = pcall(function() return col[def_field] end)
 
@@ -361,22 +332,13 @@ local function col_name(col)
     return (ok and name and name ~= '') and name or nil
 end
 
--- Get the parent WAR collection's name for a battle/site_conquered.
+-- Get the parent WAR collection's name for a battle/raid.
 local function parent_war_name(col)
     local ok, pid = pcall(function() return col.parent_collection end)
     if not ok or not pid or pid < 0 then return nil end
-    local ok2, all = pcall(function()
-        return df.global.world.history.event_collections.all
-    end)
-    if not ok2 or not all then return nil end
-    -- Search for the parent collection by ID
-    for i = 0, #all - 1 do
-        local ok3, parent = pcall(function() return all[i] end)
-        if ok3 and parent and parent.id == pid then
-            return col_name(parent)
-        end
-    end
-    return nil
+    local parent = df.history_event_collection.find(pid)
+    if not parent then return nil end
+    return col_name(parent)
 end
 
 local function handle_war_collection(col, dprint)
@@ -400,18 +362,18 @@ local function handle_war_collection(col, dprint)
 end
 
 local function handle_battle_collection(col, dprint)
-    local pinned_civs = world_leaders.get_pinned_civs()
-    local ep_map = get_entpop_map()
+    local pinned_civs = civ_pins.get_pinned()
+    local ep_map = util.get_entpop_to_civ()
 
     -- BATTLE uses squad entity_pop vectors, not direct civ vectors
     local focal_id, focal_settings, is_attacker
     for civ_id, settings in pairs(pinned_civs) do
         if settings.warfare then
-            if entpop_vec_has_civ(col, 'attacker_squad_entity_pop', civ_id, ep_map) then
+            if util.entpop_vec_has_civ(col, 'attacker_squad_entity_pop', civ_id, ep_map) then
                 focal_id, focal_settings, is_attacker = civ_id, settings, true
                 break
             end
-            if entpop_vec_has_civ(col, 'defender_squad_entity_pops', civ_id, ep_map) then
+            if util.entpop_vec_has_civ(col, 'defender_squad_entity_pops', civ_id, ep_map) then
                 focal_id, focal_settings, is_attacker = civ_id, settings, false
                 break
             end
@@ -498,7 +460,7 @@ local function site_owner_civ(site_id)
 end
 
 local function handle_raid_collection(col, dprint)
-    local pinned_civs = world_leaders.get_pinned_civs()
+    local pinned_civs = civ_pins.get_pinned()
     -- RAID uses a scalar attacking_entity (or attacker_civ fallback)
     local ok_ae, att_eid = pcall(function() return col.attacking_entity end)
     if not ok_ae or not att_eid or att_eid < 0 then
@@ -513,9 +475,9 @@ local function handle_raid_collection(col, dprint)
 
     -- Check attacker side
     if att_eid and pinned_civs[att_eid] and pinned_civs[att_eid].warfare then
-        local msg = ('%s raided %s!'):format(ent_name(att_eid), site_str)
+        local base = ('%s raided %s'):format(ent_name(att_eid), site_str)
         local war = parent_war_name(col)
-        if war then msg = msg:sub(1, -2) .. ' - part of ' .. war .. '!' end
+        local msg = base .. (war and (' - part of ' .. war) or '') .. '!'
         dprint('world-diplomacy: RAID collection %d (attacker) - %s', col.id, msg)
         util.announce_war(msg)
         return
@@ -524,9 +486,9 @@ local function handle_raid_collection(col, dprint)
     -- Check defender side via site ownership
     if def_civ and pinned_civs[def_civ] and pinned_civs[def_civ].warfare then
         local by = att_eid and (' by ' .. ent_name(att_eid)) or ''
-        local msg = ('%s was raided%s!'):format(site_str, by)
+        local base = ('%s was raided%s'):format(site_str, by)
         local war = parent_war_name(col)
-        if war then msg = msg:sub(1, -2) .. ' - part of ' .. war .. '!' end
+        local msg = base .. (war and (' - part of ' .. war) or '') .. '!'
         dprint('world-diplomacy: RAID collection %d (defender) - %s', col.id, msg)
         util.announce_war(msg)
     end
@@ -623,7 +585,6 @@ function init(dprint)
     register_dispatch()
     announced_diplo = {}
     known_collections = {}
-    entpop_to_civ = nil
     baseline_collections(dprint)
     dprint('world-diplomacy: handler initialised')
 end
@@ -631,7 +592,6 @@ end
 function reset()
     announced_diplo = {}
     known_collections = {}
-    entpop_to_civ = nil
 end
 
 function check_event(ev, dprint)

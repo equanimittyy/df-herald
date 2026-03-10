@@ -14,7 +14,7 @@ local gui         = require('gui')
 local widgets     = require('gui.widgets')
 local util        = dfhack.reqscript('herald-util')
 local pins        = dfhack.reqscript('herald-pins')
-local wld_leaders = dfhack.reqscript('herald-handlers/herald-world-leaders')
+local civ_pins = dfhack.reqscript('herald-civ-pins')
 local ev_hist     = dfhack.reqscript('herald-event-history')
 local cache       = dfhack.reqscript('herald-cache')
 
@@ -287,7 +287,7 @@ local function build_civ_choices(show_pinned_only)
     end
 
     local choices = {}
-    local pinned = wld_leaders.get_pinned_civs()
+    local pinned = civ_pins.get_pinned()
     for _, entity in ipairs(df.global.world.entities.all) do
         if entity.type ~= df.historical_entity_type.Civilization then goto continue end
 
@@ -583,7 +583,7 @@ function PinnedPanel:init()
                     if self.view_type == 'individuals' then
                         pins.set_pin_setting(self.selected_id, e.key, new_val)
                     else
-                        wld_leaders.set_civ_pin_setting(self.selected_id, e.key, new_val)
+                        civ_pins.set_pin_setting(self.selected_id, e.key, new_val)
                     end
                 end or function() end,
             })
@@ -747,7 +747,7 @@ function PinnedPanel:_update_right_panel(name, pin_id)
     local settings = nil
     if pin_id then
         settings = is_ind and pins.get_pin_settings(pin_id)
-                           or wld_leaders.get_civ_pin_settings(pin_id)
+                           or civ_pins.get_pin_settings(pin_id)
     end
     for _, e in ipairs(entries) do
         local t = panel.subviews['toggle_' .. e.key]
@@ -819,7 +819,7 @@ function PinnedPanel:refresh_pinned_list()
             table.insert(choices, { text = { { text = 'No pinned individuals', pen = COLOR_GREY } } })
         end
     else
-        local pinned_civs = wld_leaders.get_pinned_civs()
+        local pinned_civs = civ_pins.get_pinned()
         local civ_list = {}
         for entity_id in pairs(pinned_civs) do
             local entity = df.historical_entity.find(entity_id)
@@ -870,7 +870,7 @@ function PinnedPanel:unpin_selected()
         pins.set_pinned(choice.hf_id, nil)
     else
         if not choice.entity_id then return end
-        wld_leaders.set_pinned_civ(choice.entity_id, nil)
+        civ_pins.set_pinned(choice.entity_id, nil)
     end
     self:refresh_pinned_list()
     local change_type = self.view_type == 'individuals'
@@ -967,10 +967,10 @@ end
 function CivisationsPanel:toggle_pinned(choice)
     if not choice then return end
     local entity_id = choice.entity_id
-    local pinned    = wld_leaders.get_pinned_civs()
+    local pinned    = civ_pins.get_pinned()
     local is_pinned = pinned[entity_id]
     local now_pinned = not is_pinned
-    wld_leaders.set_pinned_civ(entity_id, now_pinned)
+    civ_pins.set_pinned(entity_id, now_pinned)
     local name = choice.display_name or '?'
     print(('[Herald] %s (id %d) is %s pinned.'):format(
         name, entity_id, now_pinned and 'now' or 'no longer'))
