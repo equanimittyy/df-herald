@@ -20,171 +20,192 @@ if not main.DEBUG then
 end
 
 -- ============================================================
--- PROBE: THEFT and ABDUCTION collections
---        1. Scan all event collections for THEFT/ABDUCTION types.
---        2. Dump fields of each found collection.
---        3. Also scan for ITEM_STOLEN events to cross-reference.
+-- PROBE: MASTERPIECE_CREATED vs ARTIFACT_CREATED event types
+--   1. Check which MASTERPIECE_CREATED_* enum values exist
+--   2. Check which ARTIFACT_* enum values exist
+--   3. Count how many of each appear in world history
+--   4. Dump fields of first found event for each type
 -- ============================================================
 
-print('=== START PROBE: THEFT/ABDUCTION COLLECTIONS ===')
+print('=== START PROBE: MASTERPIECE + ARTIFACT EVENT TYPES ===')
 print('')
 
-local CT = {}
-for _, name in ipairs({'THEFT', 'ABDUCTION'}) do
-    local ok, v = pcall(function()
-        return df.history_event_collection_type[name]
-    end)
+local T = df.history_event_type
+
+-- 1. Check enum values exist
+print('[1] MASTERPIECE_CREATED_* enum values:')
+local masterpiece_types = {
+    'MASTERPIECE_CREATED_ITEM',
+    'MASTERPIECE_CREATED_ENGRAVING',
+    'MASTERPIECE_CREATED_FOOD',
+    'MASTERPIECE_CREATED_DYE_ITEM',
+    'MASTERPIECE_CREATED_ARCH_CONSTRUCT',
+    'MASTERPIECE_CREATED_ARCH_DESIGN',
+    'MASTERPIECE_CREATED_ITEM_IMPROVEMENT',
+    'MASTERPIECE_LOST',
+}
+local active_masterpiece = {}
+for _, name in ipairs(masterpiece_types) do
+    local ok, v = pcall(function() return T[name] end)
     if ok and v ~= nil then
-        CT[name] = v
-        print(('Collection type %s = %d'):format(name, v))
+        print(('  %s = %d [EXISTS]'):format(name, v))
+        active_masterpiece[v] = name
     else
-        print(('Collection type %s: NOT FOUND in this DF version'):format(name))
+        print(('  %s : NOT IN ENUM (removed or DF<50)'):format(name))
     end
 end
 print('')
 
--- Scan all collections
-local ok_all, all = pcall(function()
-    return df.global.world.history.event_collections.all
-end)
-if not ok_all or not all then
-    print('ERROR: cannot access world.history.event_collections.all')
+print('[2] ARTIFACT_* enum values:')
+local artifact_types = {
+    'ARTIFACT_CREATED',
+    'ARTIFACT_STORED',
+    'ARTIFACT_POSSESSED',
+    'ARTIFACT_GIVEN',
+    'ARTIFACT_CLAIM_FORMED',
+    'ARTIFACT_LOST',
+    'ARTIFACT_FOUND',
+    'ARTIFACT_RECOVERED',
+    'ARTIFACT_DROPPED',
+    'ARTIFACT_HIDDEN',
+}
+local active_artifact = {}
+for _, name in ipairs(artifact_types) do
+    local ok, v = pcall(function() return T[name] end)
+    if ok and v ~= nil then
+        print(('  %s = %d [EXISTS]'):format(name, v))
+        active_artifact[v] = name
+    else
+        print(('  %s : NOT IN ENUM'):format(name))
+    end
+end
+print('')
+
+-- 2. Count occurrences in world history
+print('[3] Scanning world history events...')
+local ok_ev, events = pcall(function() return df.global.world.history.events end)
+if not ok_ev or not events then
+    print('ERROR: cannot access world history events')
     print('=== END PROBE ===')
     return
 end
 
-print(('Total collections in world: %d'):format(#all))
-print('')
+local total = #events
+print(('  Total events in world: %d'):format(total))
 
-local theft_count = 0
-local abduction_count = 0
-local MAX_SHOW = 10
+local mp_counts = {}
+local art_counts = {}
+local mp_first = {}
+local art_first = {}
 
-for i = 0, #all - 1 do
-    local ok2, col = pcall(function() return all[i] end)
-    if not ok2 or not col then goto next_col end
+for i = 0, total - 1 do
+    local ok_e, ev = pcall(function() return events[i] end)
+    if not ok_e or not ev then goto continue end
 
-    local ok3, ct = pcall(function() return col:getType() end)
-    if not ok3 then goto next_col end
+    local ok_t, et = pcall(function() return ev:getType() end)
+    if not ok_t then goto continue end
 
-    local is_theft = (ct == CT.THEFT)
-    local is_abduction = (ct == CT.ABDUCTION)
-    if not is_theft and not is_abduction then goto next_col end
-
-    local count = is_theft and theft_count or abduction_count
-    if is_theft then theft_count = theft_count + 1 else abduction_count = abduction_count + 1 end
-
-    if count < MAX_SHOW then
-        local label = is_theft and 'THEFT' or 'ABDUCTION'
-        local ok_yr, yr = pcall(function() return col.year end)
-        print(('--- [%s #%d] collection id=%d, year=%s ---'):format(
-            label, count + 1, col.id, ok_yr and tostring(yr) or '?'))
-
-        -- printall
-        print('  [printall]:')
-        local lines = {}
-        local old_print = print
-        print = function(s) table.insert(lines, s) end
-        pcall(function() printall(col) end)
-        print = old_print
-        for _, line in ipairs(lines) do
-            old_print('    ' .. tostring(line))
-        end
-
-        -- Probe specific fields
-        print('  [field probe]:')
-        local probe_fields = {
-            'site', 'attacker_civ', 'attacking_entity', 'defender_civ',
-            'entity', 'parent_collection',
-        }
-        for _, fname in ipairs(probe_fields) do
-            local ok_f, fval = pcall(function() return col[fname] end)
-            if ok_f and fval ~= nil then
-                old_print(('    col.%s = %s'):format(fname, tostring(fval)))
-            end
-        end
-
-        -- Probe vector fields
-        local vec_fields = {
-            'victim_hf', 'snatcher_hf', 'events',
-        }
-        for _, fname in ipairs(vec_fields) do
-            local ok_v, vec = pcall(function() return col[fname] end)
-            if ok_v and vec then
-                local ok_n, n = pcall(function() return #vec end)
-                if ok_n then
-                    local items = {}
-                    for j = 0, math.min(n - 1, 4) do
-                        local ok_j, v = pcall(function() return vec[j] end)
-                        if ok_j then table.insert(items, tostring(v)) end
-                    end
-                    local suffix = n > 5 and (' ... +' .. (n - 5) .. ' more') or ''
-                    old_print(('    col.%s [%d]: {%s}%s'):format(
-                        fname, n, table.concat(items, ', '), suffix))
-                end
-            end
-        end
-
-        -- Resolve site name if available
-        local ok_site, site_id = pcall(function() return col.site end)
-        if ok_site and site_id and site_id >= 0 then
-            local site = df.world_site.find(site_id)
-            if site then
-                local name = dfhack.translation.translateName(site.name, true)
-                old_print(('    -> site name: %s'):format(name or '?'))
-            end
-        end
-
-        print('')
+    if active_masterpiece[et] then
+        mp_counts[et] = (mp_counts[et] or 0) + 1
+        if not mp_first[et] then mp_first[et] = ev end
     end
 
-    ::next_col::
+    if active_artifact[et] then
+        art_counts[et] = (art_counts[et] or 0) + 1
+        if not art_first[et] then art_first[et] = ev end
+    end
+
+    ::continue::
 end
 
-print(('THEFT collections found: %d'):format(theft_count))
-print(('ABDUCTION collections found: %d'):format(abduction_count))
 print('')
-
--- Also count ITEM_STOLEN events for cross-reference
-local T = df.history_event_type
-local stolen_type = T.ITEM_STOLEN
-if stolen_type then
-    local ok_ev, events = pcall(function() return df.global.world.history.events end)
-    if ok_ev and events then
-        local stolen_count = 0
-        for i = 0, #events - 1 do
-            local ok4, ev = pcall(function() return events[i] end)
-            if ok4 and ev then
-                local ok5, et = pcall(function() return ev:getType() end)
-                if ok5 and et == stolen_type then
-                    stolen_count = stolen_count + 1
-                end
-            end
-        end
-        print(('ITEM_STOLEN events found: %d'):format(stolen_count))
-    end
-else
-    print('ITEM_STOLEN event type: NOT FOUND')
+print('  MASTERPIECE event counts:')
+for et, name in pairs(active_masterpiece) do
+    local c = mp_counts[et] or 0
+    print(('    %s: %d events'):format(name, c))
 end
 
-local abducted_type = T.HIST_FIGURE_ABDUCTED or T.HF_ABDUCTED
-if abducted_type then
-    local ok_ev, events = pcall(function() return df.global.world.history.events end)
-    if ok_ev and events then
-        local abd_count = 0
-        for i = 0, #events - 1 do
-            local ok4, ev = pcall(function() return events[i] end)
-            if ok4 and ev then
-                local ok5, et = pcall(function() return ev:getType() end)
-                if ok5 and et == abducted_type then
-                    abd_count = abd_count + 1
-                end
-            end
+print('')
+print('  ARTIFACT event counts:')
+for et, name in pairs(active_artifact) do
+    local c = art_counts[et] or 0
+    print(('    %s: %d events'):format(name, c))
+end
+
+-- 3. Field dump for first found events
+print('')
+print('[4] Field dump - first MASTERPIECE_CREATED_ITEM event (if any):')
+local mp_item_type_ok, mp_item_type = pcall(function() return T.MASTERPIECE_CREATED_ITEM end)
+if mp_item_type_ok and mp_item_type and mp_first[mp_item_type] then
+    local ev = mp_first[mp_item_type]
+    print(('  Event id=%d year=%d'):format(ev.id, ev.year))
+    -- Probe the shared base fields
+    local base_fields = {'maker', 'maker_entity', 'site', 'skill_at_time'}
+    for _, f in ipairs(base_fields) do
+        local ok_f, v = pcall(function() return ev[f] end)
+        print(('  ev.%s = %s (%s)'):format(f, ok_f and tostring(v) or 'ERROR', ok_f and type(v) or 'err'))
+    end
+    -- Subtype-specific fields
+    local item_fields = {'item_type', 'item_subtype', 'mat_type', 'mat_index'}
+    for _, f in ipairs(item_fields) do
+        local ok_f, v = pcall(function() return ev[f] end)
+        print(('  ev.%s = %s (%s)'):format(f, ok_f and tostring(v) or 'ERROR', ok_f and type(v) or 'err'))
+    end
+    -- Resolve maker HF name
+    local ok_m, m = pcall(function() return ev.maker end)
+    if ok_m and m and m >= 0 then
+        local hf = df.historical_figure.find(m)
+        if hf then
+            local n = dfhack.translation.translateName(hf.name, true)
+            print(('  -> maker HF name: %s (id=%d)'):format(n or '?', m))
         end
-        print(('HIST_FIGURE_ABDUCTED events found: %d'):format(abd_count))
     end
 else
-    print('HIST_FIGURE_ABDUCTED/HF_ABDUCTED event type: NOT FOUND')
+    print('  No MASTERPIECE_CREATED_ITEM events found in this world (or enum missing)')
+end
+
+print('')
+print('[5] Field dump - first ARTIFACT_CREATED event (if any):')
+local art_type_ok, art_type = pcall(function() return T.ARTIFACT_CREATED end)
+if art_type_ok and art_type and art_first[art_type] then
+    local ev = art_first[art_type]
+    print(('  Event id=%d year=%d'):format(ev.id, ev.year))
+    -- Probe all plausible fields
+    local art_fields = {
+        'artifact_id', 'artifact_record', 'hfid', 'creator_hfid',
+        'unit_id', 'site', 'flags2', 'circumstance', 'reason'
+    }
+    for _, f in ipairs(art_fields) do
+        local ok_f, v = pcall(function() return ev[f] end)
+        print(('  ev.%s = %s (%s)'):format(f, ok_f and tostring(v) or 'ERROR/MISSING', ok_f and type(v) or 'err'))
+    end
+    -- Try printall
+    print('  [printall]:')
+    local lines = {}
+    local old_print = print
+    print = function(s) table.insert(lines, s) end
+    pcall(function() printall(ev) end)
+    print = old_print
+    for _, line in ipairs(lines) do
+        old_print('    ' .. tostring(line))
+    end
+else
+    print('  No ARTIFACT_CREATED events found in this world (or enum missing)')
+end
+
+print('')
+print('[6] Field dump - first MASTERPIECE_CREATED_ENGRAVING event (if any):')
+local eng_type_ok, eng_type = pcall(function() return T.MASTERPIECE_CREATED_ENGRAVING end)
+if eng_type_ok and eng_type and mp_first[eng_type] then
+    local ev = mp_first[eng_type]
+    print(('  Event id=%d year=%d'):format(ev.id, ev.year))
+    local base_fields = {'maker', 'maker_entity', 'site', 'skill_at_time'}
+    for _, f in ipairs(base_fields) do
+        local ok_f, v = pcall(function() return ev[f] end)
+        print(('  ev.%s = %s'):format(f, ok_f and tostring(v) or 'ERROR'))
+    end
+else
+    print('  No MASTERPIECE_CREATED_ENGRAVING events (or enum missing)')
 end
 
 print('')

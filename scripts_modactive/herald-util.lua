@@ -154,6 +154,16 @@ function announce_espionage(msg)
     push_recent(msg, COLOR_MAGENTA)
 end
 
+-- Artifact/written work event for a pinned individual (yellow).
+function announce_artifact(msg)
+    push_recent(msg, COLOR_YELLOW)
+end
+
+-- Beast attack / rampage event for a pinned civilisation (magenta).
+function announce_rampage(msg)
+    push_recent(msg, COLOR_MAGENTA)
+end
+
 -- Position name helpers -------------------------------------------------------
 -- DF stores position names in two different formats depending on the source:
 --   entity.positions.own      -> plain stl-string  (pos.name is a Lua string)
@@ -358,14 +368,15 @@ end
 -- reqscript-ing herald, which would create a circular dependency.
 
 -- Ordered key lists; used when merging a saved settings table over defaults.
-INDIVIDUAL_SETTINGS_KEYS    = { 'relationships', 'death', 'combat', 'legendary', 'positions', 'migration' }
-CIVILISATION_SETTINGS_KEYS  = { 'positions', 'diplomacy', 'warfare', 'espionage' }
+INDIVIDUAL_SETTINGS_KEYS    = { 'relationships', 'death', 'combat', 'artifacts', 'legendary', 'positions', 'migration' }
+CIVILISATION_SETTINGS_KEYS  = { 'positions', 'diplomacy', 'warfare', 'rampages', 'espionage' }
 
 function default_pin_settings()
     return {
         relationships = true,
         death         = true,
         combat        = true,
+        artifacts     = true,
         legendary     = true,
         positions     = true,
         migration     = true,
@@ -377,6 +388,7 @@ function default_civ_pin_settings()
         positions   = true,
         diplomacy   = true,
         warfare     = true,
+        rampages    = true,
         espionage   = true,
     }
 end

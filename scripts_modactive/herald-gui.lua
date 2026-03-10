@@ -541,6 +541,7 @@ local INDIVIDUALS_ANN = {
     { key = 'relationships', label = 'Relationships', caption = 'HF bonds',  impl = true },
     { key = 'death',         label = 'Death',         caption = 'Pinned HF dies',       impl = true  },
     { key = 'combat',        label = 'Combat',        caption = 'Battles, kills etc.',      impl = true },
+    { key = 'artifacts',     label = 'Artifacts',     caption = 'Artifacts, written works', impl = true },
     { key = 'legendary',     label = 'Legendary',     caption = 'Legendary skills',     impl = true  },
     { key = 'positions',     label = 'Positions',     caption = 'Title gained/lost',    impl = true  },
     { key = 'migration',     label = 'Migration',     caption = 'Moves settlement',     impl = true  },
@@ -550,6 +551,7 @@ local CIVILISATIONS_ANN = {
     { key = 'positions',   label = 'Positions',   caption = 'Leader changes',   impl = true  },
     { key = 'diplomacy',   label = 'Diplomacy',   caption = 'Diplomacy changes', impl = true },
     { key = 'warfare',     label = 'Warfare',     caption = 'War, battle, etc.',   impl = true },
+    { key = 'rampages',    label = 'Rampages',    caption = 'Beast attacks',     impl = true },
     { key = 'espionage',   label = 'Espionage',   caption = 'Abductions, theft', impl = true },
 }
 

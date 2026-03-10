@@ -25,8 +25,10 @@ scripts_modactive/
     herald-ind-positions.lua      ← poll-based position appointment/vacation tracking for pinned individuals
     herald-ind-migration.lua      ← event-driven (world relocation) + poll (fort arrival/departure)
     herald-ind-relationships.lua  ← event-driven relationship events (marriage, apprentice, deity, intrigue)
+    herald-ind-artifacts.lua      ← event-driven artifact/written work tracking for pinned individuals
     herald-world-leaders.lua      ← poll-based world leader tracking [Civilisations]
     herald-world-diplomacy.lua    ← hybrid event+poll diplomacy and warfare [Civilisations]
+    herald-world-rampages.lua     ← poll-based beast attack tracking [Civilisations]
     herald-world-espionage.lua    ← poll-based espionage (theft, abduction) [Civilisations]
 
 scripts_modinstalled/
@@ -46,6 +48,8 @@ Each handler in its own `herald-<type>.lua` under `herald-handlers/`. Handlers c
 - **Individuals (relationships)** - event-driven only; marriage, divorce, apprenticeship, deity worship, intrigue.
 - **Civilisations (leaders)** - poll-based only; snapshots civ state each cycle, detects changes by diff.
 - **Civilisations (diplomacy)** - hybrid event+poll; peace/agreements/tribute (event-driven) + WAR/BATTLE/RAID collections (poll-based) + site takeover/destruction/new leadership (event-driven).
+- **Individuals (artifacts)** - event-driven; artifact creation, storage, claiming, theft, written works by pinned HFs.
+- **Civilisations (rampages)** - poll-based; detects new BEAST_ATTACK collections targeting pinned civ sites.
 - **Civilisations (espionage)** - poll-based; detects new THEFT/ABDUCTION collections involving pinned civs.
 
 ## Module Requirements
@@ -70,14 +74,14 @@ Each handler in its own `herald-<type>.lua` under `herald-handlers/`. Handlers c
 
 Shared module, all exports non-local at module scope.
 
-- **Announcements** (use these, never `dfhack.gui.showAnnouncement` directly): `announce_death` (red), `announce_combat` (light red), `announce_appointment` (yellow), `announce_vacated` (white), `announce_info` (cyan), `announce_migration` (green), `announce_relationship` (light magenta), `announce_legendary` (light green), `announce_espionage` (magenta). Push to recent ring buffer only (no DF announcement bar); alert overlay notifies the player.
+- **Announcements** (use these, never `dfhack.gui.showAnnouncement` directly): `announce_death` (red), `announce_combat` (light red), `announce_appointment` (yellow), `announce_vacated` (white), `announce_info` (cyan), `announce_migration` (green), `announce_relationship` (light magenta), `announce_legendary` (light green), `announce_espionage` (magenta), `announce_artifact` (yellow), `announce_rampage` (magenta). Push to recent ring buffer only (no DF announcement bar); alert overlay notifies the player.
 - **Unit iteration:** `for_each_pinned_unit(pinned, callback)` — walks `units.active`, yields `(unit, hf_id, settings)` per pinned HF. Used by handler init baselines and polls.
 - **Recent history:** `RECENT_PERSIST_KEY`, `MAX_RECENT=20`, `has_unread` (exported bool). `load_recent()`/`save_recent()`/`reset_recent()`/`get_recent_announcements()`/`clear_unread()`
 - **Position helpers:** `name_str(field)` normalises stl-string/string[] to string; `get_pos_name(entity, pos_id, hf_sex)` returns gendered title
 - **HF/entity:** `is_alive(hf)`, `get_race_name(hf)`, `get_entity_race_name(entity)`, `deepcopy(t)`, `safe_get(obj, field)`
 - **Site helpers:** `site_name(site_id)` returns translated site name; `site_owner_civ(site_id)` resolves site -> owning Civilization via SiteGov entity_links, falls back to `civ_id`
 - **Entity population:** `get_entpop_to_civ()` (lazy cached map), `entpop_vec_has_civ(col, field, civ_id, ep_map)`, `reset_entpop_cache()`
-- **Pin settings** (here to avoid circular deps): `INDIVIDUAL_SETTINGS_KEYS` = `{relationships, death, combat, legendary, positions, migration}`, `CIVILISATION_SETTINGS_KEYS` = `{positions, diplomacy, warfare, espionage}`, `default_pin_settings()`/`default_civ_pin_settings()` (all true), `merge_pin_settings(saved)`/`merge_civ_pin_settings(saved)`
+- **Pin settings** (here to avoid circular deps): `INDIVIDUAL_SETTINGS_KEYS` = `{relationships, death, combat, artifacts, legendary, positions, migration}`, `CIVILISATION_SETTINGS_KEYS` = `{positions, diplomacy, warfare, rampages, espionage}`, `default_pin_settings()`/`default_civ_pin_settings()` (all true), `merge_pin_settings(saved)`/`merge_civ_pin_settings(saved)`
 
 ### Detailed Docs (read on demand)
 
@@ -113,6 +117,4 @@ After completing a substantive code editing task (not minor one-line fixes), pro
 
 ## Future (on request only)
 
-- Individuals (artifacts) — event-driven; artifact creation, storage, claiming, theft, written works composed by pinned HFs
-- Individuals (masterworks) — event-driven; masterpiece creation by pinned HFs
-- Civilisations (beast attacks) — poll-based; BEAST_ATTACK collections targeting pinned civ sites
+(none currently)

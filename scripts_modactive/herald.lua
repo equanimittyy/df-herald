@@ -314,8 +314,10 @@ local handler_paths = {
     'herald-handlers/herald-ind-positions',
     'herald-handlers/herald-ind-migration',
     'herald-handlers/herald-ind-relationships',
+    'herald-handlers/herald-ind-artifacts',
     'herald-handlers/herald-world-leaders',
     'herald-handlers/herald-world-diplomacy',
+    'herald-handlers/herald-world-rampages',
     'herald-handlers/herald-world-espionage',
 }
 
