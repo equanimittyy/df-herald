@@ -242,9 +242,15 @@ local function handle_poll(dprint)
             if prev == 'present' then
                 -- Was here, now gone
                 seen_on_map[hf_id] = 'absent'
-                local name = hf_name(hf_id)
-                util.announce_migration(('%s has left the fortress.'):format(name))
-                dprint('ind-migration.poll: hf %d (%s) departed', hf_id, name)
+                -- Only announce departure if still alive; death handler covers deaths
+                local hf = df.historical_figure.find(hf_id)
+                if hf and util.is_alive(hf) then
+                    local name = hf_name(hf_id)
+                    util.announce_migration(('%s has left the fortress.'):format(name))
+                    dprint('ind-migration.poll: hf %d (%s) departed', hf_id, name)
+                else
+                    dprint('ind-migration.poll: hf %d absent but dead, skipping departure', hf_id)
+                end
             end
         end
 

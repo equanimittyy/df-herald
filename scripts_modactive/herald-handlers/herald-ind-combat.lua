@@ -6,10 +6,12 @@ herald-ind-combat
 
 Tags: dev
 
-  Event-driven handler for pinned individual combat events.
+  Hybrid event+poll handler for pinned individual combat events.
 
-Fires announcements when a pinned HF is involved in battles, wounds,
-site attacks/destructions, field battles, overthrows, or body abuse (as abuser).
+Event-driven: fires when a pinned HF is involved in battles, wounds,
+site attacks/destructions, field battles, overthrows, or body abuse
+(world history events).
+Poll: detects fort-level kills by pinned HFs via hf.info.kills baseline.
 Not intended for direct use.
 
 ]====]
@@ -21,17 +23,9 @@ local pins = dfhack.reqscript('herald-pins')
 -- the same event when multiple pinned HFs are involved.
 local announced_combat = {}
 
--- Fort-level combat tracking: baseline combat report counts per unit id.
--- { [unit_id] = last_seen_combat_count }
-local combat_baselines = {}
-
 -- Fort-level kill tracking: baseline kill counts per hf_id.
 -- { [hf_id] = last_seen_kill_count }
 local kill_baselines = {}
-
--- Fort-level wound tracking: baseline wound counts per unit id.
--- { [unit_id] = last_seen_wound_count }
-local wound_baselines = {}
 
 -- Helpers ---------------------------------------------------------------------
 
@@ -44,27 +38,6 @@ local site_name = util.site_name
 -- Returns true if the settings table has combat announcements enabled.
 local function combat_enabled(settings)
     return settings and settings.combat
-end
-
--- Best-effort extraction of opponent name from the latest combat report.
--- Pattern: "The X verbs the Y..." - won't match all DF report formats.
-local function parse_combatant(combat_log, count, hf_name_str)
-    if count < 1 then return nil end
-    local rep_id = combat_log[count - 1]
-    if not rep_id then return nil end
-    local ok_rep, rep = pcall(function() return df.report.find(rep_id) end)
-    if not ok_rep or not rep then return nil end
-    local ok_txt, txt = pcall(function() return rep.text end)
-    if not ok_txt or not txt or txt == '' then return nil end
-    local subj, obj = txt:match('^The (.+) %a+ the (.+)[,!.]')
-    if not subj or not obj then return nil end
-    local name_lower = hf_name_str:lower()
-    if subj:lower():find(name_lower, 1, true) then
-        return obj
-    elseif obj:lower():find(name_lower, 1, true) then
-        return subj
-    end
-    return nil
 end
 
 -- Fires a combat announcement if not already announced for this event.
@@ -222,16 +195,45 @@ local function register_dispatch()
     end
 end
 
--- Fort-level poll: detect new combat reports on pinned HFs' units -----------
+-- Fort-level poll: detect kills by pinned HFs on the active map -------------
+
+-- Builds { [race_id] = count } from the parallel killed_race/killed_count vectors.
+local function build_kill_snapshot(kills)
+    local snap = {}
+    local ok_kr, kr = pcall(function() return kills.killed_race end)
+    local ok_kc, kc = pcall(function() return kills.killed_count end)
+    if not ok_kr or not kr or not ok_kc or not kc then return snap end
+    for i = 0, #kr - 1 do
+        local race_id = kr[i]
+        local ok_n, n = pcall(function() return kc[i] end)
+        if ok_n and n and race_id then
+            snap[race_id] = (snap[race_id] or 0) + n
+        end
+    end
+    return snap
+end
+
+-- Returns singular, plural names for a creature race ID.
+local function race_names(race_id)
+    local ok, cr = pcall(function() return df.global.world.raws.creatures.all[race_id] end)
+    if not ok or not cr then return nil, nil end
+    local ok_s, singular = pcall(function() return cr.name[0] end)
+    local ok_p, plural   = pcall(function() return cr.name[1] end)
+    return (ok_s and singular and singular ~= '') and singular or nil,
+           (ok_p and plural and plural ~= '') and plural or nil
+end
 
 local function handle_poll(dprint)
     local ok, active = pcall(function() return df.global.world.units.active end)
-    if not ok or not active then return end
+    if not ok or not active then
+        dprint('ind-combat.poll: no active units list')
+        return
+    end
 
     local pinned = pins.get_pinned()
     local pinned_count = 0
     for _ in pairs(pinned) do pinned_count = pinned_count + 1 end
-    dprint('ind-combat.poll: scanning %d active units, %d pinned HFs', #active, pinned_count)
+    dprint('ind-combat.poll: %d active units, %d pinned HFs', #active, pinned_count)
 
     local matched = 0
     for i = 0, #active - 1 do
@@ -247,221 +249,71 @@ local function handle_poll(dprint)
         end
         matched = matched + 1
 
-        -- Read combat report count
-        local ok_log, combat_log = pcall(function() return unit.reports.log.Combat end)
-        if not ok_log or not combat_log then goto continue end
-        local count = #combat_log
-
-        local combat_base = combat_baselines[unit.id]
-        if not combat_base then
-            -- First time seeing this unit; set baseline, don't announce
-            combat_baselines[unit.id] = count
+        local hf = df.historical_figure.find(hf_id)
+        if not hf then
+            dprint('ind-combat.poll: hf %d - historical_figure.find returned nil', hf_id)
             goto continue
         end
 
-        -- Capture old baseline before updating (used by wound-inflicted check)
-        local old_combat_base = combat_base
-        local has_new_reports = count > combat_base
-        if has_new_reports then
-            combat_baselines[unit.id] = count
+        local ok_info, info = pcall(function() return hf.info end)
+        if not ok_info or not info then
+            dprint('ind-combat.poll: hf %d - hf.info is nil', hf_id)
+            goto continue
         end
 
-        -- 1. New combat engagement
-        if has_new_reports then
-            local name = hf_name(hf_id)
-            local opponent = parse_combatant(combat_log, count, name)
-
-            local msg
-            if opponent then
-                msg = ('%s is under attack by %s!'):format(name, opponent)
-            else
-                msg = ('%s is under attack!'):format(name)
-            end
-            dprint('ind-combat.poll: %s (unit %d, hf %d, %d new reports)',
-                name, unit.id, hf_id, count - old_combat_base)
-            util.announce_combat(msg)
+        local ok_kills, kills = pcall(function() return info.kills end)
+        if not ok_kills or not kills then
+            dprint('ind-combat.poll: hf %d - hf.info.kills is nil', hf_id)
+            goto continue
         end
 
-        -- 2. Pinned HF received wounds
-        local ok_wounds, wounds = pcall(function() return unit.body.wounds end)
-        if ok_wounds and wounds then
-            local wound_count = #wounds
-            local wound_base = wound_baselines[unit.id]
-            if not wound_base then
-                wound_baselines[unit.id] = wound_count
-            elseif wound_count > wound_base then
+        local snap = build_kill_snapshot(kills)
+        local snap_total = 0
+        for _, c in pairs(snap) do snap_total = snap_total + c end
+
+        local base = kill_baselines[hf_id]
+        if not base then
+            dprint('ind-combat.poll: hf %d - baseline set (total=%d)', hf_id, snap_total)
+            kill_baselines[hf_id] = snap
+            goto continue
+        end
+
+        local base_total = 0
+        for _, c in pairs(base) do base_total = base_total + c end
+        dprint('ind-combat.poll: hf %d - base=%d, snap=%d', hf_id, base_total, snap_total)
+
+        -- Diff per-race counts
+        for race_id, new_count in pairs(snap) do
+            local old_count = base[race_id] or 0
+            local delta = new_count - old_count
+            if delta > 0 then
                 local name = hf_name(hf_id)
-                wound_baselines[unit.id] = wound_count
-
-                -- Try to identify attacker from the latest combat report
-                local attacker = nil
-                if ok_log and combat_log and #combat_log > 0 then
-                    local rep_id = combat_log[#combat_log - 1]
-                    if rep_id then
-                        local ok_rep, rep = pcall(function() return df.report.find(rep_id) end)
-                        if ok_rep and rep then
-                            local ok_txt, txt = pcall(function() return rep.text end)
-                            if ok_txt and txt and txt ~= '' then
-                                local subj, obj = txt:match('^The (.+) %a+ the (.+)[,!.]')
-                                if subj and obj and obj:lower():find(name:lower(), 1, true) then
-                                    attacker = subj
-                                end
-                            end
-                        end
-                    end
-                end
-
+                local singular, plural = race_names(race_id)
                 local msg
-                if attacker then
-                    msg = ('%s has been wounded by %s!'):format(name, attacker)
+                if delta == 1 then
+                    msg = ('%s has claimed the life of a %s!'):format(
+                        name, singular or 'foe')
                 else
-                    msg = ('%s has been wounded!'):format(name)
+                    msg = ('%s has claimed the lives of %d %s!'):format(
+                        name, delta, plural or singular or 'foes')
                 end
-                dprint('ind-combat.poll: %s wounded (unit %d, hf %d)', name, unit.id, hf_id)
+                dprint('ind-combat.poll: KILL by %s (hf %d, +%d %s)',
+                    name, hf_id, delta, singular or '?')
                 util.announce_combat(msg)
             end
         end
 
-        -- 3. Pinned HF inflicted wounds on someone
-        if has_new_reports then
-            local name = hf_name(hf_id)
-            local name_lower = name:lower()
-            local wound_verbs = { 'tearing', 'bruising', 'fracturing',
-                'shattering', 'breaking', 'severing', 'piercing',
-                'gouging', 'smashing', 'denting', 'opening' }
-            local announced_wound = false
-            for ri = old_combat_base, count - 1 do
-                if announced_wound then break end
-                local rid = combat_log[ri]
-                if not rid then goto next_rep end
-                local ok_r, r = pcall(function() return df.report.find(rid) end)
-                if not ok_r or not r then goto next_rep end
-                local ok_t, txt = pcall(function() return r.text end)
-                if not ok_t or not txt or txt == '' then goto next_rep end
-                -- Check if pinned HF is the attacker and report describes a wound
-                local subj, obj = txt:match('^The (.+) %a+ the (.+)[,!.]')
-                if subj and obj and subj:lower():find(name_lower, 1, true) then
-                    for _, verb in ipairs(wound_verbs) do
-                        if txt:lower():find(verb, 1, true) then
-                            local victim = obj:match('^(.-)%s+in%s+the') or obj
-                            util.announce_combat(('%s has wounded %s!'):format(name, victim))
-                            dprint('ind-combat.poll: %s wounded %s (unit %d, hf %d)',
-                                name, victim, unit.id, hf_id)
-                            announced_wound = true
-                            break
-                        end
-                    end
-                end
-                ::next_rep::
-            end
-            -- Fallback: wound verbs found but couldn't parse victim
-            if not announced_wound then
-                for ri = old_combat_base, count - 1 do
-                    if announced_wound then break end
-                    local rid = combat_log[ri]
-                    if not rid then goto next_rep2 end
-                    local ok_r, r = pcall(function() return df.report.find(rid) end)
-                    if not ok_r or not r then goto next_rep2 end
-                    local ok_t, txt = pcall(function() return r.text end)
-                    if not ok_t or not txt then goto next_rep2 end
-                    for _, verb in ipairs(wound_verbs) do
-                        if txt:lower():find(verb, 1, true) then
-                            util.announce_combat(('%s has wounded a foe!'):format(name))
-                            announced_wound = true
-                            break
-                        end
-                    end
-                    ::next_rep2::
-                end
-            end
-        end
-
-        -- Check fort-level kill count via hf.info.kills
-        local hf = df.historical_figure.find(hf_id)
-        if hf then
-            local ok_kills, kills = pcall(function() return hf.info and hf.info.kills end)
-            if ok_kills and kills then
-                local ok_ev, ev_vec = pcall(function() return kills.events end)
-                local ok_kc, kc_vec = pcall(function() return kills.killed_count end)
-                local total = 0
-                if ok_ev and ev_vec then total = total + #ev_vec end
-                if ok_kc and kc_vec then
-                    for ki = 0, #kc_vec - 1 do
-                        local ok_n, n = pcall(function() return kc_vec[ki] end)
-                        if ok_n and n then total = total + n end
-                    end
-                end
-
-                local kill_base = kill_baselines[hf_id]
-                if not kill_base then
-                    kill_baselines[hf_id] = total
-                elseif total > kill_base then
-                    local name = hf_name(hf_id)
-                    local new_kills = total - kill_base
-                    kill_baselines[hf_id] = total
-
-                    -- Try to get victim name from the latest kills.events entry
-                    local victim_name = nil
-                    if ok_ev and ev_vec and #ev_vec > 0 then
-                        local last_ev_id = ev_vec[#ev_vec - 1]
-                        local ok_de, de = pcall(function() return df.history_event.find(last_ev_id) end)
-                        if ok_de and de then
-                            local ok_vid, vid = pcall(function() return de.victim_hf end)
-                            if ok_vid and vid and vid >= 0 then
-                                victim_name = hf_name(vid)
-                            end
-                        end
-                    end
-
-                    -- Fallback: creature race name from killed_race vector
-                    local creature_name = nil
-                    if not victim_name then
-                        local ok_kr, kr_vec = pcall(function() return kills.killed_race end)
-                        if ok_kr and kr_vec and #kr_vec > 0 then
-                            local race_id = kr_vec[#kr_vec - 1]
-                            if race_id and race_id >= 0 then
-                                local ok_rn, rn = pcall(function()
-                                    return df.global.world.raws.creatures.all[race_id].name[0]
-                                end)
-                                if ok_rn and rn and rn ~= '' then
-                                    creature_name = rn
-                                end
-                            end
-                        end
-                    end
-
-                    local msg
-                    if victim_name then
-                        msg = ('%s has claimed the life of %s!'):format(name, victim_name)
-                    elseif creature_name then
-                        msg = ('%s has claimed the life of a %s!'):format(name, creature_name)
-                    else
-                        msg = ('%s has claimed a life!'):format(name)
-                    end
-                    dprint('ind-combat.poll: kill by %s (hf %d, %d new kill%s)',
-                        name, hf_id, new_kills, new_kills > 1 and 's' or '')
-                    util.announce_combat(msg)
-                end
-            end
-        end
+        kill_baselines[hf_id] = snap
 
         ::continue::
     end
 
-    -- Prune baselines for units no longer on the active list
-    local active_ids = {}
-    for i = 0, #active - 1 do
-        local u = active[i]
-        if u then active_ids[u.id] = true end
-    end
-    for uid in pairs(combat_baselines) do
-        if not active_ids[uid] then combat_baselines[uid] = nil end
-    end
-    for uid in pairs(wound_baselines) do
-        if not active_ids[uid] then wound_baselines[uid] = nil end
-    end
+    dprint('ind-combat.poll: matched %d pinned unit(s)', matched)
 
-    dprint('ind-combat.poll: matched %d pinned unit(s) on map', matched)
+    -- Prune baselines for HFs no longer pinned
+    for hfid in pairs(kill_baselines) do
+        if not pinned[hfid] then kill_baselines[hfid] = nil end
+    end
 end
 
 -- Contract fields -------------------------------------------------------------
@@ -493,19 +345,44 @@ end
 event_types = build_event_types()
 polls = true
 
+-- Set kill baselines immediately at map load so kills during the
+-- init-to-first-poll gap aren't missed.  nil kills = 0 kills.
+local function set_initial_baselines(dprint)
+    local ok, active = pcall(function() return df.global.world.units.active end)
+    if not ok or not active then return end
+    local pinned = pins.get_pinned()
+    for i = 0, #active - 1 do
+        local unit = active[i]
+        if not unit then goto continue end
+        local ok_hf, hf_id = pcall(function() return unit.hist_figure_id end)
+        if not ok_hf or not hf_id or hf_id < 0 then goto continue end
+        if not pinned[hf_id] or not combat_enabled(pinned[hf_id]) then goto continue end
+        local hf = df.historical_figure.find(hf_id)
+        if hf then
+            local ok_kills, kills = pcall(function() return hf.info and hf.info.kills end)
+            if ok_kills and kills then
+                kill_baselines[hf_id] = build_kill_snapshot(kills)
+                dprint('ind-combat.init: baseline for hf %d (from kills)', hf_id)
+            else
+                kill_baselines[hf_id] = {}
+                dprint('ind-combat.init: baseline for hf %d (empty, kills nil)', hf_id)
+            end
+        end
+        ::continue::
+    end
+end
+
 function init(dprint)
     register_dispatch()
-    combat_baselines = {}
+    announced_combat = {}
     kill_baselines = {}
-    wound_baselines = {}
+    set_initial_baselines(dprint)
     dprint('ind-combat: handler initialised')
 end
 
 function reset()
     announced_combat = {}
-    combat_baselines = {}
     kill_baselines = {}
-    wound_baselines = {}
 end
 
 function check_event(ev, dprint)
