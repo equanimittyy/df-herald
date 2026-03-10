@@ -1894,6 +1894,12 @@ function civ_matches_collection(col, civ_id)
         return scalar_match('thief_civ') or scalar_match('victim_civ')
     elseif ct == _CT.ABDUCTION then
         return scalar_match('attacker_civ') or scalar_match('defender_civ')
+    elseif ct == _CT.BEAST_ATTACK then
+        local site_id = safe_get(col, 'site')
+        if site_id and site_id >= 0 then
+            return util.site_owner_civ(site_id) == civ_id
+        end
+        return scalar_match('defender_civ')
     elseif ct == _CT.ENTITY_OVERTHROWN or ct == _CT.PERSECUTION or ct == _CT.PURGE then
         return scalar_match('entity')
     elseif ct == _CT.INSURRECTION then
@@ -2188,6 +2194,27 @@ local function format_collection_entry(col, focal_civ_id)
             local by = ac and ent_name_by_id(ac)
             return victim .. ' was abducted' .. loc .. (by and (' by ' .. by) or '')
         end
+
+    elseif ct == _CT.BEAST_ATTACK then
+        local ok_ahf, ahf = pcall(function() return col.attacker_hf end)
+        local beast = 'a beast'
+        if ok_ahf and ahf and #ahf > 0 then
+            local name = hf_name_by_id(ahf[0])
+            if name then
+                beast = name
+            else
+                -- Unnamed beast: fall back to race name
+                local hf = df.historical_figure.find(ahf[0])
+                if hf then
+                    local race = util.get_race_name(hf)
+                    local article = race:match('^[aeiouAEIOU]') and 'an ' or 'a '
+                    beast = article .. race
+                end
+            end
+        end
+        local site = site_name_by_id(safe_get(col, 'site'))
+        local loc = site and (' at ' .. site) or ''
+        return beast .. ' attacked' .. loc
 
     elseif ct == _CT.ENTITY_OVERTHROWN then
         local ent_n = ent_name_by_id(safe_get(col, 'entity'))
