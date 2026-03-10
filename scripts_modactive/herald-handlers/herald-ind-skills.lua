@@ -99,33 +99,18 @@ end
 -- Poll handler ----------------------------------------------------------------
 
 local function handle_poll(dprint)
-    local ok, active = pcall(function() return df.global.world.units.active end)
-    if not ok or not active then return end
-
     local pinned = pins.get_pinned()
-    local pinned_count = 0
-    for _, s in pairs(pinned) do
-        if legendary_enabled(s) then pinned_count = pinned_count + 1 end
-    end
-    dprint('ind-skills.poll: scanning %d active units, %d legendary-tracked HFs', #active, pinned_count)
     local seen_on_map = {}
 
     -- On-map units
-    for i = 0, #active - 1 do
-        local unit = active[i]
-        if not unit then goto continue end
-        local ok_hf, hf_id = pcall(function() return unit.hist_figure_id end)
-        if not ok_hf or not hf_id or hf_id < 0 then goto continue end
-        if not pinned[hf_id] or not legendary_enabled(pinned[hf_id]) then goto continue end
-
+    util.for_each_pinned_unit(pinned, function(unit, hf_id, settings)
+        if not legendary_enabled(settings) then return end
         seen_on_map[hf_id] = true
         local new_snap = read_unit_skills(unit)
         if new_snap then
             diff_and_store(hf_id, new_snap, dprint)
         end
-
-        ::continue::
-    end
+    end)
 
     -- Off-map pinned HFs
     for hf_id, settings in pairs(pinned) do
@@ -158,15 +143,8 @@ polls = true
 
 -- Set skill baselines immediately at map load for consistency with other handlers.
 local function set_initial_baselines(dprint)
-    local ok, active = pcall(function() return df.global.world.units.active end)
-    if not ok or not active then return end
-    local pinned = pins.get_pinned()
-    for i = 0, #active - 1 do
-        local unit = active[i]
-        if not unit then goto continue end
-        local ok_hf, hf_id = pcall(function() return unit.hist_figure_id end)
-        if not ok_hf or not hf_id or hf_id < 0 then goto continue end
-        if not pinned[hf_id] or not legendary_enabled(pinned[hf_id]) then goto continue end
+    util.for_each_pinned_unit(pins.get_pinned(), function(unit, hf_id, settings)
+        if not legendary_enabled(settings) then return end
         local snap = read_unit_skills(unit)
         if snap then
             skill_snapshots[hf_id] = snap
@@ -177,8 +155,7 @@ local function set_initial_baselines(dprint)
             end
             dprint('ind-skills.init: baseline for hf %d: %d skills, %d legendary', hf_id, total, leg)
         end
-        ::continue::
-    end
+    end)
 end
 
 function init(dprint)

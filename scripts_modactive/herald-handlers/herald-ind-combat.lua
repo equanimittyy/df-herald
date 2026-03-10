@@ -224,63 +224,23 @@ local function race_names(race_id)
 end
 
 local function handle_poll(dprint)
-    local ok, active = pcall(function() return df.global.world.units.active end)
-    if not ok or not active then
-        dprint('ind-combat.poll: no active units list')
-        return
-    end
-
     local pinned = pins.get_pinned()
-    local pinned_count = 0
-    for _ in pairs(pinned) do pinned_count = pinned_count + 1 end
-    dprint('ind-combat.poll: %d active units, %d pinned HFs', #active, pinned_count)
 
-    local matched = 0
-    for i = 0, #active - 1 do
-        local unit = active[i]
-        if not unit then goto continue end
-
-        local ok_hf, hf_id = pcall(function() return unit.hist_figure_id end)
-        if not ok_hf or not hf_id or hf_id < 0 then goto continue end
-        if not pinned[hf_id] then goto continue end
-        if not combat_enabled(pinned[hf_id]) then
-            dprint('ind-combat.poll: hf %d pinned but combat disabled', hf_id)
-            goto continue
-        end
-        matched = matched + 1
+    util.for_each_pinned_unit(pinned, function(unit, hf_id, settings)
+        if not combat_enabled(settings) then return end
 
         local hf = df.historical_figure.find(hf_id)
-        if not hf then
-            dprint('ind-combat.poll: hf %d - historical_figure.find returned nil', hf_id)
-            goto continue
-        end
+        if not hf then return end
 
-        local ok_info, info = pcall(function() return hf.info end)
-        if not ok_info or not info then
-            dprint('ind-combat.poll: hf %d - hf.info is nil', hf_id)
-            goto continue
-        end
-
-        local ok_kills, kills = pcall(function() return info.kills end)
-        if not ok_kills or not kills then
-            dprint('ind-combat.poll: hf %d - hf.info.kills is nil', hf_id)
-            goto continue
-        end
+        local ok_kills, kills = pcall(function() return hf.info and hf.info.kills end)
+        if not ok_kills or not kills then return end
 
         local snap = build_kill_snapshot(kills)
-        local snap_total = 0
-        for _, c in pairs(snap) do snap_total = snap_total + c end
-
         local base = kill_baselines[hf_id]
         if not base then
-            dprint('ind-combat.poll: hf %d - baseline set (total=%d)', hf_id, snap_total)
             kill_baselines[hf_id] = snap
-            goto continue
+            return
         end
-
-        local base_total = 0
-        for _, c in pairs(base) do base_total = base_total + c end
-        dprint('ind-combat.poll: hf %d - base=%d, snap=%d', hf_id, base_total, snap_total)
 
         -- Diff per-race counts
         for race_id, new_count in pairs(snap) do
@@ -304,11 +264,7 @@ local function handle_poll(dprint)
         end
 
         kill_baselines[hf_id] = snap
-
-        ::continue::
-    end
-
-    dprint('ind-combat.poll: matched %d pinned unit(s)', matched)
+    end)
 
     -- Prune baselines for HFs no longer pinned
     for hfid in pairs(kill_baselines) do
@@ -348,28 +304,19 @@ polls = true
 -- Set kill baselines immediately at map load so kills during the
 -- init-to-first-poll gap aren't missed.  nil kills = 0 kills.
 local function set_initial_baselines(dprint)
-    local ok, active = pcall(function() return df.global.world.units.active end)
-    if not ok or not active then return end
-    local pinned = pins.get_pinned()
-    for i = 0, #active - 1 do
-        local unit = active[i]
-        if not unit then goto continue end
-        local ok_hf, hf_id = pcall(function() return unit.hist_figure_id end)
-        if not ok_hf or not hf_id or hf_id < 0 then goto continue end
-        if not pinned[hf_id] or not combat_enabled(pinned[hf_id]) then goto continue end
+    util.for_each_pinned_unit(pins.get_pinned(), function(unit, hf_id, settings)
+        if not combat_enabled(settings) then return end
         local hf = df.historical_figure.find(hf_id)
-        if hf then
-            local ok_kills, kills = pcall(function() return hf.info and hf.info.kills end)
-            if ok_kills and kills then
-                kill_baselines[hf_id] = build_kill_snapshot(kills)
-                dprint('ind-combat.init: baseline for hf %d (from kills)', hf_id)
-            else
-                kill_baselines[hf_id] = {}
-                dprint('ind-combat.init: baseline for hf %d (empty, kills nil)', hf_id)
-            end
+        if not hf then return end
+        local ok_kills, kills = pcall(function() return hf.info and hf.info.kills end)
+        if ok_kills and kills then
+            kill_baselines[hf_id] = build_kill_snapshot(kills)
+            dprint('ind-combat.init: baseline for hf %d (from kills)', hf_id)
+        else
+            kill_baselines[hf_id] = {}
+            dprint('ind-combat.init: baseline for hf %d (empty, kills nil)', hf_id)
         end
-        ::continue::
-    end
+    end)
 end
 
 function init(dprint)

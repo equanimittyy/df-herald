@@ -139,8 +139,24 @@ end
 
 polls = true
 
+-- Set position baselines immediately at map load.
+local function set_initial_baselines(dprint)
+    local pinned = pins.get_pinned()
+    for hf_id, _ in pairs(pinned) do
+        local hf = df.historical_figure.find(hf_id)
+        if not hf or not util.is_alive(hf) then goto next_hf end
+        local snap = build_hf_snapshot(hf)
+        position_snapshots[hf_id] = snap
+        local n = 0
+        for _ in pairs(snap) do n = n + 1 end
+        dprint('ind-positions.init: baseline for hf %d: %d positions', hf_id, n)
+        ::next_hf::
+    end
+end
+
 function init(dprint)
     position_snapshots = {}
+    set_initial_baselines(dprint)
     dprint('ind-positions: handler initialised')
 end
 

@@ -77,11 +77,17 @@ local function handle_add_hf_hf_link(ev, dprint)
             msg = ('%s married %s.'):format(name, other)
         elseif ltype == LT.LOVER then
             msg = ('%s became romantically involved with %s.'):format(name, other)
-        elseif ltype == LT.APPRENTICE or ltype == LT.MASTER then
+        elseif ltype == LT.MASTER then
             if focal_is_hf then
                 msg = ('%s became the master of %s.'):format(name, other)
             else
                 msg = ('%s began an apprenticeship under %s.'):format(name, other)
+            end
+        elseif ltype == LT.APPRENTICE then
+            if focal_is_hf then
+                msg = ('%s began an apprenticeship under %s.'):format(name, other)
+            else
+                msg = ('%s became the master of %s.'):format(name, other)
             end
         elseif ltype == LT.DEITY then
             if focal_is_hf then
@@ -131,11 +137,17 @@ local function handle_remove_hf_hf_link(ev, dprint)
     if LT and ltype then
         if ltype == LT.FORMER_SPOUSE then
             msg = ('%s divorced %s.'):format(name, other)
-        elseif ltype == LT.FORMER_APPRENTICE or ltype == LT.FORMER_MASTER then
+        elseif ltype == LT.FORMER_MASTER then
             if focal_is_hf then
                 msg = ('%s ceased being the master of %s.'):format(name, other)
             else
                 msg = ('%s ceased being the apprentice of %s.'):format(name, other)
+            end
+        elseif ltype == LT.FORMER_APPRENTICE then
+            if focal_is_hf then
+                msg = ('%s ceased being the apprentice of %s.'):format(name, other)
+            else
+                msg = ('%s ceased being the master of %s.'):format(name, other)
             end
         elseif ltype == LT.DEITY then
             if focal_is_hf then

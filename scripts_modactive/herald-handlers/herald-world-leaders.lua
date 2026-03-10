@@ -237,9 +237,37 @@ end
 
 polls = true
 
+-- Set leader baselines immediately at map load.
+local function set_initial_baselines(dprint)
+    for entity_id, _ in pairs(pinned_civ_ids) do
+        local entity = df.historical_entity.find(entity_id)
+        if not entity then goto next_civ end
+        local civ_name = dfhack.translation.translateName(entity.name, true)
+        local snap = {}
+        for _, assignment in ipairs(entity.positions.assignments) do
+            local hf_id = assignment.histfig2
+            if hf_id == -1 then goto next_asgn end
+            local hf = df.historical_figure.find(hf_id)
+            if not hf or not util.is_alive(hf) then goto next_asgn end
+            snap[assignment.id] = {
+                hf_id    = hf_id,
+                pos_name = util.get_pos_name(entity, assignment.position_id, hf.sex),
+                civ_name = civ_name,
+            }
+            ::next_asgn::
+        end
+        tracked_leaders[entity_id] = snap
+        local n = 0
+        for _ in pairs(snap) do n = n + 1 end
+        dprint('world-leaders.init: baseline for entity %d (%s): %d leaders', entity_id, civ_name or '?', n)
+        ::next_civ::
+    end
+end
+
 function init(dprint)
     load_pinned_civs()
-    dprint('world-leaders: pinned civ list loaded')
+    set_initial_baselines(dprint)
+    dprint('world-leaders: handler initialised')
 end
 
 function reset()

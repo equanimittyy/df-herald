@@ -233,6 +233,25 @@ function safe_get(obj, field)
     return ok and val or nil
 end
 
+-- Active-unit iteration -------------------------------------------------------
+-- Shared iterator: walks df.global.world.units.active, yields each unit that
+-- belongs to a pinned HF.  Callback receives (unit, hf_id, settings).
+function for_each_pinned_unit(pinned, callback)
+    local ok, active = pcall(function() return df.global.world.units.active end)
+    if not ok or not active then return end
+    for i = 0, #active - 1 do
+        local unit = active[i]
+        if not unit then goto continue end
+        local ok_hf, hf_id = pcall(function() return unit.hist_figure_id end)
+        if not ok_hf or not hf_id or hf_id < 0 then goto continue end
+        local settings = pinned[hf_id]
+        if settings then
+            callback(unit, hf_id, settings)
+        end
+        ::continue::
+    end
+end
+
 -- Table utilities -------------------------------------------------------------
 
 -- Returns a deep copy of any Lua value (tables are copied recursively).

@@ -201,23 +201,15 @@ end
 -- Fort-level poll: detect pinned HFs arriving/leaving the map ----------------
 
 local function handle_poll(dprint)
-    local ok, active = pcall(function() return df.global.world.units.active end)
-    if not ok or not active then return end
-
     local pinned = pins.get_pinned()
 
     -- Build set of pinned HFs currently on the active list
     local on_map = {}
-    for i = 0, #active - 1 do
-        local unit = active[i]
-        if not unit then goto continue end
-        local ok_hf, hf_id = pcall(function() return unit.hist_figure_id end)
-        if not ok_hf or not hf_id or hf_id < 0 then goto continue end
-        if pinned[hf_id] and migration_enabled(pinned[hf_id]) then
+    util.for_each_pinned_unit(pinned, function(unit, hf_id, settings)
+        if migration_enabled(settings) then
             on_map[hf_id] = true
         end
-        ::continue::
-    end
+    end)
 
     -- Check for arrivals and departures
     for hf_id, settings in pairs(pinned) do
@@ -270,10 +262,21 @@ end
 event_types = build_event_types()
 polls = true
 
+-- Set presence baselines immediately at map load.
+local function set_initial_baselines(dprint)
+    util.for_each_pinned_unit(pins.get_pinned(), function(unit, hf_id, settings)
+        if migration_enabled(settings) then
+            seen_on_map[hf_id] = 'present'
+            dprint('ind-migration.init: hf %d baseline set to present', hf_id)
+        end
+    end)
+end
+
 function init(dprint)
     register_dispatch()
     announced_migrations = {}
     seen_on_map = {}
+    set_initial_baselines(dprint)
     dprint('ind-migration: handler initialised')
 end
 
