@@ -242,7 +242,9 @@ local function handle_poll(dprint)
             if prev == 'present' then
                 -- Was here, now gone
                 seen_on_map[hf_id] = 'absent'
-                dprint('ind-migration.poll: hf %d departed (now absent)', hf_id)
+                local name = hf_name(hf_id)
+                util.announce_migration(('%s has left the fortress.'):format(name))
+                dprint('ind-migration.poll: hf %d (%s) departed', hf_id, name)
             end
         end
 

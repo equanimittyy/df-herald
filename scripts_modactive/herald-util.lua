@@ -127,6 +127,11 @@ function announce_migration(msg)
     push_recent(msg, COLOR_GREEN)
 end
 
+-- Relationship event for a tracked individual (light magenta).
+function announce_relationship(msg)
+    push_recent(msg, COLOR_LIGHTMAGENTA)
+end
+
 -- Position name helpers -------------------------------------------------------
 -- DF stores position names in two different formats depending on the source:
 --   entity.positions.own      -> plain stl-string  (pos.name is a Lua string)
