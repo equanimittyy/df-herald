@@ -2214,7 +2214,7 @@ local function format_collection_entry(col, focal_civ_id)
         end
         local site = site_name_by_id(safe_get(col, 'site'))
         local loc = site and (' at ' .. site) or ''
-        return beast .. ' attacked' .. loc
+        return beast .. ' rampaged' .. loc
 
     elseif ct == _CT.ENTITY_OVERTHROWN then
         local ent_n = ent_name_by_id(safe_get(col, 'entity'))

@@ -43,15 +43,18 @@ end
 local function handle_beast_attack(col, dprint)
     local pinned_civs = civ_pins.get_pinned()
 
-    -- Resolve site owner to check against pinned civs
+    -- Defender: direct field, fallback to site owner
+    local def_civ = util.safe_get(col, 'defender_civ')
+    if def_civ and def_civ < 0 then def_civ = nil end
     local site_id = util.safe_get(col, 'site')
-    if not site_id or site_id < 0 then return end
+    if not def_civ then
+        def_civ = site_id and util.site_owner_civ(site_id) or nil
+    end
+    if not def_civ or not pinned_civs[def_civ] then return end
+    if not pinned_civs[def_civ].rampages then return end
 
-    local owner_civ = util.site_owner_civ(site_id)
-    if not owner_civ or not pinned_civs[owner_civ] then return end
-    if not pinned_civs[owner_civ].rampages then return end
-
-    local site_str = util.site_name(site_id) or 'a site'
+    local site_str = (site_id and site_id >= 0)
+        and util.site_name(site_id) or 'a site'
 
     -- Resolve beast name from attacker_hf vector
     local beast_str = 'A beast'
@@ -73,7 +76,7 @@ local function handle_beast_attack(col, dprint)
         end
     end
 
-    local msg = ('%s attacked %s!'):format(beast_str, site_str)
+    local msg = ('%s rampaged at %s!'):format(beast_str, site_str)
     dprint('world-rampages: BEAST_ATTACK collection %d - %s', col.id, msg)
     util.announce_rampage(msg)
 end
