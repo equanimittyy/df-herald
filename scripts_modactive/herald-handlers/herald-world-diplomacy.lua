@@ -128,6 +128,116 @@ local function handle_agreement_rejected(ev, dprint)
     end
 end
 
+-- Event handlers (warfare) ----------------------------------------------------
+
+local function handle_tribute_forced(ev, dprint)
+    -- Unverified struct; field names inferred from sibling war events
+    local att = util.safe_get(ev, 'attacker_civ') or util.safe_get(ev, 'a_civ') or -1
+    local def = util.safe_get(ev, 'defender_civ') or util.safe_get(ev, 'd_civ') or -1
+    local pinned_id, other_id, settings = find_pinned_party(att, def)
+    if not pinned_id or not settings.warfare then return end
+
+    local site_id = util.safe_get(ev, 'site') or util.safe_get(ev, 'site_id')
+    local site_str = site_id and site_id >= 0 and util.site_name(site_id)
+
+    local msg
+    if pinned_id == att then
+        msg = ('%s forced tribute on %s'):format(ent_name(pinned_id), ent_name(other_id))
+    else
+        msg = ('%s was forced to pay tribute to %s'):format(ent_name(pinned_id), ent_name(other_id))
+    end
+    if site_str then msg = msg .. ' at ' .. site_str end
+    msg = msg .. '.'
+
+    dprint('world-diplomacy: tribute forced event %d - %s', ev.id, msg)
+    util.announce_war(msg)
+end
+
+local function handle_site_taken_over(ev, dprint)
+    local att = util.safe_get(ev, 'attacker_civ') or -1
+    local def = util.safe_get(ev, 'defender_civ') or util.safe_get(ev, 'site_civ') or -1
+    local pinned_id, other_id, settings = find_pinned_party(att, def)
+    if not pinned_id or not settings.warfare then return end
+
+    local site_id = util.safe_get(ev, 'site')
+    local site_str = site_id and site_id >= 0 and util.site_name(site_id)
+
+    local msg
+    if pinned_id == att then
+        msg = ('%s took control of %s from %s.'):format(
+            ent_name(pinned_id), site_str or 'a site', ent_name(other_id))
+    else
+        msg = ('%s lost %s to %s.'):format(
+            ent_name(pinned_id), site_str or 'a site', ent_name(other_id))
+    end
+
+    dprint('world-diplomacy: site taken over event %d - %s', ev.id, msg)
+    util.announce_war(msg)
+end
+
+local function handle_site_new_leader(ev, dprint)
+    local att = util.safe_get(ev, 'attacker_civ') or -1
+    local def = util.safe_get(ev, 'defender_civ') or util.safe_get(ev, 'site_civ') or -1
+    local pinned_id, other_id, settings = find_pinned_party(att, def)
+    if not pinned_id or not settings.warfare then return end
+
+    local site_id = util.safe_get(ev, 'site')
+    local site_str = site_id and site_id >= 0 and util.site_name(site_id)
+
+    -- Resolve new leader names from HF ID vector
+    local leaders = util.safe_get(ev, 'new_leaders')
+    local leader_str
+    if leaders then
+        local ok, n = pcall(function() return #leaders end)
+        if ok and n > 0 then
+            local names = {}
+            for i = 0, n - 1 do
+                local ok2, hf_id = pcall(function() return leaders[i] end)
+                if ok2 and hf_id and hf_id >= 0 then
+                    table.insert(names, util.hf_name(hf_id))
+                end
+            end
+            if #names > 0 then leader_str = table.concat(names, ', ') end
+        end
+    end
+
+    local msg
+    if pinned_id == att then
+        msg = ('%s installed new leadership at %s'):format(
+            ent_name(pinned_id), site_str or 'a site')
+    else
+        msg = ('New leadership installed at %s by %s'):format(
+            site_str or 'a site', ent_name(other_id))
+    end
+    if leader_str then msg = msg .. ': ' .. leader_str end
+    msg = msg .. '.'
+
+    dprint('world-diplomacy: site new leader event %d - %s', ev.id, msg)
+    util.announce_war(msg)
+end
+
+local function handle_site_destroyed(ev, dprint)
+    local att = util.safe_get(ev, 'attacker_civ') or -1
+    local def = util.safe_get(ev, 'defender_civ') or util.safe_get(ev, 'site_civ') or -1
+    local pinned_id, other_id, settings = find_pinned_party(att, def)
+    if not pinned_id or not settings.warfare then return end
+
+    local site_id = util.safe_get(ev, 'site')
+    local site_str = site_id and site_id >= 0 and util.site_name(site_id)
+
+    local msg
+    if pinned_id == att then
+        msg = ('%s destroyed %s!'):format(
+            ent_name(pinned_id), site_str or 'a site')
+    else
+        msg = ('%s was destroyed by %s!'):format(
+            site_str or 'a site', ent_name(other_id))
+    end
+
+    dprint('world-diplomacy: site destroyed event %d - %s', ev.id, msg)
+    util.announce_war(msg)
+end
+
 -- Dispatch table keyed by history_event_type enum value.
 local dispatch = {}
 
@@ -139,6 +249,10 @@ local function register_dispatch()
         {T.TOPICAGREEMENT_CONCLUDED,    handle_agreement_concluded},
         {T.TOPICAGREEMENT_MADE,         handle_agreement_made},
         {T.TOPICAGREEMENT_REJECTED,     handle_agreement_rejected},
+        {T.WAR_SITE_TRIBUTE_FORCED,     handle_tribute_forced},
+        {T.WAR_SITE_TAKEN_OVER,         handle_site_taken_over},
+        {T.WAR_SITE_NEW_LEADER,         handle_site_new_leader},
+        {T.WAR_DESTROYED_SITE,          handle_site_destroyed},
     }
     for _, entry in ipairs(map) do
         if entry[1] then dispatch[entry[1]] = entry[2] end
@@ -150,7 +264,7 @@ end
 -- Collection type enum cache.
 local CT = {}
 do
-    for _, name in ipairs({'WAR', 'BATTLE', 'SITE_CONQUERED'}) do
+    for _, name in ipairs({'WAR', 'BATTLE', 'RAID'}) do
         local ok, v = pcall(function()
             return df.history_event_collection_type[name]
         end)
@@ -347,30 +461,80 @@ local function handle_battle_collection(col, dprint)
     util.announce_war(msg)
 end
 
-local function handle_site_conquered_collection(col, dprint)
-    local pinned_id, opp_id, settings, is_attacker =
-        check_direct_civ_vecs(col, 'attacker_civ', 'defender_civ')
-    if not pinned_id or not settings.warfare then return end
+-- Resolve site -> owning civ via cur_owner_id (SiteGov) -> entity_links -> Civ.
+local function site_owner_civ(site_id)
+    if not site_id or site_id < 0 then return nil end
+    local site = df.world_site.find(site_id)
+    if not site then return nil end
+    local owner = util.safe_get(site, 'cur_owner_id')
+    if owner and owner >= 0 then
+        local ent = df.historical_entity.find(owner)
+        if ent then
+            -- Walk entity_links to find the parent Civilization
+            local ok, links = pcall(function() return ent.entity_links end)
+            if ok and links then
+                for j = 0, #links - 1 do
+                    local ok2, link = pcall(function() return links[j] end)
+                    if ok2 and link then
+                        local ok3, tid = pcall(function() return link.target end)
+                        if ok3 and tid and tid >= 0 then
+                            local parent = df.historical_entity.find(tid)
+                            if parent then
+                                local ok4, pt = pcall(function() return parent.type end)
+                                if ok4 and pt == df.historical_entity_type.Civilization then
+                                    return tid
+                                end
+                            end
+                        end
+                    end
+                end
+            end
+        end
+    end
+    -- Last resort: original founding civ
+    local orig = util.safe_get(site, 'civ_id')
+    if orig and orig >= 0 then return orig end
+    return nil
+end
+
+local function handle_raid_collection(col, dprint)
+    local pinned_civs = world_leaders.get_pinned_civs()
+    -- RAID uses a scalar attacking_entity (or attacker_civ fallback)
+    local ok_ae, att_eid = pcall(function() return col.attacking_entity end)
+    if not ok_ae or not att_eid or att_eid < 0 then
+        local ok2, v = pcall(function() return col.attacker_civ end)
+        if ok2 and v and v >= 0 then att_eid = v else att_eid = nil end
+    end
 
     local ok_s, site_id = pcall(function() return col.site end)
+    local def_civ = (ok_s and site_id) and site_owner_civ(site_id) or nil
     local site_str = (ok_s and site_id and site_id >= 0)
         and util.site_name(site_id) or 'a site'
 
-    local msg
-    if is_attacker then
-        msg = ('%s conquered %s from %s!'):format(
-            ent_name(pinned_id), site_str, ent_name(opp_id))
-    else
-        msg = ('%s conquered by %s!'):format(site_str, ent_name(opp_id))
+    -- Check attacker side
+    if att_eid and pinned_civs[att_eid] and pinned_civs[att_eid].warfare then
+        local msg = ('%s raided %s!'):format(ent_name(att_eid), site_str)
+        local war = parent_war_name(col)
+        if war then msg = msg:sub(1, -2) .. ' - part of ' .. war .. '!' end
+        dprint('world-diplomacy: RAID collection %d (attacker) - %s', col.id, msg)
+        util.announce_war(msg)
+        return
     end
 
-    dprint('world-diplomacy: SITE_CONQUERED collection %d - %s', col.id, msg)
-    util.announce_war(msg)
+    -- Check defender side via site ownership
+    if def_civ and pinned_civs[def_civ] and pinned_civs[def_civ].warfare then
+        local by = att_eid and (' by ' .. ent_name(att_eid)) or ''
+        local msg = ('%s was raided%s!'):format(site_str, by)
+        local war = parent_war_name(col)
+        if war then msg = msg:sub(1, -2) .. ' - part of ' .. war .. '!' end
+        dprint('world-diplomacy: RAID collection %d (defender) - %s', col.id, msg)
+        util.announce_war(msg)
+    end
 end
 
--- Scan all collections for new WAR/BATTLE/SITE_CONQUERED.
+-- Scan all collections for new WAR/BATTLE/RAID.
 local function scan_collections(dprint)
-    if not CT.WAR and not CT.BATTLE and not CT.SITE_CONQUERED then return end
+    if not CT.WAR and not CT.BATTLE and not CT.RAID then return end
 
     local ok_all, all = pcall(function()
         return df.global.world.history.event_collections.all
@@ -395,10 +559,10 @@ local function scan_collections(dprint)
             known_collections[col.id] = true
             new_count = new_count + 1
             handle_battle_collection(col, dprint)
-        elseif ct == CT.SITE_CONQUERED then
+        elseif ct == CT.RAID then
             known_collections[col.id] = true
             new_count = new_count + 1
-            handle_site_conquered_collection(col, dprint)
+            handle_raid_collection(col, dprint)
         end
 
         ::continue::
@@ -419,6 +583,10 @@ local function build_event_types()
         T.TOPICAGREEMENT_CONCLUDED,
         T.TOPICAGREEMENT_MADE,
         T.TOPICAGREEMENT_REJECTED,
+        T.WAR_SITE_TRIBUTE_FORCED,
+        T.WAR_SITE_TAKEN_OVER,
+        T.WAR_SITE_NEW_LEADER,
+        T.WAR_DESTROYED_SITE,
     }
     local result = {}
     for _, et in ipairs(candidates) do
@@ -442,7 +610,7 @@ local function baseline_collections(dprint)
         local ok2, col = pcall(function() return all[i] end)
         if ok2 and col then
             local ok3, ct = pcall(function() return col:getType() end)
-            if ok3 and (ct == CT.WAR or ct == CT.BATTLE or ct == CT.SITE_CONQUERED) then
+            if ok3 and (ct == CT.WAR or ct == CT.BATTLE or ct == CT.RAID) then
                 known_collections[col.id] = true
                 count = count + 1
             end

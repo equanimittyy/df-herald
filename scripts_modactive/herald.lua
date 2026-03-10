@@ -155,7 +155,7 @@ local DEFAULT_ANNOUNCEMENTS = {
     individuals   = { relationships = true, death = true, combat = true,
                       legendary = true, positions = true, migration = true },
     civilisations = { positions = true, diplomacy = true, warfare = true,
-                      raids = true, theft = true, kidnappings = true },
+                      theft = true, kidnappings = true },
 }
 
 -- Merges saved announcement config over defaults; fills any missing keys.

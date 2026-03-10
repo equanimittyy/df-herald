@@ -9,7 +9,7 @@ Herald monitors the world while you play, alerting you when notable events happe
 ### Features
 
 - **Individual tracking** - Pin historical figures and get notified about their deaths, combat, relationships, positions, and more
-- **Civilisation tracking** - Pin civilisations to follow leadership changes, diplomacy, warfare, raids, theft, and kidnappings
+- **Civilisation tracking** - Pin civilisations to follow leadership changes, diplomacy, warfare, theft, and kidnappings
 - **Event History popup** - Browse collected events with context
 - **Overlay button** - Quick access from the main game screen
 - **Configurable settings** - Toggle notification categories per pinned figure or civilisation

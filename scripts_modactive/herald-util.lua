@@ -286,7 +286,7 @@ end
 
 -- Ordered key lists; used when merging a saved settings table over defaults.
 INDIVIDUAL_SETTINGS_KEYS    = { 'relationships', 'death', 'combat', 'legendary', 'positions', 'migration' }
-CIVILISATION_SETTINGS_KEYS  = { 'positions', 'diplomacy', 'warfare', 'raids', 'theft', 'kidnappings' }
+CIVILISATION_SETTINGS_KEYS  = { 'positions', 'diplomacy', 'warfare', 'theft', 'kidnappings' }
 
 function default_pin_settings()
     return {
@@ -304,7 +304,6 @@ function default_civ_pin_settings()
         positions   = true,
         diplomacy   = true,
         warfare     = true,
-        raids       = true,
         theft       = true,
         kidnappings = true,
     }

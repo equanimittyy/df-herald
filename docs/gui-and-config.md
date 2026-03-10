@@ -70,7 +70,6 @@ Ctrl-J (open DFHack Journal), Ctrl-C (refresh cache), and Escape (close).
       "positions": true,
       "diplomacy": true,
       "warfare": true,
-      "raids": true,
       "theft": true,
       "kidnappings": true
     }
@@ -81,7 +80,7 @@ Ctrl-J (open DFHack Journal), Ctrl-C (refresh cache), and Escape (close).
 **Per-save config** (`dfhack.persistent.getSiteData/saveSiteData`):
 
 - Individuals: key `herald_pinned_hf_ids`; settings keys: `relationships`, `death`, `combat`, `legendary`, `positions`, `migration`
-- Civilisations: key `herald_pinned_civ_ids`; settings keys: `positions`, `diplomacy`, `warfare`, `raids`, `theft`, `kidnappings`
+- Civilisations: key `herald_pinned_civ_ids`; settings keys: `positions`, `diplomacy`, `warfare`, `theft`, `kidnappings`
 - Recent announcements: key `herald_recent_announcements`; schema: `{ "entries": [ { "msg": <str>, "color": <int>, "year": <int>, "tick": <int>, "season": <str> } ] }`; max 20 entries
 - Schema (pins): `{ "pins": [ { "id": <int>, "settings": { <key>: <bool>, ... } } ] }`
 - All defaults are `true`; old saves with missing keys are filled by `merge_pin_settings` / `merge_civ_pin_settings` in herald-util
