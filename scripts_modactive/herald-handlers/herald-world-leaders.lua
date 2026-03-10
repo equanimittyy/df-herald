@@ -122,7 +122,7 @@ function check_poll(dprint)
                         dprint('world-leaders: appointment for %s (%s of %s)',
                             hf_name, tostring(pos_name), civ_name)
                         util.announce_appointment(fmt_appointment(hf_name, pos_name, civ_name))
-                    elseif DEBUG then
+                    else
                         dprint('world-leaders: appointment for hf %d - suppressed (positions OFF)', hf_id)
                     end
                 end
@@ -159,11 +159,7 @@ function check_poll(dprint)
     end
 
     tracked_leaders = new_snapshot
-    if DEBUG then
-        local n = 0
-        for _ in pairs(tracked_leaders) do n = n + 1 end
-        dprint('world-leaders.check_poll: civs=%d tracked=%d', dbg_civs, n)
-    end
+    dprint('world-leaders.check_poll: civs=%d', dbg_civs)
 end
 
 -- Handler contract -------------------------------------------------------------
