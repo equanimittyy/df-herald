@@ -20,116 +20,172 @@ if not main.DEBUG then
 end
 
 -- ============================================================
--- PROBE: WAR_SITE_TRIBUTE_FORCED event struct field names
---        1. Check if the event type exists in this DF version.
---        2. Find any event of that type in world history.
---        3. printall() the first found event to list every field.
---        4. Also check neighbour WAR_* event types for comparison.
+-- PROBE: THEFT and ABDUCTION collections
+--        1. Scan all event collections for THEFT/ABDUCTION types.
+--        2. Dump fields of each found collection.
+--        3. Also scan for ITEM_STOLEN events to cross-reference.
 -- ============================================================
 
-print('=== START PROBE: WAR_SITE_TRIBUTE_FORCED ===')
+print('=== START PROBE: THEFT/ABDUCTION COLLECTIONS ===')
 print('')
 
-local T = df.history_event_type
-
--- Step 1: confirm the type exists and print its numeric value.
-local tribute_type = T['WAR_SITE_TRIBUTE_FORCED']
-if tribute_type == nil then
-    print('WARNING: df.history_event_type["WAR_SITE_TRIBUTE_FORCED"] is nil in this DF version.')
-    print('It may not exist or may have a different name.')
-    print('')
-    print('Dumping all history_event_type enum values with "WAR" in name:')
-    for k, v in pairs(T) do
-        if type(k) == 'string' and k:find('WAR') then
-            print(('  %s = %s'):format(k, tostring(v)))
-        end
+local CT = {}
+for _, name in ipairs({'THEFT', 'ABDUCTION'}) do
+    local ok, v = pcall(function()
+        return df.history_event_collection_type[name]
+    end)
+    if ok and v ~= nil then
+        CT[name] = v
+        print(('Collection type %s = %d'):format(name, v))
+    else
+        print(('Collection type %s: NOT FOUND in this DF version'):format(name))
     end
-    print('')
+end
+print('')
+
+-- Scan all collections
+local ok_all, all = pcall(function()
+    return df.global.world.history.event_collections.all
+end)
+if not ok_all or not all then
+    print('ERROR: cannot access world.history.event_collections.all')
     print('=== END PROBE ===')
     return
 end
 
-print(('WAR_SITE_TRIBUTE_FORCED type value = %d'):format(tribute_type))
+print(('Total collections in world: %d'):format(#all))
 print('')
 
--- Step 2: scan world history for any event of this type.
-local ok_ev, events = pcall(function() return df.global.world.history.events end)
-if not ok_ev or not events then
-    print('ERROR: cannot access world.history.events')
-    print('=== END PROBE ===')
-    return
-end
+local theft_count = 0
+local abduction_count = 0
+local MAX_SHOW = 10
 
-print(('Total events in world history: %d'):format(#events))
-print('Scanning for WAR_SITE_TRIBUTE_FORCED events...')
-print('')
+for i = 0, #all - 1 do
+    local ok2, col = pcall(function() return all[i] end)
+    if not ok2 or not col then goto next_col end
 
-local found = 0
-local MAX_SHOW = 5
+    local ok3, ct = pcall(function() return col:getType() end)
+    if not ok3 then goto next_col end
 
-for i = 0, #events - 1 do
-    local ok2, ev = pcall(function() return events[i] end)
-    if not ok2 or not ev then goto next_ev end
+    local is_theft = (ct == CT.THEFT)
+    local is_abduction = (ct == CT.ABDUCTION)
+    if not is_theft and not is_abduction then goto next_col end
 
-    local ok3, ev_type = pcall(function() return ev:getType() end)
-    if not ok3 then goto next_ev end
+    local count = is_theft and theft_count or abduction_count
+    if is_theft then theft_count = theft_count + 1 else abduction_count = abduction_count + 1 end
 
-    if ev_type ~= tribute_type then goto next_ev end
+    if count < MAX_SHOW then
+        local label = is_theft and 'THEFT' or 'ABDUCTION'
+        local ok_yr, yr = pcall(function() return col.year end)
+        print(('--- [%s #%d] collection id=%d, year=%s ---'):format(
+            label, count + 1, col.id, ok_yr and tostring(yr) or '?'))
 
-    found = found + 1
-    if found <= MAX_SHOW then
-        print(('--- [%d] WAR_SITE_TRIBUTE_FORCED (array pos %d, id %d, year %s) ---'):format(
-            found, i, ev.id or -1, tostring(ev.year)))
-
-        -- Dump all fields via printall.
-        print('  [printall output]:')
+        -- printall
+        print('  [printall]:')
         local lines = {}
         local old_print = print
         print = function(s) table.insert(lines, s) end
-        pcall(function() printall(ev) end)
+        pcall(function() printall(col) end)
         print = old_print
         for _, line in ipairs(lines) do
             old_print('    ' .. tostring(line))
         end
 
-        -- Explicitly probe likely field names to confirm which are valid.
+        -- Probe specific fields
         print('  [field probe]:')
         local probe_fields = {
-            -- Civ fields: DF war events typically use a_civ/d_civ or attacker_civ/defender_civ.
-            'a_civ', 'd_civ',
-            'attacker_civ', 'defender_civ',
-            'entity', 'civ', 'entity_id',
-            -- Site field.
-            'site', 'site_id', 'target_site_id',
-            -- Season/period fields.
-            'season', 'season_ticks',
-            -- Tribute flags or amount.
-            'tribute_flags', 'tribute', 'amount',
-            -- HF fields common in war events.
-            'attacker_hf', 'defender_hf',
-            'attacker_general_hf', 'defender_general_hf',
-            -- Generic.
-            'histfig', 'hfid', 'year', 'seconds',
+            'site', 'attacker_civ', 'attacking_entity', 'defender_civ',
+            'entity', 'parent_collection',
         }
         for _, fname in ipairs(probe_fields) do
-            local ok_f, fval = pcall(function() return ev[fname] end)
+            local ok_f, fval = pcall(function() return col[fname] end)
             if ok_f and fval ~= nil then
-                print(('    ev.%s = %s'):format(fname, tostring(fval)))
+                old_print(('    col.%s = %s'):format(fname, tostring(fval)))
             end
         end
+
+        -- Probe vector fields
+        local vec_fields = {
+            'victim_hf', 'snatcher_hf', 'events',
+        }
+        for _, fname in ipairs(vec_fields) do
+            local ok_v, vec = pcall(function() return col[fname] end)
+            if ok_v and vec then
+                local ok_n, n = pcall(function() return #vec end)
+                if ok_n then
+                    local items = {}
+                    for j = 0, math.min(n - 1, 4) do
+                        local ok_j, v = pcall(function() return vec[j] end)
+                        if ok_j then table.insert(items, tostring(v)) end
+                    end
+                    local suffix = n > 5 and (' ... +' .. (n - 5) .. ' more') or ''
+                    old_print(('    col.%s [%d]: {%s}%s'):format(
+                        fname, n, table.concat(items, ', '), suffix))
+                end
+            end
+        end
+
+        -- Resolve site name if available
+        local ok_site, site_id = pcall(function() return col.site end)
+        if ok_site and site_id and site_id >= 0 then
+            local site = df.world_site.find(site_id)
+            if site then
+                local name = dfhack.translation.translateName(site.name, true)
+                old_print(('    -> site name: %s'):format(name or '?'))
+            end
+        end
+
         print('')
     end
 
-    ::next_ev::
+    ::next_col::
 end
 
-if found == 0 then
-    print('No WAR_SITE_TRIBUTE_FORCED events found in world history.')
-    print('(World may not have generated this event type. Try a world with more history.)')
-elseif found > MAX_SHOW then
-    print(('... and %d more (showing first %d)'):format(found - MAX_SHOW, MAX_SHOW))
+print(('THEFT collections found: %d'):format(theft_count))
+print(('ABDUCTION collections found: %d'):format(abduction_count))
+print('')
+
+-- Also count ITEM_STOLEN events for cross-reference
+local T = df.history_event_type
+local stolen_type = T.ITEM_STOLEN
+if stolen_type then
+    local ok_ev, events = pcall(function() return df.global.world.history.events end)
+    if ok_ev and events then
+        local stolen_count = 0
+        for i = 0, #events - 1 do
+            local ok4, ev = pcall(function() return events[i] end)
+            if ok4 and ev then
+                local ok5, et = pcall(function() return ev:getType() end)
+                if ok5 and et == stolen_type then
+                    stolen_count = stolen_count + 1
+                end
+            end
+        end
+        print(('ITEM_STOLEN events found: %d'):format(stolen_count))
+    end
+else
+    print('ITEM_STOLEN event type: NOT FOUND')
 end
-print(('Total WAR_SITE_TRIBUTE_FORCED events: %d'):format(found))
+
+local abducted_type = T.HIST_FIGURE_ABDUCTED or T.HF_ABDUCTED
+if abducted_type then
+    local ok_ev, events = pcall(function() return df.global.world.history.events end)
+    if ok_ev and events then
+        local abd_count = 0
+        for i = 0, #events - 1 do
+            local ok4, ev = pcall(function() return events[i] end)
+            if ok4 and ev then
+                local ok5, et = pcall(function() return ev:getType() end)
+                if ok5 and et == abducted_type then
+                    abd_count = abd_count + 1
+                end
+            end
+        end
+        print(('HIST_FIGURE_ABDUCTED events found: %d'):format(abd_count))
+    end
+else
+    print('HIST_FIGURE_ABDUCTED/HF_ABDUCTED event type: NOT FOUND')
+end
 
 print('')
 print('=== END PROBE ===')

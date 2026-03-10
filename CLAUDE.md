@@ -27,7 +27,7 @@ scripts_modactive/
     herald-ind-relationships.lua  ← event-driven relationship events (marriage, apprentice, deity, intrigue)
     herald-world-leaders.lua      ← poll-based world leader tracking [Civilisations]
     herald-world-diplomacy.lua    ← hybrid event+poll diplomacy and warfare [Civilisations]
-    herald-world-espionage.lua    ← hybrid event+poll espionage (theft, abduction) [Civilisations]
+    herald-world-espionage.lua    ← poll-based espionage (theft, abduction) [Civilisations]
 
 scripts_modinstalled/
   herald-button.lua        ← DFHack overlay widgets (Herald button + alert on main screen)
@@ -46,7 +46,7 @@ Each handler in its own `herald-<type>.lua` under `herald-handlers/`. Handlers c
 - **Individuals (relationships)** - event-driven only; marriage, divorce, apprenticeship, deity worship, intrigue.
 - **Civilisations (leaders)** - poll-based only; snapshots civ state each cycle, detects changes by diff.
 - **Civilisations (diplomacy)** - hybrid event+poll; peace/agreements/tribute (event-driven) + WAR/BATTLE/RAID collections (poll-based) + site takeover/destruction/new leadership (event-driven).
-- **Civilisations (espionage)** - hybrid event+poll; ITEM_STOLEN/HIST_FIGURE_ABDUCTED (event-driven) + THEFT/ABDUCTION collections (poll-based).
+- **Civilisations (espionage)** - poll-based; detects new THEFT/ABDUCTION collections involving pinned civs.
 
 ## Module Requirements
 

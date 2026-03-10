@@ -1812,11 +1812,10 @@ local function describe_collection(col, skip_site)
         return 'during ' .. (_CT_LABELS[ct] or 'an event') .. by
 
     elseif ct == _CT.THEFT then
-        -- Unverified (0 instances in test save)
         local site = not skip_site and site_name_by_id(safe_get(col, 'site'))
-        local ac   = ent_name_by_id(safe_get(col, 'attacking_entity'))
+        local tc   = ent_name_by_id(safe_get(col, 'thief_civ'))
         local loc  = site and (' from ' .. site) or ''
-        local by   = ac and (' by ' .. ac) or ''
+        local by   = tc and (' by ' .. tc) or ''
         return 'during a theft' .. loc .. by
 
     elseif ct == _CT.INSURRECTION then
@@ -1885,11 +1884,16 @@ function civ_matches_collection(col, civ_id)
             or util.entpop_vec_has_civ(col, 'defender_squad_entity_pops', civ_id, ep_map)
     elseif ct == _CT.WAR or ct == _CT.SITE_CONQUERED then
         return vec_match('attacker_civ') or vec_match('defender_civ')
-    elseif ct == _CT.RAID or ct == _CT.THEFT then
-        return scalar_match('attacking_entity') or scalar_match('attacker_civ')
+    elseif ct == _CT.RAID then
+        if scalar_match('attacking_entity') or scalar_match('attacker_civ') then
+            return true
+        end
+        local site_id = safe_get(col, 'site')
+        return site_id and util.site_owner_civ(site_id) == civ_id
+    elseif ct == _CT.THEFT then
+        return scalar_match('thief_civ') or scalar_match('victim_civ')
     elseif ct == _CT.ABDUCTION then
-        return scalar_match('attacker_civ')
-            or vec_hf_has_civ_member(col, 'victim_hf', civ_id)
+        return scalar_match('attacker_civ') or scalar_match('defender_civ')
     elseif ct == _CT.ENTITY_OVERTHROWN or ct == _CT.PERSECUTION or ct == _CT.PURGE then
         return scalar_match('entity')
     elseif ct == _CT.INSURRECTION then
@@ -2138,14 +2142,38 @@ local function format_collection_entry(col, focal_civ_id)
 
     elseif ct == _CT.THEFT then
         local site = site_name_by_id(safe_get(col, 'site'))
-        local ac   = safe_get(col, 'attacking_entity') or safe_get(col, 'attacker_civ')
-        local is_att = (ac == focal_civ_id)
+        local tc   = safe_get(col, 'thief_civ')
+        local vc   = safe_get(col, 'victim_civ')
+        local is_att = (tc == focal_civ_id)
         local loc  = site or 'a site'
+        -- Summarise stolen items by type
+        local loot
+        local ok_st, st_vec = pcall(function() return col.stolen_item_types end)
+        if ok_st and st_vec and #st_vec > 0 then
+            local seen = {}
+            local names = {}
+            for i = 0, #st_vec - 1 do
+                local ok2, itype = pcall(function() return st_vec[i] end)
+                if ok2 and itype and itype >= 0 then
+                    local iname = df.item_type[itype]
+                    local s = iname and tostring(iname):lower() or nil
+                    if s and not seen[s] then
+                        seen[s] = true
+                        table.insert(names, s)
+                    end
+                end
+            end
+            if #names > 0 then loot = table.concat(names, ', ') end
+        end
         if is_att then
-            return 'committed theft from ' .. loc
+            local vc_name = vc and ent_name_by_id(vc)
+            local against = vc_name and (' from ' .. vc_name) or ''
+            local what = loot and (' - stole ' .. loot) or ''
+            return 'committed theft in ' .. loc .. against .. what
         else
-            local by = ac and ent_name_by_id(ac)
-            return (by or 'Unknown') .. ' committed theft from ' .. loc
+            local by = tc and ent_name_by_id(tc)
+            local what = loot and (' - stole ' .. loot) or ''
+            return (by or 'Unknown') .. ' committed theft from ' .. loc .. what
         end
 
     elseif ct == _CT.ABDUCTION then

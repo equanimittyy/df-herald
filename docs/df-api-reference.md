@@ -122,7 +122,7 @@ col:getType(), col.events[j] (event IDs), col.collections (child IDs), col.paren
 |---|---|---|
 | DUEL | `attacker_hf`/`defender_hf` scalar, `site` | |
 | BEAST_ATTACK | `attacker_hf` **vec**`[0]`, `site` | |
-| ABDUCTION | `snatcher_hf`/`victim_hf` **vecs**, `attacker_civ`, `site` | NOT `attacker_hf`/`target_hf` |
+| ABDUCTION | `snatcher_hf`/`victim_hf` **vecs**, `attacker_civ`/`defender_civ` scalars, `site` | NOT `attacker_hf`/`target_hf` |
 | BATTLE | `name`, `site`, `attacker_squad_entity_pop`/`defender_squad_entity_pops` **vecs**, `attacker_squad_deaths`/`defender_squad_deaths` **vecs**, `attacker_hf`/`defender_hf` **vecs** | `attacker_civ`/`defender_civ` always empty; use entity_pop->`civ_id` |
 | SITE_CONQUERED | `attacker_civ`/`defender_civ` **vecs**, `site` | |
 | WAR | `name`, `attacker_civ`/`defender_civ` **vecs** | no `site` |
@@ -130,7 +130,8 @@ col:getType(), col.events[j] (event IDs), col.collections (child IDs), col.paren
 | ENTITY_OVERTHROWN | `entity` scalar, `site` | |
 | JOURNEY | `traveler_hf` **vec** | no `site` |
 | OCCASION/COMPETITION/PERFORMANCE/PROCESSION/CEREMONY | `civ` scalar | no `site`; resolve from events |
-| RAID/THEFT/INSURRECTION/PURGE | unverified | use `safe_get` |
+| THEFT | `thief_civ`/`victim_civ` scalars, `thief_hf` **vec**, `site`, `stolen_item_*`/`attempted_stolen_item_*` **vecs** | NOT `attacker_civ`/`attacking_entity` |
+| RAID/INSURRECTION/PURGE | unverified | use `safe_get` |
 
 Field naming: `attacker_civ`/`defender_civ` (NOT `attacking_entity`/`defending_entity`).
 
