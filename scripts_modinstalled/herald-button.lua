@@ -80,7 +80,7 @@ HeraldButton = defclass(HeraldButton, overlay.OverlayWidget)
 HeraldButton.ATTRS{
     default_pos     = {x=10, y=1},
     default_enabled = true,
-    viewscreens     = {'dwarfmode', 'dwarfmode/', 'dungeonmode', 'dungeonmode/', 'world/'},
+    viewscreens     = {'dwarfmode', 'dwarfmode/'},
     frame           = {w=LOGO_COLS, h=LOGO_ROWS},
 }
 
@@ -113,6 +113,14 @@ function HeraldButton:init()
         }
     end
 end
+
+-- Dungeonmode variant: same button, repositioned to bottom-left next to the
+-- DFHack button which moves there in adventure mode.
+HeraldButtonAdv = defclass(HeraldButtonAdv, HeraldButton)
+HeraldButtonAdv.ATTRS{
+    default_pos = {x=10, y=53},
+    viewscreens = {'dungeonmode', 'dungeonmode/'},
+}
 
 -- HeraldAlert -----------------------------------------------------------------
 -- Appears when there are unread Herald announcements; disappears on click.
@@ -181,7 +189,7 @@ HeraldAlert = defclass(HeraldAlert, overlay.OverlayWidget)
 HeraldAlert.ATTRS{
     default_pos     = {x=1, y=5},
     default_enabled = true,
-    viewscreens     = {'dwarfmode', 'dwarfmode/', 'dungeonmode', 'dungeonmode/', 'world/'},
+    viewscreens     = {'dwarfmode', 'dwarfmode/'},
     frame           = {w=ALERT_COLS, h=ALERT_ROWS},  -- 12x2 tiles = 96x24 px per state; PNG = 192x24 px
 }
 
@@ -222,4 +230,16 @@ function HeraldAlert:render(dc)
     HeraldAlert.super.render(self, dc)
 end
 
-OVERLAY_WIDGETS = { button = HeraldButton, alert = HeraldAlert }
+-- Dungeonmode alert: positioned underneath the Herald button.
+HeraldAlertAdv = defclass(HeraldAlertAdv, HeraldAlert)
+HeraldAlertAdv.ATTRS{
+    default_pos = {x=1, y=57},
+    viewscreens = {'dungeonmode', 'dungeonmode/'},
+}
+
+OVERLAY_WIDGETS = {
+    button     = HeraldButton,
+    button_adv = HeraldButtonAdv,
+    alert      = HeraldAlert,
+    alert_adv  = HeraldAlertAdv,
+}

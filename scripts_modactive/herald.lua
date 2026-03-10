@@ -311,6 +311,7 @@ local handler_paths = {
     'herald-handlers/herald-ind-death',
     'herald-handlers/herald-ind-combat',
     'herald-handlers/herald-ind-skills',
+    'herald-handlers/herald-ind-positions',
     'herald-handlers/herald-world-leaders',
 }
 

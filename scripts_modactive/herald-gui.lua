@@ -542,7 +542,7 @@ local INDIVIDUALS_ANN = {
     { key = 'death',         label = 'Death',         caption = 'Pinned HF dies',       impl = true  },
     { key = 'combat',        label = 'Combat',        caption = 'Battles, duels etc.',      impl = true },
     { key = 'legendary',     label = 'Legendary',     caption = 'Gained Legendary skills',     impl = true  },
-    { key = 'positions',     label = 'Positions',     caption = 'Title gained/lost',    impl = false },
+    { key = 'positions',     label = 'Positions',     caption = 'Title gained/lost',    impl = true  },
     { key = 'migration',     label = 'Migration',     caption = 'Moves settlement',     impl = false },
 }
 
