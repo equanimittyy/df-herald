@@ -126,27 +126,27 @@ end
 
 -- Migration event for a tracked individual (green).
 function announce_migration(msg)
-    push_recent(msg, COLOR_GREEN)
+    push_recent(msg, COLOR_LIGHTGREEN)
 end
 
 -- Relationship event for a tracked individual (light magenta).
 function announce_relationship(msg)
-    push_recent(msg, COLOR_LIGHTMAGENTA)
+    push_recent(msg, COLOR_GREEN)
 end
 
 -- Legendary skill achievement (light green).
 function announce_legendary(msg)
-    push_recent(msg, COLOR_LIGHTGREEN)
+    push_recent(msg, COLOR_YELLOW)
 end
 
 -- Diplomacy event for a pinned civilisation (light blue).
 function announce_diplomacy(msg)
-    push_recent(msg, COLOR_LIGHTBLUE)
+    push_recent(msg, COLOR_BLUE)
 end
 
 -- Warfare event for a pinned civilisation (brown).
 function announce_war(msg)
-    push_recent(msg, COLOR_BROWN)
+    push_recent(msg, COLOR_LIGHTBLUE)
 end
 
 -- Espionage event for a pinned civilisation (magenta).
