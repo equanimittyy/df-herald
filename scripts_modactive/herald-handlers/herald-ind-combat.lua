@@ -239,25 +239,39 @@ local function handle_poll(dprint)
             return
         end
 
-        -- Diff per-race counts
+        -- Collect all race deltas, then announce once per HF
+        local parts = {}
+        local total = 0
         for race_id, new_count in pairs(snap) do
             local old_count = base[race_id] or 0
             local delta = new_count - old_count
             if delta > 0 then
-                local name = hf_name(hf_id)
+                total = total + delta
                 local singular, plural = race_names(race_id)
-                local msg
                 if delta == 1 then
-                    msg = ('%s has claimed the life of a %s!'):format(
-                        name, singular or 'foe')
+                    table.insert(parts, ('a %s'):format(singular or 'foe'))
                 else
-                    msg = ('%s has claimed the lives of %d %s!'):format(
-                        name, delta, plural or singular or 'foes')
+                    table.insert(parts, ('%d %s'):format(
+                        delta, plural or singular or 'foes'))
                 end
                 dprint('ind-combat.poll: KILL by %s (hf %d, +%d %s)',
-                    name, hf_id, delta, singular or '?')
-                util.announce_combat(msg)
+                    hf_name(hf_id), hf_id, delta, singular or '?')
             end
+        end
+
+        if #parts > 0 then
+            local victim_str
+            if #parts == 1 then
+                victim_str = parts[1]
+            elseif #parts == 2 then
+                victim_str = parts[1] .. ' and ' .. parts[2]
+            else
+                victim_str = table.concat(parts, ', ', 1, #parts - 1)
+                    .. ', and ' .. parts[#parts]
+            end
+            local verb = total == 1 and 'life' or 'lives'
+            util.announce_combat(('%s has claimed the %s of %s!'):format(
+                hf_name(hf_id), verb, victim_str))
         end
 
         kill_baselines[hf_id] = snap
