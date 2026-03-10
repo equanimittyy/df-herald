@@ -76,7 +76,6 @@ Shared module, all exports non-local at module scope.
 - **Position helpers:** `name_str(field)` normalises stl-string/string[] to string; `get_pos_name(entity, pos_id, hf_sex)` returns gendered title
 - **HF/entity:** `is_alive(hf)`, `get_race_name(hf)`, `get_entity_race_name(entity)`, `deepcopy(t)`, `safe_get(obj, field)`
 - **Site helpers:** `site_name(site_id)` returns translated site name; `site_owner_civ(site_id)` resolves site -> owning Civilization via SiteGov entity_links, falls back to `civ_id`
-- **Site helpers:** `site_name(site_id)` returns translated site name; `site_owner_civ(site_id)` resolves site -> owning Civilization via SiteGov entity_links, falls back to `civ_id`
 - **Entity population:** `get_entpop_to_civ()` (lazy cached map), `entpop_vec_has_civ(col, field, civ_id, ep_map)`, `reset_entpop_cache()`
 - **Pin settings** (here to avoid circular deps): `INDIVIDUAL_SETTINGS_KEYS` = `{relationships, death, combat, legendary, positions, migration}`, `CIVILISATION_SETTINGS_KEYS` = `{positions, diplomacy, warfare, espionage}`, `default_pin_settings()`/`default_civ_pin_settings()` (all true), `merge_pin_settings(saved)`/`merge_civ_pin_settings(saved)`
 
@@ -114,5 +113,6 @@ After completing a substantive code editing task (not minor one-line fixes), pro
 
 ## Future (on request only)
 
-- Legendary citizen tracking
-- War progress summaries
+- Individuals (artifacts) — event-driven; artifact creation, storage, claiming, theft, written works composed by pinned HFs
+- Individuals (masterworks) — event-driven; masterpiece creation by pinned HFs
+- Civilisations (beast attacks) — poll-based; BEAST_ATTACK collections targeting pinned civ sites
