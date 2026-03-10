@@ -440,42 +440,6 @@ local function handle_battle_collection(col, dprint)
     util.announce_war(msg)
 end
 
--- Resolve site -> owning civ via cur_owner_id (SiteGov) -> entity_links -> Civ.
-local function site_owner_civ(site_id)
-    if not site_id or site_id < 0 then return nil end
-    local site = df.world_site.find(site_id)
-    if not site then return nil end
-    local owner = util.safe_get(site, 'cur_owner_id')
-    if owner and owner >= 0 then
-        local ent = df.historical_entity.find(owner)
-        if ent then
-            -- Walk entity_links to find the parent Civilization
-            local ok, links = pcall(function() return ent.entity_links end)
-            if ok and links then
-                for j = 0, #links - 1 do
-                    local ok2, link = pcall(function() return links[j] end)
-                    if ok2 and link then
-                        local ok3, tid = pcall(function() return link.target end)
-                        if ok3 and tid and tid >= 0 then
-                            local parent = df.historical_entity.find(tid)
-                            if parent then
-                                local ok4, pt = pcall(function() return parent.type end)
-                                if ok4 and pt == df.historical_entity_type.Civilization then
-                                    return tid
-                                end
-                            end
-                        end
-                    end
-                end
-            end
-        end
-    end
-    -- Last resort: original founding civ
-    local orig = util.safe_get(site, 'civ_id')
-    if orig and orig >= 0 then return orig end
-    return nil
-end
-
 local function handle_raid_collection(col, dprint)
     local pinned_civs = civ_pins.get_pinned()
     -- RAID uses a scalar attacking_entity (or attacker_civ fallback)
@@ -486,7 +450,7 @@ local function handle_raid_collection(col, dprint)
     end
 
     local ok_s, site_id = pcall(function() return col.site end)
-    local def_civ = (ok_s and site_id) and site_owner_civ(site_id) or nil
+    local def_civ = (ok_s and site_id) and util.site_owner_civ(site_id) or nil
     local site_str = (ok_s and site_id and site_id >= 0)
         and util.site_name(site_id) or 'a site'
 

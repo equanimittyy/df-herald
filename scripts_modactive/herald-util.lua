@@ -149,6 +149,11 @@ function announce_war(msg)
     push_recent(msg, COLOR_BROWN)
 end
 
+-- Espionage event for a pinned civilisation (magenta).
+function announce_espionage(msg)
+    push_recent(msg, COLOR_MAGENTA)
+end
+
 -- Position name helpers -------------------------------------------------------
 -- DF stores position names in two different formats depending on the source:
 --   entity.positions.own      -> plain stl-string  (pos.name is a Lua string)
@@ -206,6 +211,42 @@ function site_name(site_id)
     if not site then return 'an unknown location' end
     local name = dfhack.translation.translateName(site.name, true)
     return (name and name ~= '') and name or ('site ' .. site_id)
+end
+
+-- Resolve site -> owning Civilization via cur_owner_id (SiteGov) -> entity_links -> Civ.
+-- Returns the Civilization entity ID, or nil.
+function site_owner_civ(site_id)
+    if not site_id or site_id < 0 then return nil end
+    local site = df.world_site.find(site_id)
+    if not site then return nil end
+    local owner = safe_get(site, 'cur_owner_id')
+    if owner and owner >= 0 then
+        local ent = df.historical_entity.find(owner)
+        if ent then
+            local ok, links = pcall(function() return ent.entity_links end)
+            if ok and links then
+                for j = 0, #links - 1 do
+                    local ok2, link = pcall(function() return links[j] end)
+                    if ok2 and link then
+                        local ok3, tid = pcall(function() return link.target end)
+                        if ok3 and tid and tid >= 0 then
+                            local parent = df.historical_entity.find(tid)
+                            if parent then
+                                local ok4, pt = pcall(function() return parent.type end)
+                                if ok4 and pt == df.historical_entity_type.Civilization then
+                                    return tid
+                                end
+                            end
+                        end
+                    end
+                end
+            end
+        end
+    end
+    -- Last resort: original founding civ
+    local orig = safe_get(site, 'civ_id')
+    if orig and orig >= 0 then return orig end
+    return nil
 end
 
 -- HF / entity helpers ---------------------------------------------------------
