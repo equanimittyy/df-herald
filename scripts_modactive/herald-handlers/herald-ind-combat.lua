@@ -39,13 +39,7 @@ local function hf_name(hf_id)
     return util.hf_name(hf_id)
 end
 
-local function site_name(site_id)
-    if site_id < 0 then return 'an unknown site' end
-    local site = df.world_site.find(site_id)
-    if not site then return 'an unknown site' end
-    local name = dfhack.translation.translateName(site.name, true)
-    return (name and name ~= '') and name or ('site ' .. site_id)
-end
+local site_name = util.site_name
 
 -- Returns true if the settings table has combat announcements enabled.
 local function combat_enabled(settings)

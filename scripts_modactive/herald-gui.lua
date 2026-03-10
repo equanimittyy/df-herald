@@ -543,7 +543,7 @@ local INDIVIDUALS_ANN = {
     { key = 'combat',        label = 'Combat',        caption = 'Battles, duels etc.',      impl = true },
     { key = 'legendary',     label = 'Legendary',     caption = 'Gained Legendary skills',     impl = true  },
     { key = 'positions',     label = 'Positions',     caption = 'Title gained/lost',    impl = true  },
-    { key = 'migration',     label = 'Migration',     caption = 'Moves settlement',     impl = false },
+    { key = 'migration',     label = 'Migration',     caption = 'Moves settlement',     impl = true  },
 }
 
 local CIVILISATIONS_ANN = {

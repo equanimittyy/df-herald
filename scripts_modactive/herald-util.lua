@@ -122,6 +122,11 @@ function announce_info(msg)
     end
 end
 
+-- Migration event for a tracked individual (green).
+function announce_migration(msg)
+    push_recent(msg, COLOR_GREEN)
+end
+
 -- Position name helpers -------------------------------------------------------
 -- DF stores position names in two different formats depending on the source:
 --   entity.positions.own      -> plain stl-string  (pos.name is a Lua string)
@@ -168,6 +173,17 @@ function get_pos_name(entity, pos_id, hf_sex)
     end
 
     return nil
+end
+
+-- Site helpers -----------------------------------------------------------------
+
+-- Returns the translated name for a world site, or a fallback string.
+function site_name(site_id)
+    if not site_id or site_id < 0 then return 'an unknown location' end
+    local site = df.world_site.find(site_id)
+    if not site then return 'an unknown location' end
+    local name = dfhack.translation.translateName(site.name, true)
+    return (name and name ~= '') and name or ('site ' .. site_id)
 end
 
 -- HF / entity helpers ---------------------------------------------------------

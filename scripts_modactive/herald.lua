@@ -312,6 +312,7 @@ local handler_paths = {
     'herald-handlers/herald-ind-combat',
     'herald-handlers/herald-ind-skills',
     'herald-handlers/herald-ind-positions',
+    'herald-handlers/herald-ind-migration',
     'herald-handlers/herald-world-leaders',
 }
 
@@ -497,6 +498,8 @@ elseif args[1] == 'test' then
         util.announce_death('TEST - Death announcement (red)')
         util.announce_appointment('TEST - Appointment announcement (yellow)')
         util.announce_vacated('TEST - Vacated announcement (white)')
+        util.announce_combat('TEST - Combat announcement (light red)')
+        util.announce_migration('TEST - Migration announcement (green)')
         util.announce_info('TEST - Info announcement (cyan)')
         print('[Herald] Test announcements fired.')
     end
