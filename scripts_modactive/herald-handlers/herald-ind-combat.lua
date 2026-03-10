@@ -337,6 +337,7 @@ function check_event(ev, dprint)
 end
 
 function check_poll(dprint)
+    announced_combat = {}
     handle_poll(dprint)
 end
 

@@ -254,7 +254,7 @@ local function build_event_types()
 end
 
 event_types = build_event_types()
-polls = false
+polls = true
 
 function init(dprint)
     register_dispatch()
@@ -271,6 +271,10 @@ function check_event(ev, dprint)
     if handler then
         handler(ev, dprint)
     end
+end
+
+function check_poll()
+    announced_rels = {}
 end
 
 dfhack.reqscript('herald-handler-contract').apply(_ENV)

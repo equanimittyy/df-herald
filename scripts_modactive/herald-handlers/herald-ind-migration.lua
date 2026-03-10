@@ -290,6 +290,7 @@ function check_event(ev, dprint)
 end
 
 function check_poll(dprint)
+    announced_migrations = {}
     handle_poll(dprint)
 end
 
