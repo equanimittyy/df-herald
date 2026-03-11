@@ -16,7 +16,7 @@ Not intended for direct use.
 ]====]
 
 local PERSIST_KEY = 'herald_event_cache'
-local CACHE_VERSION = 1
+local CACHE_VERSION = 3
 
 -- Module state -----------------------------------------------------------------
 
@@ -31,6 +31,9 @@ local hf_rel_counts   = nil   -- { [hf_id] = count }
 local civ_event_ids      = nil   -- { [civ_id] = {ev_id, ...} } position/entity events
 local civ_collection_ids = nil   -- { [civ_id] = {col_id, ...} } collection IDs
 local civ_event_counts   = nil   -- { [civ_id] = count } total (events + collections)
+-- Artifact cache tables.
+local art_event_ids    = nil   -- { [art_id] = {ev_id, ...} }
+local art_event_counts = nil   -- { [art_id] = count }
 -- Watermark: tracks how far into the events array we've cached.
 -- last_cached_event_idx is an array INDEX into df.global.world.history.events (0-based),
 -- last_cached_event_id is the .id field of that event (used to validate the watermark
@@ -76,6 +79,8 @@ function load_cache()
     civ_event_ids      = nil
     civ_collection_ids = nil
     civ_event_counts   = nil
+    art_event_ids    = nil
+    art_event_counts = nil
     last_cached_event_idx = -1
     last_cached_event_id  = -1
     rel_blocks_scanned    = 0
@@ -140,6 +145,8 @@ function load_cache()
     civ_event_ids      = restore_id_lists(site_data.civ_event_ids)
     civ_collection_ids = restore_id_lists(site_data.civ_collection_ids)
     civ_event_counts   = restore_counts(site_data.civ_event_counts)
+    art_event_ids    = restore_id_lists(site_data.art_event_ids)
+    art_event_counts = restore_counts(site_data.art_event_counts)
     last_cached_event_idx = stored_idx
     last_cached_event_id  = stored_id
     rel_blocks_scanned    = tonumber(site_data.rel_blocks_scanned) or 0
@@ -185,6 +192,8 @@ function save_cache()
         civ_event_ids         = stringify_keys(civ_event_ids or {}),
         civ_collection_ids    = stringify_keys(civ_collection_ids or {}),
         civ_event_counts      = stringify_keys(civ_event_counts or {}),
+        art_event_ids         = stringify_keys(art_event_ids or {}),
+        art_event_counts      = stringify_keys(art_event_counts or {}),
     }
     local ok, err = pcall(dfhack.persistent.saveSiteData, PERSIST_KEY, data)
     if not ok then
@@ -201,6 +210,8 @@ function invalidate_cache()
     civ_event_ids      = nil
     civ_collection_ids = nil
     civ_event_counts   = nil
+    art_event_ids    = nil
+    art_event_counts = nil
     last_cached_event_idx = -1
     last_cached_event_id  = -1
     rel_blocks_scanned    = 0
@@ -224,6 +235,11 @@ local PEACE_TYPES, WARFARE_TYPES
 local LT_POSITION = df.histfig_entity_link_type and df.histfig_entity_link_type.POSITION
 
 local _enums_loaded = false
+-- Artifact event type enums (resolved directly from df.history_event_type).
+local ART_CREATED_TYPE, ART_STORED_TYPE, ART_POSSESSED_TYPE, ART_CLAIM_TYPE
+local ART_LOST_TYPE, ART_FOUND_TYPE, ART_GIVEN_TYPE
+local WRITTEN_COMPOSED_TYPE
+
 local function ensure_enums()
     if _enums_loaded then return end
     local eh = get_ev_hist()
@@ -236,6 +252,15 @@ local function ensure_enums()
     ENTITY_CREATED_TYPE       = eh.ENUM_ENTITY_CREATED
     PEACE_TYPES               = eh.ENUM_PEACE_TYPES
     WARFARE_TYPES             = eh.ENUM_WARFARE_TYPES
+    -- Artifact enums.
+    ART_CREATED_TYPE    = df.history_event_type['ARTIFACT_CREATED']
+    ART_STORED_TYPE     = df.history_event_type['ARTIFACT_STORED']
+    ART_POSSESSED_TYPE  = df.history_event_type['ARTIFACT_POSSESSED']
+    ART_CLAIM_TYPE      = df.history_event_type['ARTIFACT_CLAIM_FORMED']
+    ART_LOST_TYPE       = df.history_event_type['ARTIFACT_LOST']
+    ART_FOUND_TYPE      = df.history_event_type['ARTIFACT_FOUND']
+    ART_GIVEN_TYPE      = df.history_event_type['ARTIFACT_GIVEN']
+    WRITTEN_COMPOSED_TYPE = df.history_event_type['WRITTEN_CONTENT_COMPOSED']
     _enums_loaded = true
 end
 
@@ -388,6 +413,25 @@ local function process_event(ev, ev_hist)
             end
         end
     end
+
+    -- Artifact events: extract artifact ID per event type.
+    local art_id
+    if ART_CREATED_TYPE and ev_type == ART_CREATED_TYPE then
+        art_id = util.safe_get(ev, 'artifact_id')
+    elseif (ART_STORED_TYPE and ev_type == ART_STORED_TYPE)
+        or (ART_POSSESSED_TYPE and ev_type == ART_POSSESSED_TYPE)
+        or (ART_CLAIM_TYPE and ev_type == ART_CLAIM_TYPE)
+        or (ART_LOST_TYPE and ev_type == ART_LOST_TYPE)
+        or (ART_FOUND_TYPE and ev_type == ART_FOUND_TYPE)
+        or (ART_GIVEN_TYPE and ev_type == ART_GIVEN_TYPE)
+        or (WRITTEN_COMPOSED_TYPE and ev_type == WRITTEN_COMPOSED_TYPE) then
+        art_id = util.safe_get(ev, 'artifact')
+    end
+    if art_id and type(art_id) == 'number' and art_id >= 0 then
+        if not art_event_ids[art_id] then art_event_ids[art_id] = {} end
+        table.insert(art_event_ids[art_id], ev_id)
+        art_event_counts[art_id] = (art_event_counts[art_id] or 0) + 1
+    end
 end
 
 -- Scans relationship event blocks from the given watermark.
@@ -483,6 +527,8 @@ function build_full(on_done)
     civ_event_ids      = {}
     civ_collection_ids = {}
     civ_event_counts   = {}
+    art_event_ids    = {}
+    art_event_counts = {}
     last_cached_event_idx = -1
     last_cached_event_id  = -1
     rel_blocks_scanned    = 0
@@ -568,10 +614,12 @@ function build_delta()
     scan_rel_events(rel_blocks_scanned, rel_last_block_ne)
 
     -- Delta scan collections from last watermark.
-    -- Ensure civ tables exist (may be nil if loaded from an older cache version).
+    -- Ensure civ/art tables exist (may be nil if loaded from an older cache version).
     if not civ_event_ids then civ_event_ids = {} end
     if not civ_collection_ids then civ_collection_ids = {} end
     if not civ_event_counts then civ_event_counts = {} end
+    if not art_event_ids then art_event_ids = {} end
+    if not art_event_counts then art_event_counts = {} end
     scan_collections(last_cached_collection_idx, ev_hist)
 
     local any_change = count > 0
@@ -636,6 +684,23 @@ function get_civ_total_count(civ_id)
     return civ_event_counts[civ_id] or 0
 end
 
+-- Artifact accessors -----------------------------------------------------------
+
+function get_art_event_ids(art_id)
+    if not cache_ready or not art_event_ids then return nil end
+    return art_event_ids[art_id]
+end
+
+function get_art_total_count(art_id)
+    if not cache_ready or not art_event_counts then return 0 end
+    return art_event_counts[art_id] or 0
+end
+
+function get_all_art_event_counts()
+    if not cache_ready or not art_event_counts then return {} end
+    return art_event_counts
+end
+
 -- Cleanup ----------------------------------------------------------------------
 
 function reset()
@@ -649,6 +714,8 @@ function reset()
     civ_event_ids      = nil
     civ_collection_ids = nil
     civ_event_counts   = nil
+    art_event_ids    = nil
+    art_event_counts = nil
     last_cached_event_idx = -1
     last_cached_event_id  = -1
     rel_blocks_scanned    = 0

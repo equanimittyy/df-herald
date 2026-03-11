@@ -880,15 +880,106 @@ function PinnedPanel:unpin_selected()
 end
 
 -- ArtifactsPanel ---------------------------------------------------------------
--- Exploration-only tab - no pinning. Future plans:
--- - Populate with all artifacts in the game world
--- - Event history window showing all history events for the selected artifact
---   - Use herald-cache delta processing (like ind/civ event history) to
---     incrementally build per-artifact event counts and ID lists
--- - For weapons: show which HFs were killed using the artifact and by whom
--- - Stat window (bottom bar) showing: artifact_id, name, creator, current
---   location (site name), material, artifact type, item subtype, creation year, kills
--- - No pinned functions for artifacts; this is purely an exploration window
+-- Exploration-only tab: lists all world artifacts with event history and detail
+-- stats. No pinning. Creator resolved from ARTIFACT_CREATED events (not on
+-- artifact_record struct). Kill tracking not feasible (hf.info.kills has no
+-- weapon artifact field).
+
+-- Builds choice rows for the Artifacts tab FilteredList.
+-- Column widths: Name=26, Type=14, Material=18, Events=remaining.
+local function build_artifact_choices()
+    local event_counts = cache.get_all_art_event_counts()
+    local choices = {}
+    local ok_all, all = pcall(function() return df.global.world.artifacts.all end)
+    if not ok_all or not all then return choices end
+
+    for i = 0, #all - 1 do
+        local ok_a, art = pcall(function() return all[i] end)
+        if not ok_a or not art then goto art_next end
+
+        local art_id = art.id
+        local name = ''
+        local ok_n, n = pcall(function() return dfhack.translation.translateName(art.name, true) end)
+        if ok_n and n and n ~= '' then name = n end
+        if name == '' then goto art_next end
+
+        -- Item type: use subtype def name when available for granularity
+        -- (e.g. "mace" not "weapon", "gauntlet" not "gloves").
+        local type_s = ''
+        local is_written = false
+        local ok_item, item = pcall(function() return art.item end)
+        if ok_item and item then
+            local ok_t, itype = pcall(function() return item:getType() end)
+            if ok_t and itype then
+                local raw = df.item_type[itype]
+                if raw then
+                    local raw_s = tostring(raw)
+                    -- Try subtype def name via static API.
+                    local ok_st, st = pcall(function() return item:getSubtype() end)
+                    if ok_st and st and st >= 0 then
+                        local ok_sd, subdef = pcall(function()
+                            return dfhack.items.getSubtypeDef(itype, st)
+                        end)
+                        if ok_sd and subdef then
+                            local ok_sn, sn = pcall(function() return subdef.name end)
+                            if ok_sn and sn and sn ~= '' then
+                                type_s = sn
+                            end
+                        end
+                    end
+                    -- Classify written works.
+                    if raw_s == 'BOOK' then
+                        if type_s == '' then type_s = 'book' end
+                        is_written = true
+                    elseif raw_s == 'TOOL' and type_s == 'scroll' then
+                        is_written = true
+                    end
+                    -- Fallback to base type name.
+                    if type_s == '' then type_s = raw_s:lower() end
+                end
+            end
+        end
+
+        -- Material (blank for books/scrolls - parchment type is noise).
+        local mat_s = ''
+        if not is_written and ok_item and item then
+            local ok_mt, mt = pcall(function() return item:getActualMaterial() end)
+            local ok_mi, mi = pcall(function() return item:getActualMaterialIndex() end)
+            if ok_mt and ok_mi and mt and mt >= 0 then
+                local ok_info, info = pcall(function() return dfhack.matinfo.decode(mt, mi) end)
+                if ok_info and info then
+                    local ok_s, s = pcall(function() return info:toString() end)
+                    if ok_s and s and s ~= '' then mat_s = s:lower() end
+                end
+            end
+        end
+
+        local ev_count = event_counts[art_id] or 0
+        local search_key = (name .. ' ' .. type_s .. ' ' .. mat_s):lower()
+
+        table.insert(choices, {
+            text = {
+                { text = ('%-26s'):format(name:sub(1, 26)), pen = nil },
+                { text = ('%-14s'):format(type_s:sub(1, 14)), pen = COLOR_GREY },
+                { text = ('%-18s'):format(mat_s:sub(1, 18)), pen = COLOR_GREY },
+                { text = tostring(ev_count), pen = COLOR_GREY },
+            },
+            search_key   = search_key,
+            art_id       = art_id,
+            display_name = name,
+            type_s       = type_s,
+            mat_s        = mat_s,
+            is_written   = is_written,
+            ev_count     = ev_count,
+        })
+
+        ::art_next::
+    end
+    table.sort(choices, function(a, b)
+        return a.display_name:lower() < b.display_name:lower()
+    end)
+    return choices
+end
 
 local ArtifactsPanel = defclass(ArtifactsPanel, widgets.Panel) -- luacheck: ignore 113
 ArtifactsPanel.ATTRS {
@@ -900,15 +991,166 @@ function ArtifactsPanel:init()
 
     self:addviews{
         widgets.Label{
-            frame = { t = 1, l = 1 },
-            text  = 'Artifacts - coming soon',
-            text_pen = COLOR_GREY,
+            frame = { t = 0, l = 1 },
+            text  = {
+                { text = ('%-26s'):format('Name'),     pen = COLOR_GREY },
+                { text = ('%-14s'):format('Type'),     pen = COLOR_GREY },
+                { text = ('%-18s'):format('Material'), pen = COLOR_GREY },
+                { text = 'Events',                     pen = COLOR_GREY },
+            },
+        },
+        widgets.FilteredList{
+            view_id   = 'art_list',
+            frame     = { t = 1, b = 13, l = 1, r = 1 },
+            on_select = function(_, choice) self:update_detail(choice) end,
+        },
+        widgets.Label{
+            frame = { t = 27, l = 0, r = 0, h = 1 },
+            text  = { { text = string.rep('-', 74), pen = COLOR_GREY } },
+        },
+        widgets.List{
+            view_id   = 'detail_panel',
+            frame     = { t = 28, b = 2, l = 1, r = 1 },
+            on_select = function() end,
+        },
+        widgets.HotkeyLabel{
+            frame       = { b = 0, l = 1 },
+            key         = 'CUSTOM_CTRL_E',
+            label       = 'Event History',
+            auto_width  = true,
+            on_activate = function()
+                local _, choice = self.subviews.art_list:getSelected()
+                if choice and choice.art_id then
+                    ev_hist.open_artifact_event_history(choice.art_id, choice.display_name)
+                end
+            end,
         },
     }
+
+    -- Patch onFilterChange for detail refresh on search.
+    local fl  = self.subviews.art_list
+    local pan = self
+    local _orig_ofc = fl.onFilterChange
+    fl.onFilterChange = function(this, text, pos)
+        _orig_ofc(this, text, pos)
+        local _, choice = this:getSelected()
+        pan:update_detail(choice)
+    end
 end
 
 function ArtifactsPanel:onInput(keys)
+    if keys.CUSTOM_CTRL_E then
+        local _, choice = self.subviews.art_list:getSelected()
+        if choice and choice.art_id then
+            ev_hist.open_artifact_event_history(choice.art_id, choice.display_name)
+        end
+        return true
+    end
+    if self.subviews.art_list:onInput(keys) then return true end
     return ArtifactsPanel.super.onInput(self, keys)
+end
+
+function ArtifactsPanel:refresh_list()
+    local choices = build_artifact_choices()
+    self.subviews.art_list:setChoices(choices)
+    local _, choice = self.subviews.art_list:getSelected()
+    self:update_detail(choice)
+end
+
+function ArtifactsPanel:update_detail(choice)
+    if not choice then
+        self.subviews.detail_panel:setChoices({})
+        return
+    end
+
+    local art_id = choice.art_id
+    local art = df.artifact_record.find(art_id)
+    if not art then
+        self.subviews.detail_panel:setChoices({})
+        return
+    end
+
+    local name = choice.display_name or '(unnamed)'
+    local type_s = choice.type_s or ''
+    local mat_s = choice.mat_s or ''
+
+    -- Creator HF + creation year: not on artifact_record; resolve from
+    -- ARTIFACT_CREATED event (art.year is the world age, not creation year).
+    local creator_name = 'Unknown'
+    local year_str = '?'
+    local ev_ids = cache.get_art_event_ids(art_id)
+    if ev_ids then
+        local ART_CREATED = df.history_event_type['ARTIFACT_CREATED']
+        for _, ev_id in ipairs(ev_ids) do
+            local ev = df.history_event.find(ev_id)
+            if ev and ART_CREATED and ev:getType() == ART_CREATED then
+                local hfid = util.safe_get(ev, 'creator_hfid')
+                if hfid and hfid >= 0 then
+                    creator_name = util.hf_name(hfid)
+                end
+                local yr = util.safe_get(ev, 'year')
+                if yr and yr >= 0 then
+                    year_str = tostring(yr)
+                end
+                break
+            end
+        end
+    end
+
+    -- Origin site (confirmed field: art.site).
+    local origin_site = 'Unknown'
+    local site_id = util.safe_get(art, 'site')
+    if site_id and site_id >= 0 then
+        origin_site = util.site_name(site_id) or 'Unknown'
+    end
+
+    -- Current location: storage_site or holder_hf.
+    local location = origin_site
+    local storage = util.safe_get(art, 'storage_site')
+    if storage and storage >= 0 then
+        location = util.site_name(storage) or 'Unknown'
+    end
+    local holder = util.safe_get(art, 'holder_hf')
+    if holder and holder >= 0 then
+        location = 'Held by ' .. util.hf_name(holder)
+    end
+    local owner = util.safe_get(art, 'owner_hf')
+    if owner and owner >= 0 and (not holder or holder < 0) then
+        location = 'Owned by ' .. util.hf_name(owner)
+    end
+
+    local ev_count = choice.ev_count or 0
+
+    local rows = {
+        { text = {
+            { text = 'ID: ',       pen = COLOR_GREY },
+            { text = tostring(art_id) },
+            { text = '   Created: ', pen = COLOR_GREY },
+            { text = 'Year ' .. year_str },
+        }},
+        { text = {
+            { text = 'Type: ',     pen = COLOR_GREY },
+            { text = type_s ~= '' and type_s or 'Unknown' },
+            { text = '   Material: ', pen = COLOR_GREY },
+            { text = mat_s ~= '' and mat_s or (choice.is_written and 'N/A' or 'Unknown') },
+        }},
+        { text = {
+            { text = 'Creator: ',  pen = COLOR_GREY },
+            { text = creator_name },
+        }},
+        { text = {
+            { text = 'Origin: ',   pen = COLOR_GREY },
+            { text = origin_site },
+            { text = '   Location: ', pen = COLOR_GREY },
+            { text = location },
+        }},
+        { text = {
+            { text = 'Events: ',   pen = COLOR_GREY },
+            { text = tostring(ev_count) },
+        }},
+    }
+
+    self.subviews.detail_panel:setChoices(rows)
 end
 
 -- CivisationsPanel -------------------------------------------------------------
@@ -1199,6 +1441,7 @@ function HeraldWindow:switch_tab(idx)
     end
     if idx == 5 and not self.subviews.artifacts_panel._loaded then
         self.subviews.artifacts_panel._loaded = true
+        self.subviews.artifacts_panel:refresh_list()
     end
 end
 
@@ -1215,7 +1458,8 @@ function HeraldWindow:refresh_cache()
         self.subviews.figures_panel:refresh_list()
     elseif self.cur_tab == 4 and self.subviews.civs_panel._loaded then
         self.subviews.civs_panel:refresh_list()
-    -- Tab 5 (Artifacts) - no refresh_list yet; add here when populated
+    elseif self.cur_tab == 5 and self.subviews.artifacts_panel._loaded then
+        self.subviews.artifacts_panel:refresh_list()
     end
 end
 

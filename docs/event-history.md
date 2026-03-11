@@ -24,6 +24,8 @@ Required by `herald-gui.lua` as `local ev_hist = dfhack.reqscript('herald-event-
   popup for a civilisation. Shows collection-level summaries (wars, battles, conquests, raids,
   theft, abductions, espionage) plus individual position-change events. Same singleton pattern as
   `open_event_history`; opening one dismisses the other.
+- **`open_artifact_event_history(art_id, art_name)`** — opens the EventHistory popup for an
+  artifact. Shows all events referencing the artifact ID. Same singleton pattern.
 - **`reset_civ_caches()`** — invalidates lazy civ caches (`_entpop_to_civ`) on world unload.
   Called from `herald.cleanup()`.
 

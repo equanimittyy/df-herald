@@ -10,9 +10,9 @@ DFHack mod (Lua, v50+ Steam) - scans world history for significant events and no
 scripts_modactive/
   onLoad.init              ← auto-enables mod on world load
   herald.lua               ← event loop, dispatcher, CLI (the only visible command)
-  herald-gui.lua           ← settings UI (Recent / Pinned / Historical Figures / Civilisations)
+  herald-gui.lua           ← settings UI (Recent / Pinned / Historical Figures / Civilisations / Artifacts)
   herald-event-history.lua ← Event History popup subsystem (describers, collection context)
-  herald-cache.lua         ← persistent event cache (HF event counts + IDs, delta processing)
+  herald-cache.lua         ← persistent event cache (HF/civ/artifact event counts + IDs, delta processing)
   herald-util.lua          ← shared utilities (announcements, recent history, position helpers, pin settings)
   herald-probe.lua         ← debug utility for inspecting live DF data
   herald-handler-contract.lua ← handler contract factory (no-op defaults for all handler fields)

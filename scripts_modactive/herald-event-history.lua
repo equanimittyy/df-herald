@@ -212,26 +212,56 @@ local function artifact_name_by_id(art_id)
     if not ok or not art then return nil, nil end
     local ok2, n = pcall(function() return dfhack.translation.translateName(art.name, true) end)
     local name = (ok2 and n and n ~= '') and n or nil
-    -- Resolve item type + material from art.item.
+    -- Resolve item type + material from art.item (subtype-aware).
     local item_desc
     local ok3, item = pcall(function() return art.item end)
     if ok3 and item then
         local ok4, itype = pcall(function() return item:getType() end)
-        local type_s = ok4 and itype and df.item_type and df.item_type[itype]
-        local mat_s
-        local ok5, mt = pcall(function() return item:getActualMaterial() end)
-        local ok6, mi = pcall(function() return item:getActualMaterialIndex() end)
-        if ok5 and ok6 and mt >= 0 then
-            local ok7, info = pcall(function() return dfhack.matinfo.decode(mt, mi) end)
-            if ok7 and info then
-                local ok8, s = pcall(function() return info:toString() end)
-                if ok8 and s and s ~= '' then mat_s = s:lower() end
+        if ok4 and itype then
+            local type_s
+            local is_written = false
+            local raw = df.item_type and df.item_type[itype]
+            if raw then
+                local raw_s = tostring(raw)
+                -- Try subtype def name via static API for granularity.
+                local ok_st, st = pcall(function() return item:getSubtype() end)
+                if ok_st and st and st >= 0 then
+                    local ok_sd, subdef = pcall(function()
+                        return dfhack.items.getSubtypeDef(itype, st)
+                    end)
+                    if ok_sd and subdef then
+                        local ok_sn, sn = pcall(function() return subdef.name end)
+                        if ok_sn and sn and sn ~= '' then type_s = sn end
+                    end
+                end
+                -- Classify written works.
+                if raw_s == 'BOOK' then
+                    if not type_s then type_s = 'book' end
+                    is_written = true
+                elseif raw_s == 'TOOL' and type_s == 'scroll' then
+                    is_written = true
+                end
+                -- Fallback to base type name.
+                if not type_s then type_s = raw_s:lower() end
             end
-        end
-        if mat_s and type_s then
-            item_desc = mat_s .. ' ' .. tostring(type_s):lower()
-        elseif type_s then
-            item_desc = tostring(type_s):lower()
+            -- Material (blank for books/scrolls).
+            local mat_s
+            if not is_written then
+                local ok5, mt = pcall(function() return item:getActualMaterial() end)
+                local ok6, mi = pcall(function() return item:getActualMaterialIndex() end)
+                if ok5 and ok6 and mt >= 0 then
+                    local ok7, info = pcall(function() return dfhack.matinfo.decode(mt, mi) end)
+                    if ok7 and info then
+                        local ok8, s = pcall(function() return info:toString() end)
+                        if ok8 and s and s ~= '' then mat_s = s:lower() end
+                    end
+                end
+            end
+            if mat_s and type_s then
+                item_desc = mat_s .. ' ' .. type_s
+            elseif type_s then
+                item_desc = type_s
+            end
         end
     end
     return name, item_desc
@@ -830,19 +860,18 @@ do
         return result
     end)
 
-    add('ARTIFACT_STORED', function(ev, _focal)
+    add('ARTIFACT_STORED', function(ev, focal)
         local site_n = site_name_by_id(safe_get(ev, 'site'))
         local art_id = safe_get(ev, 'artifact') or safe_get(ev, 'artifact_id') or safe_get(ev, 'artifact_record')
-        local art_n, art_desc = artifact_name_by_id(art_id)
-        local what
-        if art_n and art_desc then
-            what = art_n .. ', ' .. article(art_desc)
-        elseif art_n then
-            what = 'the artifact ' .. art_n
-        else
-            what = 'an artifact'
+        local art_n = artifact_name_by_id(art_id)
+        local what = art_n or 'an artifact'
+        local loc = site_n and (' in ' .. site_n) or ''
+        local hf_id = safe_get(ev, 'histfig')
+        if hf_id and hf_id >= 0 and hf_id ~= focal then
+            local who = hf_name_by_id(hf_id) or 'Someone'
+            return who .. ' stored ' .. what .. loc
         end
-        return 'Stored ' .. what .. (site_n and (' in ' .. site_n) or '')
+        return 'Stored ' .. what .. loc
     end)
 
     add('CREATE_ENTITY_POSITION', function(ev, _focal)
@@ -920,20 +949,33 @@ do
         return who .. ' stole ' .. what .. from .. loc
     end)
 
-    add('ARTIFACT_CLAIM_FORMED', function(ev, _focal)
+    add('ARTIFACT_CLAIM_FORMED', function(ev, focal)
         -- Fields: artifact (ID), histfig, entity, claim_type, position_profile.
-        local art_n, art_desc = artifact_name_by_id(safe_get(ev, 'artifact'))
-        local what
-        if art_n and art_desc then
-            what = 'a claim on ' .. art_n .. ', ' .. article(art_desc)
-        elseif art_n then
-            what = 'a claim on ' .. art_n
-        else
-            what = 'an artifact claim'
-        end
+        -- claim_type: 0=position-based (treasure), 1=symbol/heirloom, 2=coveted.
+        -- histfig is nil on entity-level claims (only entity is set).
+        local art_n = artifact_name_by_id(safe_get(ev, 'artifact'))
+        local ct = safe_get(ev, 'claim_type')
+        local claim_verb
+        if ct == 0 then claim_verb = 'claimed'
+        elseif ct == 1 then claim_verb = 'claimed as a symbol'
+        elseif ct == 2 then claim_verb = 'coveted'
+        else claim_verb = 'formed a claim on' end
+        local obj = art_n or 'an artifact'
         local ent_n = ent_name_by_id(safe_get(ev, 'entity'))
-        if ent_n then what = what .. ' for ' .. ent_n end
-        return 'Formed ' .. what
+        local hf_id = safe_get(ev, 'histfig')
+        if hf_id and hf_id >= 0 and hf_id ~= focal then
+            local who = hf_name_by_id(hf_id) or 'Someone'
+            local suffix = ent_n and (' for ' .. ent_n) or ''
+            return who .. ' ' .. claim_verb .. ' ' .. obj .. suffix
+        end
+        if ent_n then
+            if hf_id and hf_id >= 0 then
+                return claim_verb:sub(1,1):upper() .. claim_verb:sub(2) .. ' ' .. obj .. ' for ' .. ent_n
+            else
+                return ent_n .. ' ' .. claim_verb .. ' ' .. obj
+            end
+        end
+        return claim_verb:sub(1,1):upper() .. claim_verb:sub(2) .. ' ' .. obj
     end)
 
     add('GAMBLE', function(ev, _focal)
@@ -1289,7 +1331,7 @@ do
     add('HIST_FIGURE_WOUNDED', hf_wounded_fn)
     add('HF_WOUNDED',          hf_wounded_fn)
 
-    add('ARTIFACT_CREATED', function(ev, _focal)
+    add('ARTIFACT_CREATED', function(ev, focal)
         local site_n = site_name_by_id(safe_get(ev, 'site'))
         local loc    = site_n and (' in ' .. site_n) or ''
         local art_id = safe_get(ev, 'artifact_id') or safe_get(ev, 'artifact_record')
@@ -1301,6 +1343,11 @@ do
             what = 'the artifact ' .. art_n
         else
             what = 'an artifact'
+        end
+        local hf_id = safe_get(ev, 'creator_hfid')
+        if hf_id and hf_id >= 0 and hf_id ~= focal then
+            local who = hf_name_by_id(hf_id) or 'Someone'
+            return who .. ' created ' .. what .. loc
         end
         return 'Created ' .. what .. loc
     end)
@@ -1425,7 +1472,7 @@ do
         return who .. ' ' .. verb .. ' ' .. victims_str .. loc
     end)
 
-    add('WRITTEN_CONTENT_COMPOSED', function(ev, _focal)
+    add('WRITTEN_CONTENT_COMPOSED', function(ev, focal)
         -- Fields: histfig (author), content (written_content ID), site.
         local site_n = site_name_by_id(safe_get(ev, 'site'))
         local loc    = site_n and (' in ' .. site_n) or ''
@@ -1438,10 +1485,13 @@ do
                 if ok2 and t and t ~= '' then title = t end
             end
         end
-        if title then
-            return 'Composed "' .. title .. '"' .. loc
+        local work = title and ('"' .. title .. '"') or 'a written work'
+        local hf_id = safe_get(ev, 'histfig')
+        if hf_id and hf_id >= 0 and hf_id ~= focal then
+            local who = hf_name_by_id(hf_id) or 'Someone'
+            return who .. ' composed ' .. work .. loc
         end
-        return 'Composed a written work' .. loc
+        return 'Composed ' .. work .. loc
     end)
 
     add('HF_CONFRONTED', function(ev, _focal)
@@ -1469,21 +1519,71 @@ do
         return 'Was confronted' .. reason_sfx .. loc
     end)
 
-    add('ARTIFACT_POSSESSED', function(ev, _focal)
+    add('ARTIFACT_POSSESSED', function(ev, focal)
         -- Fields: histfig (possessor), artifact (artifact_record ID), site.
         local site_n = site_name_by_id(safe_get(ev, 'site'))
         local loc    = site_n and (' in ' .. site_n) or ''
         local art_id = safe_get(ev, 'artifact')
-        local art_n, art_desc = artifact_name_by_id(art_id)
-        local what
-        if art_n and art_desc then
-            what = art_n .. ', ' .. article(art_desc)
-        elseif art_n then
-            what = art_n
-        else
-            what = 'an artifact'
+        local art_n = artifact_name_by_id(art_id)
+        local what = art_n or 'an artifact'
+        local hf_id = safe_get(ev, 'histfig')
+        if hf_id and hf_id >= 0 and hf_id ~= focal then
+            local who = hf_name_by_id(hf_id) or 'Someone'
+            return who .. ' claimed ' .. what .. loc
         end
         return 'Claimed ' .. what .. loc
+    end)
+
+    add('ARTIFACT_LOST', function(ev, _focal)
+        -- Fields: artifact, site (no histfig on this type).
+        local site_n = site_name_by_id(safe_get(ev, 'site'))
+        local loc    = site_n and (' in ' .. site_n) or ''
+        local art_n  = artifact_name_by_id(safe_get(ev, 'artifact'))
+        local what   = art_n or 'An artifact'
+        return what .. ' was lost' .. loc
+    end)
+
+    add('ARTIFACT_FOUND', function(ev, focal)
+        -- Fields: artifact, site, histfig.
+        local site_n = site_name_by_id(safe_get(ev, 'site'))
+        local loc    = site_n and (' in ' .. site_n) or ''
+        local art_n  = artifact_name_by_id(safe_get(ev, 'artifact'))
+        local what   = art_n or 'an artifact'
+        local hf_id  = safe_get(ev, 'histfig')
+        if hf_id and hf_id >= 0 and hf_id ~= focal then
+            local who = hf_name_by_id(hf_id) or 'Someone'
+            return who .. ' found ' .. what .. loc
+        end
+        return 'Found ' .. what .. loc
+    end)
+
+    add('ARTIFACT_GIVEN', function(ev, focal)
+        -- Fields: artifact, giver_hf, receiver_hf, giver_entity, receiver_entity.
+        local art_n  = artifact_name_by_id(safe_get(ev, 'artifact'))
+        local what   = art_n or 'an artifact'
+        local giver  = safe_get(ev, 'giver_hf')
+        local recvr  = safe_get(ev, 'receiver_hf')
+        local giver_n  = (giver and giver >= 0) and hf_name_by_id(giver) or nil
+        local recvr_n  = (recvr and recvr >= 0) and hf_name_by_id(recvr) or nil
+        -- Try entity names as fallback.
+        if not giver_n then
+            giver_n = ent_name_by_id(safe_get(ev, 'giver_entity'))
+        end
+        if not recvr_n then
+            recvr_n = ent_name_by_id(safe_get(ev, 'receiver_entity'))
+        end
+        if focal == giver and recvr_n then
+            return 'Gave ' .. what .. ' to ' .. recvr_n
+        elseif focal == recvr and giver_n then
+            return 'Received ' .. what .. ' from ' .. giver_n
+        elseif giver_n and recvr_n then
+            return giver_n .. ' gave ' .. what .. ' to ' .. recvr_n
+        elseif giver_n then
+            return giver_n .. ' gave away ' .. what
+        elseif recvr_n then
+            return recvr_n .. ' received ' .. what
+        end
+        return 'An artifact changed hands'
     end)
 
     add('HF_GAINS_SECRET_GOAL', function(ev, _focal)
@@ -2558,6 +2658,9 @@ do
     map('WRITTEN_CONTENT_COMPOSED',   {'histfig'})
     map('HF_CONFRONTED',              {'target'})
     map('ARTIFACT_POSSESSED',         {'histfig'})
+    map('ARTIFACT_LOST',              {})  -- no HF fields on this type
+    map('ARTIFACT_FOUND',            {'histfig'})
+    map('ARTIFACT_GIVEN',            {'giver_hf', 'receiver_hf'})
     map('HF_GAINS_SECRET_GOAL',       {'histfig'})
     map('HF_LEARNS_SECRET',           {'student', 'teacher'})
     map('ENTITY_OVERTHROWN',          {'overthrown_hf', 'position_taker_hf', 'instigator_hf'})
@@ -2857,6 +2960,44 @@ local function get_hf_events(hf_id)
     return results, ctx_map
 end
 
+-- Artifact event collection ----------------------------------------------------
+
+-- Cached path: look up cached event IDs for an artifact and resolve to objects.
+local function get_artifact_events_cached(art_id)
+    local cache = dfhack.reqscript('herald-cache')
+    local id_list = cache.get_art_event_ids(art_id)
+    if not id_list then return nil end
+    local results = {}
+    for _, ev_id in ipairs(id_list) do
+        local ev = df.history_event.find(ev_id)
+        if ev then table.insert(results, ev) end
+    end
+    return results
+end
+
+-- Full scan fallback: iterate all events checking artifact fields.
+local function get_artifact_events_full(art_id)
+    local results = {}
+    for _, ev in ipairs(df.global.world.history.events) do
+        local aid = safe_get(ev, 'artifact_id') or safe_get(ev, 'artifact')
+        if aid == art_id then
+            table.insert(results, ev)
+        end
+    end
+    return results
+end
+
+-- Returns (events, ctx_map) for an artifact. Cache-first with full scan fallback.
+local function get_artifact_events(art_id)
+    local results = get_artifact_events_cached(art_id)
+    if not results then
+        results = get_artifact_events_full(art_id)
+    end
+    table.sort(results, event_sort_cmp)
+    local ctx_map = build_event_to_collection()
+    return results, ctx_map
+end
+
 -- EventHistory popup ----------------------------------------------------------
 
 local EventHistoryWindow = defclass(EventHistoryWindow, widgets.Window) -- luacheck: ignore 113
@@ -2868,6 +3009,8 @@ EventHistoryWindow.ATTRS {
     hf_name     = DEFAULT_NIL,
     entity_id   = DEFAULT_NIL,
     entity_name = DEFAULT_NIL,
+    artifact_id   = DEFAULT_NIL,
+    artifact_name = DEFAULT_NIL,
 }
 
 function EventHistoryWindow:init()
@@ -2896,9 +3039,16 @@ function EventHistoryWindow:init()
 
     local events, ctx_map
     local focal
-    if is_civ then
+    local is_art = (self.artifact_id ~= nil)
+    if is_art then
+        events, ctx_map = get_artifact_events(self.artifact_id)
+        focal = -1
+        is_civ = false
+        display_name = self.artifact_name or '?'
+        self.frame_title = 'Event History: ' .. display_name
+    elseif is_civ then
         events, ctx_map = get_civ_events(self.entity_id)
-        focal = self.entity_id  -- civ ID as focal for civ-perspective describers
+        focal = self.entity_id
     else
         events, ctx_map = get_hf_events(self.hf_id)
         focal = self.hf_id
@@ -2937,7 +3087,7 @@ function EventHistoryWindow:init()
                 goto next_event
             end
         end
-        local formatted = format_event(ev, focal, ctx_map, is_civ)
+        local formatted = format_event(ev, focal, ctx_map, is_civ or is_art)
         if formatted then
             local lines = wrap_text(formatted)
             -- All lines for one event share the same search_key so they filter as a group.
@@ -2953,7 +3103,10 @@ function EventHistoryWindow:init()
         table.insert(event_choices, { text = 'No events found.' })
     end
 
-    if is_civ then
+    if is_art then
+        print(('[Herald] EventHistory: %s (artifact_id=%d) - %d event(s)'):format(
+            display_name, self.artifact_id or -1, #events))
+    elseif is_civ then
         print(('[Herald] EventHistory: %s (entity_id=%d) - %d event(s)'):format(
             display_name, self.entity_id or -1, #events))
     else
@@ -3052,15 +3205,19 @@ EventHistoryScreen.ATTRS {
     hf_name     = DEFAULT_NIL,
     entity_id   = DEFAULT_NIL,
     entity_name = DEFAULT_NIL,
+    artifact_id   = DEFAULT_NIL,
+    artifact_name = DEFAULT_NIL,
 }
 
 function EventHistoryScreen:init()
     self:addviews{
         EventHistoryWindow{
-            hf_id       = self.hf_id,
-            hf_name     = self.hf_name,
-            entity_id   = self.entity_id,
-            entity_name = self.entity_name,
+            hf_id         = self.hf_id,
+            hf_name       = self.hf_name,
+            entity_id     = self.entity_id,
+            entity_name   = self.entity_name,
+            artifact_id   = self.artifact_id,
+            artifact_name = self.artifact_name,
         },
     }
 end
@@ -3092,5 +3249,18 @@ function open_civ_event_history(entity_id, entity_name)
     end
     event_history_view = EventHistoryScreen{
         entity_id = entity_id, entity_name = entity_name,
+    }:show()
+end
+
+-- Exported: opens the Event History popup for an artifact.
+function open_artifact_event_history(art_id, art_name)
+    local cache = dfhack.reqscript('herald-cache')
+    cache.build_delta()
+    if event_history_view then
+        event_history_view:dismiss()
+        event_history_view = nil
+    end
+    event_history_view = EventHistoryScreen{
+        artifact_id = art_id, artifact_name = art_name,
     }:show()
 end

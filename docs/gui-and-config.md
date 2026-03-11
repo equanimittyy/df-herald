@@ -23,6 +23,9 @@ on every GUI open by caching results in the save file via `dfhack.persistent.sav
 - `get_civ_event_ids(civ_id)` — position/entity event IDs for a civ
 - `get_civ_collection_ids(civ_id)` — collection IDs involving a civ
 - `get_civ_total_count(civ_id)` — total events + collections for a civ
+- `get_art_event_ids(art_id)` — event IDs involving an artifact
+- `get_art_total_count(art_id)` — total events for a single artifact
+- `get_all_art_event_counts()` — `{ [art_id] = count }` for all artifacts
 - `reset()` — cleanup on world unload
 
 **Dependencies:** Requires `herald-event-history` only (for `HF_FIELDS`, `TYPE_HF_FIELDS`,
