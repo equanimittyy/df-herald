@@ -282,6 +282,15 @@ function reset()
     seen_on_map = {}
 end
 
+-- Lightweight re-baseline after adventure-mode map transition.
+-- units.active changes completely on travel; reset seen_on_map to avoid
+-- false arrival/departure announcements.
+function on_resume(dprint)
+    seen_on_map = {}
+    set_initial_baselines(dprint)
+    dprint('ind-migration: resumed after map transition')
+end
+
 function check_event(ev, dprint)
     local handler = dispatch[ev:getType()]
     if handler then

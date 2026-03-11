@@ -146,6 +146,11 @@ local last_event_id = -1      -- array index of last processed event; -1 = unini
 -- (dfhack.timeout return value is unused; ticks-mode timers auto-cancel on unload)
 enabled = enabled or false    -- top-level var; DFHack enable/disable convention
 
+-- Tracks whether we've done a full world-level init. Survives reqscript reloads.
+-- SC_MAP_LOADED with world_initialized=true means adventure-mode map transition
+-- (lightweight resume), not a fresh game load (full init).
+world_initialized = world_initialized or false
+
 -- Named DEBUG (not debug) to avoid shadowing Lua's built-in debug library.
 DEBUG = DEBUG or false
 
@@ -468,19 +473,67 @@ local function cleanup()
     dprint('cleanup: event history reset')
 end
 
+-- Adventure-mode map transition: lightweight pause/resume -----------------------
+-- SC_MAP_UNLOADED during adventure travel pauses scanning without resetting
+-- handler state, cache, or last_event_id. SC_MAP_LOADED resumes.
+
+local function pause_scan()
+    dprint('pause_scan: map unloaded during travel, pausing')
+    enabled = false
+    util.reset_unit_cache()
+    util.reset_entpop_cache()
+    dfhack.reqscript('herald-event-history').reset()
+    dprint('pause_scan: event history dismissed')
+end
+
+local function resume_scan()
+    if not dfhack.isMapLoaded() then return end
+    dprint('resume_scan: map reloaded after travel, resuming')
+    enabled = true
+    util.reset_unit_cache()
+    if all_handlers then
+        for _, handler in ipairs(all_handlers) do
+            handler.on_resume(dprint)
+        end
+    end
+    -- herald-event-history needs no resume action; it rebuilds from DF structs on demand.
+    dfhack.timeout(tick_interval, 'ticks', scan_events)
+    dprint('resume_scan: timer restarted, last_event_id=%d', last_event_id)
+end
+
 -- Lifecycle hooks -------------------------------------------------------------
 
 dfhack.onStateChange[GLOBAL_KEY] = function(sc)
-    if sc == SC_MAP_LOADED then
-        init_scan()
+    if sc == SC_WORLD_LOADED then
+        -- New world starting; ensure the next SC_MAP_LOADED runs init_scan,
+        -- not resume_scan. Guards against stale world_initialized from a
+        -- prior session within the same DFHack process.
+        world_initialized = false
+    elseif sc == SC_MAP_LOADED then
+        if not world_initialized then
+            init_scan()
+            world_initialized = true
+        else
+            resume_scan()
+        end
     elseif sc == SC_MAP_UNLOADED then
-        cleanup()
+        if world_initialized then
+            pause_scan()
+        end
+    elseif sc == SC_WORLD_UNLOADED then
+        if world_initialized then
+            cleanup()
+            world_initialized = false
+        end
     end
 end
 
 -- onLoad.init fires after SC_MAP_LOADED; bootstrap immediately if already in a fort.
 if dfhack.isMapLoaded() then
-    init_scan()
+    if not world_initialized then
+        init_scan()
+        world_initialized = true
+    end
 end
 
 -- CLI argument handling -------------------------------------------------------

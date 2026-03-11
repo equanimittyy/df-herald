@@ -62,11 +62,13 @@ Each handler in its own `herald-<type>.lua` under `herald-handlers/`. Handlers c
 
 ## Architecture
 
-**Event loop:** `dfhack.timeout(tick_interval, 'ticks', cb)` - default 1200 ticks (1 dwarf day), min 600. Fires once only - `scan_events` must reschedule; early return kills the loop. `onStateChange`: start on `SC_MAP_LOADED`, stop on `SC_MAP_UNLOADED`. Ticks-mode timers auto-cancelled on unload.
+**Event loop:** `dfhack.timeout(tick_interval, 'ticks', cb)` - default 1200 ticks (1 dwarf day), min 600. Fires once only - `scan_events` must reschedule; early return kills the loop. Ticks-mode timers auto-cancelled on unload.
+
+**Lifecycle:** `world_initialized` flag distinguishes adventure-mode map transitions from full game loads. `SC_MAP_LOADED` with `world_initialized=false` -> `init_scan()` (full init); with `true` -> `resume_scan()` (lightweight). `SC_MAP_UNLOADED` -> `pause_scan()` (lightweight). `SC_WORLD_UNLOADED` -> `cleanup()` (full reset, clears `world_initialized`). `pause_scan` invalidates unit/entpop caches and dismisses event history; `resume_scan` calls `on_resume` on all handlers and restarts the timer. `last_event_id` is preserved across travel so events during transit are caught.
 
 **Event scanning:** Incremental from `last_event_id + 1` (never re-scan from 0). Dispatch by `event:getType()` through `event_map`. Keep checks in separate scripts per event type.
 
-**Handler contract** (`herald-handler-contract.lua`): `apply(env)` installs no-op defaults for `event_types`, `polls`, `init`, `reset`, `check_event`, `check_poll`. Handlers override what they need; `herald.lua` iterates without nil checks. To add a handler: create the script, add its path to `handler_paths` in `herald.lua`, export contract fields, call `contract.apply(_ENV)` at the bottom.
+**Handler contract** (`herald-handler-contract.lua`): `apply(env)` installs no-op defaults for `event_types`, `polls`, `init`, `reset`, `on_resume`, `check_event`, `check_poll`. Handlers override what they need; `herald.lua` iterates without nil checks. `on_resume(dprint)` is called after adventure-mode map transitions for lightweight re-baselining (only `herald-ind-migration` overrides it currently). To add a handler: create the script, add its path to `handler_paths` in `herald.lua`, export contract fields, call `contract.apply(_ENV)` at the bottom.
 
 **Civ polling:** `scan_world_state(dprint)` calls `check_poll` on all handlers where `polls` is truthy. `herald-world-leaders.lua` snapshots `{ [entity_id] = { [assignment_id] = { hf_id, pos_name, civ_name } } }` to detect deaths/appointments.
 

@@ -193,6 +193,16 @@ function reset()
     skill_snapshots = {}
 end
 
+-- After adventure-mode travel, units.active is a new set. Snapshots built from
+-- unit.current_soul.skills would be diffed against hf.info.skills (XP-based),
+-- which can disagree at rating boundaries. Clear and re-baseline to avoid false
+-- legendary announcements.
+function on_resume(dprint)
+    skill_snapshots = {}
+    set_initial_baselines(dprint)
+    dprint('ind-skills: resumed after map transition')
+end
+
 function check_poll(dprint)
     handle_poll(dprint)
 end

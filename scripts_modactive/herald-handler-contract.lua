@@ -22,12 +22,14 @@ local NOOP = function() end
 --   polls        false         truthy to be called each cycle via check_poll
 --   init         no-op         called on world load
 --   reset        no-op         called on world unload
+--   on_resume    no-op         called after adventure-mode map transition (lightweight re-baseline)
 --   check_event  no-op         called for matching history events
 --   check_poll   no-op         called each scan cycle
 function apply(env)
     env.polls       = env.polls       or false
     env.init        = env.init        or NOOP
     env.reset       = env.reset       or NOOP
+    env.on_resume   = env.on_resume   or NOOP
     env.check_event = env.check_event or NOOP
     env.check_poll  = env.check_poll  or NOOP
 end
