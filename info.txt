@@ -5,9 +5,9 @@
 [EARLIEST_COMPATIBLE_DISPLAYED_VERSION:1.0]
 [AUTHOR:equanimity]
 [NAME:Dwarf Fortress Herald]
-[DESCRIPTION:Notifies the player of on-going, significant world events.]
+[DESCRIPTION:Notifies the player of ongoing, significant world events.]
 
 [STEAM_TITLE:Dwarf Fortress Herald]
-[STEAM_DESCRIPTION:DFHack mod that scans world history and notifies the player of on-going, significant world events.]
+[STEAM_DESCRIPTION:A DFHack mod that scans world history and notifies the player of ongoing, significant world events.]
 [STEAM_TAG:mod]
 [STEAM_TAG:ui]
