@@ -20,22 +20,18 @@ if not main.DEBUG then
 end
 
 -- ============================================================
--- PROBE: artifact_record, artifact events, written_content
+-- PROBE: herald-ind-artifacts handler verification
 --
--- Goal: map the fields needed to implement herald-ind-artifacts.
--- Steps:
---   1. Enumerate all artifact_record instances; dump fields of first sample
---   2. Check if artifact_record has a creator HF field (for reverse lookup)
---   3. Explore written_content struct fields
---   4. Find sample events of each artifact type in world history
---   5. Dump actual fields on each sample event to verify df-api-reference
---   6. Check global artifact vectors / lookup paths
+-- Tests each event type the handler covers by finding real
+-- events in world history and running them through the handler's
+-- name resolution and message formatting logic.
 -- ============================================================
 
 local util = dfhack.reqscript('herald-util')
+local pins = dfhack.reqscript('herald-pins')
 local safe_get = util.safe_get
 
-print('=== START PROBE: ARTIFACTS ===')
+print('=== START PROBE: ARTIFACT HANDLER VERIFICATION ===')
 print('')
 
 -- Helper: translate a name or return fallback
@@ -45,372 +41,328 @@ local function name_or(obj, fallback)
     return (ok and n and n ~= '') and n or fallback
 end
 
--- Helper: print all accessible fields on a DF struct
-local function dump_fields(obj, label, indent)
-    indent = indent or '  '
-    print(label .. ':')
-    local ok = pcall(function() printall(obj) end)
-    if not ok then print(indent .. '(printall failed)') end
+-- ================================================================
+-- SECTION 1: Check pinned HFs and their artifact settings
+-- ================================================================
+print('[1] Pinned HF artifact settings')
+print('---------------------------------')
+
+local pinned = pins.get_pinned()
+local pin_count = 0
+for hf_id, settings in pairs(pinned) do
+    pin_count = pin_count + 1
+    local art_on = settings and settings.artifacts
+    print(('  HF %d (%s) - artifacts: %s'):format(
+        hf_id, util.hf_name(hf_id), tostring(art_on)))
 end
+if pin_count == 0 then
+    print('  No pinned HFs. Pin some HFs to test event matching.')
+end
+print('')
 
 -- ================================================================
--- SECTION 1: artifact_record struct
+-- SECTION 2: Test get_artifact_label on real artifacts
 -- ================================================================
-print('[1] artifact_record struct exploration')
-print('---------------------------------------')
-
--- Try global artifact vectors
-local ARTIFACT_PATHS = {
-    'df.global.world.artifacts.all',
-    'df.global.world.artifacts',
-}
+print('[2] Artifact label resolution (first 10 artifacts)')
+print('----------------------------------------------------')
 
 local artifacts_vec = nil
-local artifacts_path = nil
-
--- Try .all first (newer DF), then plain .artifacts
 local ok1, a1 = pcall(function() return df.global.world.artifacts.all end)
 if ok1 and a1 then
     local ok_n, n = pcall(function() return #a1 end)
-    if ok_n and n and n > 0 then
-        artifacts_vec = a1
-        artifacts_path = 'df.global.world.artifacts.all'
-    end
-end
-if not artifacts_vec then
-    local ok2, a2 = pcall(function() return df.global.world.artifacts end)
-    if ok2 and a2 then
-        local ok_n, n = pcall(function() return #a2 end)
-        if ok_n and n and n > 0 then
-            artifacts_vec = a2
-            artifacts_path = 'df.global.world.artifacts'
-        end
-    end
-end
-
-if not artifacts_vec then
-    print('  WARNING: no global artifacts vector found. Trying df.artifact_record.find...')
-    -- Try finding by ID 0..100
-    for test_id = 0, 100 do
-        local ok, art = pcall(function() return df.artifact_record.find(test_id) end)
-        if ok and art then
-            print(('  Found artifact by find(%d)'):format(test_id))
-            artifacts_vec = { art }
-            artifacts_path = 'df.artifact_record.find()'
-            break
-        end
-    end
+    if ok_n and n and n > 0 then artifacts_vec = a1 end
 end
 
 if artifacts_vec then
-    local count = 0
-    pcall(function() count = #artifacts_vec end)
-    print(('  Artifact source: %s (%d entries)'):format(artifacts_path, count))
-else
-    print('  ERROR: could not find any artifacts in the world')
-    print('=== END PROBE ===')
-    return
-end
-print('')
-
--- Grab first artifact and dump its fields
-local sample_art = nil
-local ok_sa, sa = pcall(function() return artifacts_vec[0] end)
-if ok_sa and sa then sample_art = sa end
-
-if sample_art then
-    print('[1a] printall(artifact_record):')
-    dump_fields(sample_art, '  Fields')
-    print('')
-
-    -- Probe specific field candidates
-    print('[1b] Probing specific field candidates:')
-    local ART_FIELDS = {
-        'id', 'name', 'item', 'flags', 'abs_tile_x', 'abs_tile_y',
-        'holder_hf', 'creator_hf', 'creator_hfid', 'maker', 'maker_hf',
-        'site', 'site_id', 'holder', 'owner_hf', 'owner_hist_figure_id',
-        'storage_site_id', 'loss_region',
-        'anon_1', 'anon_2', 'anon_3', 'anon_4', 'anon_5',
-        'unk_1', 'unk_2', 'unk_3', 'unk_4',
-    }
-    for _, fname in ipairs(ART_FIELDS) do
-        local ok_f, v = pcall(function() return sample_art[fname] end)
-        if ok_f and v ~= nil then
-            print(('    .%s = %s (%s)'):format(fname, tostring(v), type(v)))
-        end
-    end
-    print('')
-
-    -- Try to get the artifact name
-    local art_name = name_or(sample_art, '(unnamed)')
-    print(('  Sample artifact: id=%d name="%s"'):format(
-        safe_get(sample_art, 'id') or -1, art_name))
-
-    -- Explore the .item sub-object
-    local ok_item, item = pcall(function() return sample_art.item end)
-    if ok_item and item then
-        print('')
-        print('[1c] artifact.item sub-object:')
-        dump_fields(item, '  item fields')
-        -- Item type
-        local ok_t, itype = pcall(function() return item:getType() end)
-        if ok_t then
-            local type_name = df.item_type and df.item_type[itype] or '?'
-            print(('    :getType() = %s (%s)'):format(tostring(itype), tostring(type_name)))
-        end
-        -- Material
-        local ok_m, mt = pcall(function() return item:getActualMaterial() end)
-        local ok_mi, mi = pcall(function() return item:getActualMaterialIndex() end)
-        if ok_m and ok_mi and mt >= 0 then
-            local ok_d, info = pcall(function() return dfhack.matinfo.decode(mt, mi) end)
-            if ok_d and info then
-                local ok_s, s = pcall(function() return info:toString() end)
-                if ok_s then print(('    material = %s'):format(s)) end
+    local art_handler = dfhack.reqscript('herald-handlers/herald-ind-artifacts')
+    local limit = math.min(9, #artifacts_vec - 1)
+    for i = 0, limit do
+        local ok, art = pcall(function() return artifacts_vec[i] end)
+        if ok and art then
+            local art_id = safe_get(art, 'id') or i
+            -- Replicate get_artifact_label logic inline to show each tier
+            local translated = name_or(art, nil)
+            local item_desc = nil
+            local ok3, item = pcall(function() return art.item end)
+            if ok3 and item then
+                local ok4, itype = pcall(function() return item:getType() end)
+                local type_s = ok4 and itype and df.item_type and df.item_type[itype]
+                local mat_s
+                local ok5, mt = pcall(function() return item:getActualMaterial() end)
+                local ok6, mi = pcall(function() return item:getActualMaterialIndex() end)
+                if ok5 and ok6 and mt and mt >= 0 then
+                    local ok7, info = pcall(function() return dfhack.matinfo.decode(mt, mi) end)
+                    if ok7 and info then
+                        local ok8, s = pcall(function() return info:toString() end)
+                        if ok8 and s and s ~= '' then mat_s = s:lower() end
+                    end
+                end
+                if mat_s and type_s then
+                    item_desc = mat_s .. ' ' .. tostring(type_s):lower()
+                elseif type_s then
+                    item_desc = tostring(type_s):lower()
+                end
             end
+
+            local label
+            if translated then
+                label = 'the artifact ' .. translated
+            elseif item_desc then
+                label = 'a ' .. item_desc .. ' artifact'
+            else
+                label = 'an artifact'
+            end
+
+            print(('  [%d] id=%d -> "%s"'):format(i, art_id, label))
+            if translated then print(('       (name: %s, item: %s)'):format(translated, item_desc or 'n/a')) end
         end
-    else
-        print('  artifact.item: not accessible')
     end
-    print('')
 else
-    print('  WARNING: could not access artifacts_vec[0]')
-end
-
--- ================================================================
--- SECTION 2: Enumerate a few artifacts to check creator HF pattern
--- ================================================================
-print('[2] Checking multiple artifacts for creator/holder fields')
-print('----------------------------------------------------------')
-
-local limit = math.min(9, (pcall(function() return #artifacts_vec - 1 end) and #artifacts_vec - 1 or 0))
-for i = 0, limit do
-    local ok, art = pcall(function() return artifacts_vec[i] end)
-    if not ok or not art then goto next_art end
-    local art_id = safe_get(art, 'id') or i
-    local art_name = name_or(art, '?')
-    local holder = safe_get(art, 'holder_hf') or safe_get(art, 'holder')
-    local creator = safe_get(art, 'creator_hf') or safe_get(art, 'creator_hfid')
-    local site = safe_get(art, 'site') or safe_get(art, 'site_id')
-    print(('  [%d] id=%d name="%s" holder=%s creator=%s site=%s'):format(
-        i, art_id, art_name,
-        tostring(holder), tostring(creator), tostring(site)))
-    ::next_art::
+    print('  No artifacts found in world')
 end
 print('')
 
 -- ================================================================
--- SECTION 3: written_content struct
+-- SECTION 3: Test get_written_title on real written content
 -- ================================================================
-print('[3] written_content struct')
-print('---------------------------')
+print('[3] Written content title resolution (first 10)')
+print('--------------------------------------------------')
 
 local wc_vec = nil
 local ok_wc, wv = pcall(function() return df.global.world.written_contents.all end)
 if ok_wc and wv then
     local ok_n, n = pcall(function() return #wv end)
-    if ok_n and n and n > 0 then
-        wc_vec = wv
-        print(('  Source: df.global.world.written_contents.all (%d entries)'):format(n))
-    end
-end
-if not wc_vec then
-    local ok_wc2, wv2 = pcall(function() return df.global.world.written_contents end)
-    if ok_wc2 and wv2 then
-        local ok_n, n = pcall(function() return #wv2 end)
-        if ok_n and n and n > 0 then
-            wc_vec = wv2
-            print(('  Source: df.global.world.written_contents (%d entries)'):format(n))
-        end
-    end
+    if ok_n and n and n > 0 then wc_vec = wv end
 end
 
 if wc_vec then
-    local sample_wc = nil
-    local ok_s, sw = pcall(function() return wc_vec[0] end)
-    if ok_s and sw then sample_wc = sw end
-
-    if sample_wc then
-        print('')
-        print('[3a] printall(written_content):')
-        dump_fields(sample_wc, '  Fields')
-        print('')
-
-        -- Probe specific fields
-        print('[3b] Specific fields:')
-        local WC_FIELDS = {
-            'id', 'title', 'page_start', 'page_end',
-            'author', 'author_hf', 'author_hfid', 'histfig',
-            'type', 'style', 'form', 'form_id',
-            'poetic_form', 'musical_form', 'dance_form',
-            'subject', 'subject_id', 'reference_id',
-            'anon_1', 'anon_2',
-        }
-        for _, fname in ipairs(WC_FIELDS) do
-            local ok_f, v = pcall(function() return sample_wc[fname] end)
-            if ok_f and v ~= nil then
-                print(('    .%s = %s (%s)'):format(fname, tostring(v), type(v)))
-            end
-        end
-        print('')
-
-        -- Show a few written contents with titles
-        print('[3c] First 10 written contents:')
-        local wc_limit = math.min(9, #wc_vec - 1)
-        for i = 0, wc_limit do
-            local ok_w, wc = pcall(function() return wc_vec[i] end)
-            if not ok_w or not wc then goto next_wc end
+    local limit = math.min(9, #wc_vec - 1)
+    for i = 0, limit do
+        local ok, wc = pcall(function() return wc_vec[i] end)
+        if ok and wc then
             local wc_id = safe_get(wc, 'id') or i
-            local title = safe_get(wc, 'title') or '(no title)'
-            local author = safe_get(wc, 'author') or safe_get(wc, 'author_hf') or safe_get(wc, 'author_hfid') or -1
-            local author_name = '?'
-            if type(author) == 'number' and author >= 0 then
-                author_name = util.hf_name(author)
-            end
-            print(('    [%d] id=%d title="%s" author=%s (%s)'):format(
-                i, wc_id, tostring(title), tostring(author), author_name))
-            ::next_wc::
+            local title = safe_get(wc, 'title')
+            local has_title = title and title ~= ''
+            local display = has_title and ('"' .. title .. '"') or 'a written work'
+            print(('  [%d] id=%d -> %s'):format(i, wc_id, display))
         end
-    else
-        print('  WARNING: could not access wc_vec[0]')
     end
 else
-    print('  No written_content vector found')
+    print('  No written content found in world')
 end
 print('')
 
 -- ================================================================
--- SECTION 4: Find sample artifact events in world history
+-- SECTION 4: Raw field dump on sample events (field discovery)
 -- ================================================================
-print('[4] Scanning world events for artifact-related types')
-print('-----------------------------------------------------')
+print('[4] Raw field dump per event type')
+print('-----------------------------------')
 
-local TARGET_TYPES = {
+local PROBE_TYPES = {
     'ARTIFACT_CREATED', 'ARTIFACT_STORED', 'ARTIFACT_POSSESSED',
-    'ARTIFACT_CLAIM_FORMED', 'ITEM_STOLEN', 'WRITTEN_CONTENT_COMPOSED',
+    'ARTIFACT_CLAIM_FORMED', 'WRITTEN_CONTENT_COMPOSED',
 }
 
--- Build lookup set
-local target_set = {}
-for _, tname in ipairs(TARGET_TYPES) do
-    local ok, val = pcall(function() return df.history_event_type[tname] end)
-    if ok and val then
-        target_set[val] = tname
-        print(('  Type enum: %s = %d'):format(tname, val))
-    else
-        print(('  WARNING: type %s not in enum'):format(tname))
-    end
-end
-print('')
+local CANDIDATE_FIELDS = {
+    'creator_hfid', 'histfig', 'hfid', 'hf',
+    'artifact_id', 'artifact', 'item', 'item_id',
+    'site', 'site_id', 'entity', 'entity_id',
+    'wc', 'wc_id', 'content', 'written_content_id',
+    'reason', 'circumstance', 'claim_type', 'position_profile',
+    'mattype', 'matindex', 'item_type', 'item_subtype',
+    'unit_id', 'name_only', 'structure',
+}
 
--- Scan events (from the end, since artifact events tend to be later)
+-- Find one sample per type
+local probe_set = {}
+for _, tname in ipairs(PROBE_TYPES) do
+    local ok, val = pcall(function() return df.history_event_type[tname] end)
+    if ok and val then probe_set[val] = tname end
+end
+
+local probe_events = df.global.world.history.events
+local probe_total = #probe_events
+local probe_samples = {}
+local probe_found = 0
+local probe_needed = 0
+for _ in pairs(probe_set) do probe_needed = probe_needed + 1 end
+
+for i = probe_total - 1, math.max(0, probe_total - 10000), -1 do
+    if probe_found >= probe_needed then break end
+    local ok, ev = pcall(function() return probe_events[i] end)
+    if not ok or not ev then goto next_probe end
+    local ok_t, etype = pcall(function() return ev:getType() end)
+    if not ok_t then goto next_probe end
+    local tname = probe_set[etype]
+    if tname and not probe_samples[tname] then
+        probe_samples[tname] = ev
+        probe_found = probe_found + 1
+    end
+    ::next_probe::
+end
+
+for _, tname in ipairs(PROBE_TYPES) do
+    local ev = probe_samples[tname]
+    if not ev then
+        print(('  %s: NO SAMPLE'):format(tname))
+    else
+        print(('  %s (ev.id=%d):'):format(tname, ev.id))
+        print('    printall:')
+        pcall(function() printall(ev) end)
+        print('    candidate fields:')
+        for _, fname in ipairs(CANDIDATE_FIELDS) do
+            local ok_f, v = pcall(function() return ev[fname] end)
+            if ok_f and v ~= nil then
+                print(('      .%s = %s (%s)'):format(fname, tostring(v), type(v)))
+            end
+        end
+    end
+    print('')
+end
+
+-- ================================================================
+-- SECTION 5: Simulated handler dispatch for each event type
+-- ================================================================
+print('[5] Simulated handler dispatch on real events')
+print('------------------------------------------------')
+
+local EVENT_TYPES = {
+    {'ARTIFACT_CREATED',            'creator_hfid'},
+    {'ARTIFACT_STORED',             'histfig'},
+    {'ARTIFACT_POSSESSED',          'histfig'},
+    {'ARTIFACT_CLAIM_FORMED',       'histfig'},
+    {'WRITTEN_CONTENT_COMPOSED',    'histfig'},
+}
+
 local events = df.global.world.history.events
 local total_events = #events
-print(('  Total events: %d'):format(total_events))
 
-local found_samples = {}  -- type_name -> event
-local found_count = 0
+-- Build target set
+local target_set = {}
+for _, entry in ipairs(EVENT_TYPES) do
+    local tname, hf_field = entry[1], entry[2]
+    local ok, val = pcall(function() return df.history_event_type[tname] end)
+    if ok and val then
+        target_set[val] = {name = tname, hf_field = hf_field}
+    end
+end
+
+-- Find one sample of each type (scan backwards for speed)
+local samples = {}
+local found = 0
 local needed = 0
 for _ in pairs(target_set) do needed = needed + 1 end
 
--- Scan backwards from end for efficiency
-for i = total_events - 1, math.max(0, total_events - 5000), -1 do
-    if found_count >= needed then break end
+for i = total_events - 1, math.max(0, total_events - 10000), -1 do
+    if found >= needed then break end
     local ok, ev = pcall(function() return events[i] end)
     if not ok or not ev then goto next_ev end
     local ok_t, etype = pcall(function() return ev:getType() end)
     if not ok_t then goto next_ev end
-    local tname = target_set[etype]
-    if tname and not found_samples[tname] then
-        found_samples[tname] = ev
-        found_count = found_count + 1
+    local info = target_set[etype]
+    if info and not samples[info.name] then
+        samples[info.name] = ev
+        found = found + 1
     end
     ::next_ev::
 end
 
-print(('  Found %d/%d target event types in last 5000 events'):format(found_count, needed))
+print(('  Found %d/%d event types in last 10000 events'):format(found, needed))
 print('')
 
--- ================================================================
--- SECTION 5: Dump fields on each found event
--- ================================================================
-print('[5] Detailed field dump per artifact event type')
-print('-------------------------------------------------')
-
-for _, tname in ipairs(TARGET_TYPES) do
-    local ev = found_samples[tname]
+for _, entry in ipairs(EVENT_TYPES) do
+    local tname, hf_field = entry[1], entry[2]
+    local ev = samples[tname]
     if not ev then
-        print(('  %s: NOT FOUND'):format(tname))
+        print(('  %s: NO SAMPLE FOUND'):format(tname))
         print('')
         goto next_type
     end
 
-    print(('  %s (id=%d, year=%s):'):format(tname, ev.id, tostring(safe_get(ev, 'year'))))
-    dump_fields(ev, '    printall')
+    local hf_id = safe_get(ev, hf_field) or -1
+    local hf = hf_id >= 0 and util.hf_name(hf_id) or '(unknown)'
+    local is_pinned = pinned[hf_id] and true or false
+    local site_id = safe_get(ev, 'site') or -1
+    local site = site_id >= 0 and util.site_name(site_id) or '(no site)'
 
-    -- Probe known + candidate fields per type
-    local FIELDS_BY_TYPE = {
-        ARTIFACT_CREATED = {
-            'creator_hfid', 'creator_hf', 'histfig', 'hfid',
-            'artifact_id', 'artifact_record', 'artifact', 'item',
-            'site', 'unit_id', 'name_only',
-        },
-        ARTIFACT_STORED = {
-            'histfig', 'hfid', 'artifact', 'artifact_id', 'artifact_record',
-            'site', 'unit_id',
-        },
-        ARTIFACT_POSSESSED = {
-            'histfig', 'hfid', 'artifact', 'artifact_id', 'artifact_record',
-            'site', 'unit_id',
-        },
-        ARTIFACT_CLAIM_FORMED = {
-            'histfig', 'hfid', 'artifact', 'artifact_id',
-            'entity', 'claim_type', 'position_profile',
-        },
-        ITEM_STOLEN = {
-            'histfig', 'hfid', 'item_type', 'item_subtype', 'item',
-            'mattype', 'matindex', 'entity', 'site', 'structure',
-        },
-        WRITTEN_CONTENT_COMPOSED = {
-            'histfig', 'hfid', 'content', 'wc_id', 'site', 'reason', 'circumstance',
-        },
-    }
+    print(('  %s (ev.id=%d, year=%s):'):format(tname, ev.id, tostring(safe_get(ev, 'year'))))
+    print(('    HF: %d (%s) pinned=%s'):format(hf_id, hf, tostring(is_pinned)))
+    print(('    Site: %d (%s)'):format(site_id, site))
 
-    local fields = FIELDS_BY_TYPE[tname] or {}
-    for _, fname in ipairs(fields) do
-        local ok_f, v = pcall(function() return ev[fname] end)
-        if ok_f and v ~= nil then
-            print(('      .%s = %s (%s)'):format(fname, tostring(v), type(v)))
-        end
-    end
-
-    -- For ARTIFACT_CREATED/STORED/POSSESSED: resolve the artifact name
-    if tname:find('ARTIFACT') then
-        local art_id = safe_get(ev, 'artifact_id') or safe_get(ev, 'artifact_record') or safe_get(ev, 'artifact')
-        if art_id and art_id >= 0 then
+    -- Type-specific details and simulated message
+    if tname == 'ARTIFACT_CREATED' or tname == 'ARTIFACT_STORED'
+        or tname == 'ARTIFACT_POSSESSED' then
+        -- CREATED uses 'artifact_id'; STORED/POSSESSED use 'artifact'
+        local art_id = safe_get(ev, 'artifact_id') or safe_get(ev, 'artifact') or -1
+        local art_name = '(not found)'
+        if art_id >= 0 then
             local ok_a, art = pcall(function() return df.artifact_record.find(art_id) end)
-            if ok_a and art then
-                local aname = name_or(art, '(unnamed)')
-                print(('      -> artifact name: "%s"'):format(aname))
-            end
+            if ok_a and art then art_name = name_or(art, '(unnamed)') end
         end
-    end
+        print(('    Artifact: %d (%s)'):format(art_id, art_name))
 
-    -- For WRITTEN_CONTENT_COMPOSED: resolve the written content
-    if tname == 'WRITTEN_CONTENT_COMPOSED' then
-        local wc_id = safe_get(ev, 'content')
-        if wc_id and wc_id >= 0 then
+        local verb = tname == 'ARTIFACT_CREATED' and 'created'
+            or tname == 'ARTIFACT_STORED' and 'stored'
+            or 'claimed'
+        -- Simulate the announcement
+        if art_id >= 0 then
+            -- Inline label resolution
+            local label = 'an artifact'
+            if art_name ~= '(unnamed)' and art_name ~= '(not found)' then
+                label = 'the artifact ' .. art_name
+            end
+            local msg
+            if site_id >= 0 then
+                msg = ('%s %s %s in %s.'):format(hf, verb, label, site)
+            else
+                msg = ('%s %s %s.'):format(hf, verb, label)
+            end
+            print(('    -> MSG: %s'):format(msg))
+        end
+
+    elseif tname == 'ARTIFACT_CLAIM_FORMED' then
+        local art_id = safe_get(ev, 'artifact') or -1
+        local entity_id = safe_get(ev, 'entity') or -1
+        local art_name = '(not found)'
+        if art_id >= 0 then
+            local ok_a, art = pcall(function() return df.artifact_record.find(art_id) end)
+            if ok_a and art then art_name = name_or(art, '(unnamed)') end
+        end
+        print(('    Artifact: %d (%s)'):format(art_id, art_name))
+        print(('    Entity: %d (%s)'):format(entity_id,
+            entity_id >= 0 and util.ent_name(entity_id) or '(none)'))
+
+        local label = (art_name ~= '(unnamed)' and art_name ~= '(not found)')
+            and ('the artifact ' .. art_name) or 'an artifact'
+        local msg
+        if entity_id >= 0 then
+            msg = ('%s formed a claim on %s on behalf of %s.'):format(
+                hf, label, util.ent_name(entity_id))
+        else
+            msg = ('%s formed a claim on %s.'):format(hf, label)
+        end
+        print(('    -> MSG: %s'):format(msg))
+
+    elseif tname == 'WRITTEN_CONTENT_COMPOSED' then
+        local wc_id = safe_get(ev, 'content') or -1
+        local title = nil
+        if wc_id >= 0 then
             local ok_w, wc = pcall(function() return df.written_content.find(wc_id) end)
             if ok_w and wc then
-                local title = safe_get(wc, 'title') or '(no title)'
-                print(('      -> written content title: "%s"'):format(title))
+                local ok2, t = pcall(function() return wc.title end)
+                if ok2 and t and t ~= '' then title = t end
             end
         end
-    end
+        local work = title and ('"' .. title .. '"') or 'a written work'
+        print(('    Written content: %d (title: %s)'):format(wc_id, work))
 
-    -- For any HF field: resolve the name
-    local hf_id = safe_get(ev, 'creator_hfid') or safe_get(ev, 'histfig') or safe_get(ev, 'hfid')
-    if hf_id and hf_id >= 0 then
-        print(('      -> HF name: "%s"'):format(util.hf_name(hf_id)))
+        local msg
+        if site_id >= 0 then
+            msg = ('%s composed %s in %s.'):format(hf, work, site)
+        else
+            msg = ('%s composed %s.'):format(hf, work)
+        end
+        print(('    -> MSG: %s'):format(msg))
     end
 
     print('')
@@ -418,26 +370,64 @@ for _, tname in ipairs(TARGET_TYPES) do
 end
 
 -- ================================================================
--- SECTION 6: Count artifact events by type across all history
+-- SECTION 6: Event type distribution
 -- ================================================================
-print('[6] Artifact event type distribution (full scan)')
-print('--------------------------------------------------')
+print('[6] Artifact event counts (full history)')
+print('------------------------------------------')
 
 local type_counts = {}
-for _, tname in ipairs(TARGET_TYPES) do type_counts[tname] = 0 end
+for _, entry in ipairs(EVENT_TYPES) do type_counts[entry[1]] = 0 end
 
 for i = 0, total_events - 1 do
     local ok, ev = pcall(function() return events[i] end)
     if not ok or not ev then goto next_count end
     local ok_t, etype = pcall(function() return ev:getType() end)
     if not ok_t then goto next_count end
-    local tname = target_set[etype]
-    if tname then type_counts[tname] = type_counts[tname] + 1 end
+    local info = target_set[etype]
+    if info then type_counts[info.name] = type_counts[info.name] + 1 end
     ::next_count::
 end
 
-for _, tname in ipairs(TARGET_TYPES) do
-    print(('  %s: %d events'):format(tname, type_counts[tname]))
+for _, entry in ipairs(EVENT_TYPES) do
+    print(('  %s: %d'):format(entry[1], type_counts[entry[1]]))
+end
+print('')
+
+-- ================================================================
+-- SECTION 7: Check for pinned HF matches in recent artifact events
+-- ================================================================
+print('[7] Pinned HF matches in last 5000 events')
+print('--------------------------------------------')
+
+if pin_count == 0 then
+    print('  No pinned HFs - skipping')
+else
+    local matches = 0
+    for i = total_events - 1, math.max(0, total_events - 5000), -1 do
+        local ok, ev = pcall(function() return events[i] end)
+        if not ok or not ev then goto next_match end
+        local ok_t, etype = pcall(function() return ev:getType() end)
+        if not ok_t then goto next_match end
+        local info = target_set[etype]
+        if not info then goto next_match end
+
+        local hf_id = safe_get(ev, info.hf_field) or -1
+        if pinned[hf_id] then
+            matches = matches + 1
+            local settings = pinned[hf_id]
+            local art_on = settings and settings.artifacts
+            print(('  ev.id=%d %s HF=%d (%s) artifacts=%s'):format(
+                ev.id, info.name, hf_id, util.hf_name(hf_id), tostring(art_on)))
+            if matches >= 20 then
+                print('  ... (capped at 20)')
+                break
+            end
+        end
+        ::next_match::
+    end
+    if matches == 0 then
+        print('  No artifact events found for pinned HFs in last 5000 events')
+    end
 end
 print('')
 

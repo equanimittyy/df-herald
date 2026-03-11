@@ -90,7 +90,7 @@ local function handle_artifact_stored(ev, dprint)
     local settings = pinned[hf_id]
     if not artifacts_enabled(settings) then return end
 
-    local art_id = util.safe_get(ev, 'artifact_id') or -1
+    local art_id = util.safe_get(ev, 'artifact') or -1
     local site_id = util.safe_get(ev, 'site') or -1
     local label = get_artifact_label(art_id)
     local name = util.hf_name(hf_id)
@@ -108,7 +108,7 @@ local function handle_artifact_possessed(ev, dprint)
     local settings = pinned[hf_id]
     if not artifacts_enabled(settings) then return end
 
-    local art_id = util.safe_get(ev, 'artifact_id') or -1
+    local art_id = util.safe_get(ev, 'artifact') or -1
     local site_id = util.safe_get(ev, 'site') or -1
     local label = get_artifact_label(art_id)
     local name = util.hf_name(hf_id)
@@ -126,7 +126,7 @@ local function handle_artifact_claim_formed(ev, dprint)
     local settings = pinned[hf_id]
     if not artifacts_enabled(settings) then return end
 
-    local art_id = util.safe_get(ev, 'artifact_id') or -1
+    local art_id = util.safe_get(ev, 'artifact') or -1
     local entity_id = util.safe_get(ev, 'entity') or -1
     local label = get_artifact_label(art_id)
     local name = util.hf_name(hf_id)
@@ -145,7 +145,7 @@ local function handle_written_content_composed(ev, dprint)
     local settings = pinned[hf_id]
     if not artifacts_enabled(settings) then return end
 
-    local wc_id = util.safe_get(ev, 'wc') or util.safe_get(ev, 'wc_id') or -1
+    local wc_id = util.safe_get(ev, 'content') or -1
     local site_id = util.safe_get(ev, 'site') or -1
     local title = get_written_title(wc_id)
     local name = util.hf_name(hf_id)
