@@ -15,6 +15,7 @@ is a first of it's kind mod (at least as far as I'm aware) that allows you to ex
 [*] Event history view to see the entire history of a given historical figure, civilisation or artifact
 [*] Quick access to DFHack's inbuilt journal, so you never have to leave Dwarf Fortress to take notes
 [*] Pin individuals or civilisations to be notified of in-game events in near real-time, including:
+-------------------------
 [b]Individuals:[/b]
 - Death
 - Combat kills
@@ -31,7 +32,9 @@ is a first of it's kind mod (at least as far as I'm aware) that allows you to ex
 - Beast rampages
 - Espionage (theft & abduction)
 [b]All these options are toggleable via the UI![/b]
+-------------------------
 [/list]
+
 
 [b]Compatible with:[/b]
 [list]
