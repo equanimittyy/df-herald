@@ -44,7 +44,7 @@ Commands
    details (e.g. leader-death resolution).
 
 "herald interval"
-   Open a dialog to set the scan interval in ticks (minimum 600, half a
+   Open a dialogue to set the scan interval in ticks (minimum 600, half a
    dwarf day). The value is saved to dfhack-config/herald.json and takes
    effect on the next scan cycle.
 
@@ -235,7 +235,7 @@ local function dprint(fmt, ...)
     end
 end
 
--- Interval editor dialog ------------------------------------------------------
+-- Interval editor dialogue -----------------------------------------------------
 
 local IntervalEditor = defclass(IntervalEditor, widgets.Window) -- luacheck: ignore 113
 IntervalEditor.ATTRS {

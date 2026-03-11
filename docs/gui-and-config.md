@@ -33,7 +33,7 @@ on every GUI open by caching results in the save file via `dfhack.persistent.sav
 or any handler module.
 
 **Lifecycle:** `load_cache()` called in `herald.init_scan()`; `reset()` called in
-`herald.cleanup()`. GUI calls `build_delta()` on open, or shows a warning dialog
+`herald.cleanup()`. GUI calls `build_delta()` on open, or shows a warning dialogue
 and calls `build_full()` if cache is not ready.
 
 **CLI:** `herald cache-rebuild` invalidates the cache; next GUI open triggers rebuild.

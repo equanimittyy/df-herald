@@ -1499,7 +1499,7 @@ function HeraldGuiScreen:onDismiss() -- luacheck: no unused args
     view = nil
 end
 
--- First-time cache build warning dialog.
+-- First-time cache build warning dialogue.
 local CacheBuildWindow = defclass(CacheBuildWindow, widgets.Window) -- luacheck: ignore 113
 CacheBuildWindow.ATTRS {
     frame_title = 'Herald: First-Time Setup',
