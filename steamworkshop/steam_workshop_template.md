@@ -82,4 +82,6 @@ Tools such as [url=https://github.com/Kromtec/LegendsViewer-Next]Kromtec's Legen
 A: Please post in the [url=https://steamcommunity.com/workshop/filedetails/discussion/3682900869/798964126635297633/]discussions tab[/url] with a description of the issue
 
 [i]If you enjoy this mod, please rate it up - it helps others find it![/i]
+
+[i]Please ask for permission before modifying or distributing the mod![/i]
 ```
