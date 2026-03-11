@@ -3225,6 +3225,7 @@ function EventHistoryScreen:init()
 end
 
 function EventHistoryScreen:onDismiss() -- luacheck: no unused args
+    dfhack.reqscript('herald-cache').flush()
     event_history_view = nil
 end
 

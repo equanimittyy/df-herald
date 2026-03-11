@@ -22,6 +22,7 @@ local CACHE_VERSION = 3
 
 cache_ready = false   -- true once loaded/built
 building    = false   -- true during build
+dirty       = false   -- true when in-memory data differs from persisted data
 
 -- Internal cache tables (nil when not loaded).
 local hf_event_counts = nil   -- { [hf_id] = count }
@@ -73,6 +74,7 @@ end
 function load_cache()
     dprint('load_cache: reading from persistence key "%s"', PERSIST_KEY)
     cache_ready = false
+    dirty       = false
     hf_event_counts = nil
     hf_event_ids    = nil
     hf_rel_counts   = nil
@@ -200,11 +202,21 @@ function save_cache()
     if not ok then
         dfhack.printerr(('[Herald Cache] save_cache FAILED: %s'):format(tostring(err)))
     end
+    dirty = false
+end
+
+-- Persists the cache only if in-memory data has changed since last save.
+-- Intended for deferred save points (e.g. GUI dismiss) to avoid blocking
+-- the UI thread during build_delta.
+-- Invariant: dirty is false whenever cache_ready is false (reset/invalidate/load clear both).
+function flush()
+    if dirty and dfhack.isMapLoaded() then save_cache() end
 end
 
 function invalidate_cache()
     dprint('invalidate_cache: clearing all cached data')
     cache_ready = false
+    dirty       = false
     hf_event_counts = nil
     hf_event_ids    = nil
     hf_rel_counts   = nil
@@ -630,7 +642,7 @@ function build_delta()
     if any_change then
         dprint('build_delta: processed %d new event(s), watermark now idx=%d id=%d',
             count, last_cached_event_idx, last_cached_event_id)
-        save_cache()
+        dirty = true
     else
         dprint('build_delta: no new events')
     end
@@ -711,6 +723,7 @@ function reset()
     dprint('reset: clearing all cache state')
     cache_ready = false
     building    = false
+    dirty       = false
     _enums_loaded = false
     hf_event_counts = nil
     hf_event_ids    = nil

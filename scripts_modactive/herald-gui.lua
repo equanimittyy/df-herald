@@ -534,7 +534,7 @@ function FiguresPanel:toggle_pinned(choice)
     local filter_text = fl.edit.text
     self:refresh_list()
     fl:setFilter(filter_text)
-    self.parent_view:on_pin_changed(now_pinned and 'individual_pinned' or 'individual_unpinned')
+    self.parent_view:on_pin_changed(now_pinned and 'individual_pinned' or 'individual_unpinned', 'figures')
 end
 
 function FiguresPanel:toggle_dead()
@@ -888,7 +888,7 @@ function PinnedPanel:unpin_selected()
     self:refresh_pinned_list()
     local change_type = self.view_type == 'individuals'
         and 'individual_unpinned' or 'civ_unpinned'
-    self.parent_view:on_pin_changed(change_type)
+    self.parent_view:on_pin_changed(change_type, 'pinned')
 end
 
 -- ArtifactsPanel ---------------------------------------------------------------
@@ -1207,7 +1207,7 @@ function CivisationsPanel:toggle_pinned(choice)
     local filter_text = fl.edit.text
     self:refresh_list()
     fl:setFilter(filter_text)
-    self.parent_view:on_pin_changed(now_pinned and 'civ_pinned' or 'civ_unpinned')
+    self.parent_view:on_pin_changed(now_pinned and 'civ_pinned' or 'civ_unpinned', 'civs')
 end
 
 function CivisationsPanel:toggle_pinned_only()
@@ -1420,15 +1420,21 @@ end
 -- Centralised cross-panel refresh after a pin change.
 -- change_type: 'individual_pinned', 'individual_unpinned',
 --              'civ_pinned', 'civ_unpinned'
-function HeraldWindow:on_pin_changed(change_type)
+-- source: 'figures', 'civs', or 'pinned' - skips refreshing the panel that
+--         already refreshed itself, avoiding expensive double rebuilds.
+function HeraldWindow:on_pin_changed(change_type, source)
     if change_type == 'individual_pinned' or change_type == 'individual_unpinned' then
-        self.subviews.pinned_panel:refresh_pinned_list()
-        if self.subviews.figures_panel._loaded then
+        if source ~= 'pinned' then
+            self.subviews.pinned_panel:refresh_pinned_list()
+        end
+        if source ~= 'figures' and self.subviews.figures_panel._loaded then
             self.subviews.figures_panel:refresh_list()
         end
     elseif change_type == 'civ_pinned' or change_type == 'civ_unpinned' then
-        self.subviews.pinned_panel:refresh_pinned_list()
-        if self.subviews.civs_panel._loaded then
+        if source ~= 'pinned' then
+            self.subviews.pinned_panel:refresh_pinned_list()
+        end
+        if source ~= 'civs' and self.subviews.civs_panel._loaded then
             self.subviews.civs_panel:refresh_list()
         end
     end
@@ -1489,6 +1495,7 @@ function HeraldGuiScreen:init()
 end
 
 function HeraldGuiScreen:onDismiss() -- luacheck: no unused args
+    cache.flush()
     view = nil
 end
 

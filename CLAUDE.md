@@ -20,7 +20,7 @@ scripts_modactive/
   herald-civ-pins.lua        ← shared pinned-civ state (persistence, get/set, settings)
   herald-handlers/
     herald-ind-death.lua          ← HIST_FIGURE_DIED + BODY_ABUSED(victim) + poll for pinned individuals
-    herald-ind-combat.lua         ← event-driven (battles, wounds, sites, overthrows) + poll (fort kills)
+    herald-ind-combat.lua         ← event-driven (combat, site attacks, overthrows, body abuse) + poll (fort kills)
     herald-ind-skills.lua         ← poll-based legendary skill detection for pinned individuals
     herald-ind-positions.lua      ← poll-based position appointment/vacation tracking for pinned individuals
     herald-ind-migration.lua      ← event-driven (world relocation) + poll (fort arrival/departure)
@@ -41,7 +41,7 @@ Each handler in its own `herald-<type>.lua` under `herald-handlers/`. Handlers c
 ## Handlers
 
 - **Individuals (death)** - event-driven (HIST_FIGURE_DIED, BODY_ABUSED victim) + poll (off-screen death detection).
-- **Individuals (combat)** - event-driven (battles, wounds, sites, overthrows, body abuse as abuser) + poll (fort-level kills via hf.info.kills baseline).
+- **Individuals (combat)** - event-driven (combat, site attacks, overthrows, body abuse) + poll (fort-level kills via hf.info.kills baseline).
 - **Individuals (skills)** - poll-based; detects legendary skill achievement.
 - **Individuals (positions)** - poll-based; detects position appointments/vacations via entity_links.
 - **Individuals (migration)** - event-driven (world relocation) + poll (fort arrival/departure via units.active).
