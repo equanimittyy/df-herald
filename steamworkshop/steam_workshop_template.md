@@ -1,6 +1,6 @@
 ```bbcode
 [img]https://i.imgur.com/yKFYcYd.png[/img]
-[b][i]A DFHack Dwarf Fortress mod[/i][/b]
+[b][i]A DFHack Dwarf Fortress lua mod[/i][/b]
 
 [b]Dwarf Fortress Herald[/b]
 is a first of it's kind mod (at least as far as I'm aware) that allows you to explore the history of your world's inhabitants WHILST playing the game! No more mucking about with saves
