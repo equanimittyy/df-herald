@@ -196,14 +196,12 @@ local function set_initial_baselines(dprint)
 end
 
 function init(dprint)
-    civ_pins.load_pinned()
     set_initial_baselines(dprint)
     dprint('world-leaders: handler initialised')
 end
 
 function reset()
     tracked_leaders = {}
-    civ_pins.reset()
 end
 
 dfhack.reqscript('herald-handler-contract').apply(_ENV)

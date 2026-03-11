@@ -112,9 +112,10 @@ function load_cache()
                 stored_idx, #events)
             return
         end
-        if events[stored_idx].id ~= stored_id then
-            dprint('load_cache: watermark id mismatch (stored=%d, actual=%d), discarding',
-                stored_id, events[stored_idx].id)
+        local ok_ev, actual_id = pcall(function() return events[stored_idx].id end)
+        if not ok_ev or actual_id ~= stored_id then
+            dprint('load_cache: watermark id mismatch (stored=%d, actual=%s), discarding',
+                stored_id, tostring(actual_id))
             return
         end
     end

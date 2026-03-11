@@ -30,25 +30,13 @@ local function get_artifact_label(art_id)
     if not ok or not art then return 'an artifact' end
     local ok2, n = pcall(function() return dfhack.translation.translateName(art.name, true) end)
     if ok2 and n and n ~= '' then return 'the artifact ' .. n end
-    -- Try material + item type
     local ok3, item = pcall(function() return art.item end)
     if ok3 and item then
-        local ok4, itype = pcall(function() return item:getType() end)
-        local type_s = ok4 and itype and df.item_type and df.item_type[itype]
-        local mat_s
-        local ok5, mt = pcall(function() return item:getActualMaterial() end)
-        local ok6, mi = pcall(function() return item:getActualMaterialIndex() end)
-        if ok5 and ok6 and mt and mt >= 0 then
-            local ok7, info = pcall(function() return dfhack.matinfo.decode(mt, mi) end)
-            if ok7 and info then
-                local ok8, s = pcall(function() return info:toString() end)
-                if ok8 and s and s ~= '' then mat_s = s:lower() end
-            end
-        end
+        local type_s, mat_s = util.resolve_item_type_material(item)
         if mat_s and type_s then
-            return 'a ' .. mat_s .. ' ' .. tostring(type_s):lower() .. ' artifact'
+            return 'a ' .. mat_s .. ' ' .. type_s .. ' artifact'
         elseif type_s then
-            return 'a ' .. tostring(type_s):lower() .. ' artifact'
+            return 'a ' .. type_s .. ' artifact'
         end
     end
     return 'an artifact'

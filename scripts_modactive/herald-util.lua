@@ -129,12 +129,12 @@ function announce_migration(msg)
     push_recent(msg, COLOR_LIGHTGREEN)
 end
 
--- Relationship event for a tracked individual (light magenta).
+-- Relationship event for a tracked individual (green).
 function announce_relationship(msg)
     push_recent(msg, COLOR_GREEN)
 end
 
--- Legendary skill achievement (light green).
+-- Legendary skill achievement (yellow).
 function announce_legendary(msg)
     push_recent(msg, COLOR_YELLOW)
 end
@@ -346,6 +346,16 @@ function resolve_item_type_material(item)
         end
     end
     return type_s, mat_s, is_written
+end
+
+-- String helpers ---------------------------------------------------------------
+
+-- Convert an ALL_CAPS_ENUM_NAME to "All Caps Enum Name".
+function title_case(s)
+    if not s then return '' end
+    return (s:lower():gsub('_', ' '):gsub('(%a)([%w]*)', function(a, b)
+        return a:upper() .. b
+    end))
 end
 
 -- DF struct field access ------------------------------------------------------

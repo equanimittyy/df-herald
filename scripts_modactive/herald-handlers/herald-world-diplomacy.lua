@@ -31,14 +31,7 @@ local scan_start_idx = 0
 
 -- Helpers ---------------------------------------------------------------------
 
--- Translated entity name, or numeric fallback.
-local function ent_name(entity_id)
-    if not entity_id or entity_id < 0 then return 'an unknown civilisation' end
-    local entity = df.historical_entity.find(entity_id)
-    if not entity then return 'entity ' .. entity_id end
-    local name = dfhack.translation.translateName(entity.name, true)
-    return (name and name ~= '') and name or ('entity ' .. entity_id)
-end
+local ent_name = util.ent_name
 
 -- Returns (pinned_entity_id, other_entity_id, settings) if either src or dst
 -- is a pinned civ, nil otherwise.

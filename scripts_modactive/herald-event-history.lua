@@ -272,12 +272,8 @@ local function building_name_at_site(site_id, structure_id)
     return nil
 end
 
--- Convert an ALL_CAPS_ENUM_NAME to "All Caps Enum Name".
-local function title_case(s)
-    return (s:lower():gsub('_', ' '):gsub('(%a)([%w]*)', function(a, b)
-        return a:upper() .. b
-    end))
-end
+-- Alias for shared title_case from util.
+local title_case = util.title_case
 
 -- Strip noisy DF prefixes from a raw enum name and produce lowercase words.
 -- e.g. "HIST_FIGURE_ABDUCTED" -> "abducted"

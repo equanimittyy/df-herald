@@ -24,10 +24,7 @@ local announced_rels = {}
 
 -- Helpers ---------------------------------------------------------------------
 
-local function title_case(s)
-    if not s then return '' end
-    return s:lower():gsub('_', ' '):gsub('(%a)([%w]*)', function(a, b) return a:upper() .. b end)
-end
+local title_case = util.title_case
 
 -- Returns true if the settings table has relationship announcements enabled.
 local function relationships_enabled(settings)
@@ -276,6 +273,7 @@ function check_event(ev, dprint)
     end
 end
 
+-- Clears dedup set each poll cycle.
 function check_poll()
     announced_rels = {}
 end

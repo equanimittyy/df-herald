@@ -88,9 +88,11 @@ local function handle_body_abused(ev, dprint)
     if not bodies then return end
     local pinned = pins.get_pinned()
     for i = 0, #bodies - 1 do
-        local victim_hf = util.safe_get(bodies[i], 'histfig_id')
-            or util.safe_get(bodies[i], 'hfid')
-            or util.safe_get(bodies[i], 'histfig')
+        local ok_b, body = pcall(function() return bodies[i] end)
+        if not ok_b or not body then goto next_body end
+        local victim_hf = util.safe_get(body, 'histfig_id')
+            or util.safe_get(body, 'hfid')
+            or util.safe_get(body, 'histfig')
         if victim_hf and pinned[victim_hf] then
             local settings = pinned[victim_hf]
             if settings and settings.death then
@@ -102,6 +104,7 @@ local function handle_body_abused(ev, dprint)
             end
             return
         end
+        ::next_body::
     end
 end
 

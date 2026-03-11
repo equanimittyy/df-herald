@@ -26,10 +26,13 @@ view = nil  -- module-level; prevents double-open
 -- Entity links use virtual dispatch: link:getType() not link.type.
 -- link.entity_id gives the referenced entity; resolve via df.historical_entity.find().
 local function get_civ_name(hf)
-    for _, link in ipairs(hf.entity_links) do
-        if link:getType() == df.histfig_entity_link_type.MEMBER then
-            local ent = df.historical_entity.find(link.entity_id)
-            if ent and ent.type == df.historical_entity_type.Civilization then
+    local ok, links = pcall(function() return hf.entity_links end)
+    if not ok or not links then return '' end
+    for _, link in ipairs(links) do
+        local ok2, lt = pcall(function() return link:getType() end)
+        if ok2 and lt == df.histfig_entity_link_type.MEMBER then
+            local ok3, ent = pcall(function() return df.historical_entity.find(link.entity_id) end)
+            if ok3 and ent and ent.type == df.historical_entity_type.Civilization then
                 return dfhack.translation.translateName(ent.name, true)
             end
         end
@@ -39,10 +42,13 @@ end
 
 -- Returns the name of the SiteGovernment entity the hf is a member of, or nil.
 local function get_site_gov(hf)
-    for _, link in ipairs(hf.entity_links) do
-        if link:getType() == df.histfig_entity_link_type.MEMBER then
-            local ent = df.historical_entity.find(link.entity_id)
-            if ent and ent.type == df.historical_entity_type.SiteGovernment then
+    local ok, links = pcall(function() return hf.entity_links end)
+    if not ok or not links then return nil end
+    for _, link in ipairs(links) do
+        local ok2, lt = pcall(function() return link:getType() end)
+        if ok2 and lt == df.histfig_entity_link_type.MEMBER then
+            local ok3, ent = pcall(function() return df.historical_entity.find(link.entity_id) end)
+            if ok3 and ent and ent.type == df.historical_entity_type.SiteGovernment then
                 return dfhack.translation.translateName(ent.name, true)
             end
         end
@@ -55,15 +61,21 @@ end
 -- asgn.position_id references pos.id in entity.positions.own / entity.entity_raw.positions.
 local function get_positions(hf)
     local results = {}
-    for _, link in ipairs(hf.entity_links) do
-        if link:getType() == df.histfig_entity_link_type.POSITION then
-            local entity = df.historical_entity.find(link.entity_id)
-            if entity then
+    local ok, links = pcall(function() return hf.entity_links end)
+    if not ok or not links then return results end
+    for _, link in ipairs(links) do
+        local ok2, lt = pcall(function() return link:getType() end)
+        if ok2 and lt == df.histfig_entity_link_type.POSITION then
+            local ok3, entity = pcall(function() return df.historical_entity.find(link.entity_id) end)
+            if ok3 and entity then
                 local civ_name = dfhack.translation.translateName(entity.name, true)
-                for _, asgn in ipairs(entity.positions.assignments) do
-                    if asgn.histfig2 == hf.id then
-                        local pos_name = util.get_pos_name(entity, asgn.position_id, hf.sex)
-                        table.insert(results, { pos_name = pos_name, civ_name = civ_name })
+                local ok4, asgns = pcall(function() return entity.positions.assignments end)
+                if ok4 and asgns then
+                    for _, asgn in ipairs(asgns) do
+                        if asgn.histfig2 == hf.id then
+                            local pos_name = util.get_pos_name(entity, asgn.position_id, hf.sex)
+                            table.insert(results, { pos_name = pos_name, civ_name = civ_name })
+                        end
                     end
                 end
             end

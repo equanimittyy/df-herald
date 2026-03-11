@@ -64,6 +64,10 @@ function get_pin_settings(hf_id)
     return pinned_hf_ids[hf_id]
 end
 
+function reset()
+    pinned_hf_ids = {}
+end
+
 -- Updates one announcement key for a pinned HF and persists.
 function set_pin_setting(hf_id, key, value)
     if pinned_hf_ids[hf_id] then

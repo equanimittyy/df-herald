@@ -51,8 +51,9 @@ end
 
 local function handle_simple_battle(ev, dprint)
     local pinned = pins.get_pinned()
-    local group1 = ev.group1_hfid
-    local group2 = ev.group2_hfid
+    local group1 = util.safe_get(ev, 'group1_hfid')
+    local group2 = util.safe_get(ev, 'group2_hfid')
+    if not group1 or not group2 then return end
     -- Check both sides
     for i = 0, #group1 - 1 do
         local hf_id = group1[i]
