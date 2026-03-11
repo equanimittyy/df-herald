@@ -26,6 +26,9 @@ Required by `herald-gui.lua` as `local ev_hist = dfhack.reqscript('herald-event-
   `open_event_history`; opening one dismisses the other.
 - **`open_artifact_event_history(art_id, art_name)`** — opens the EventHistory popup for an
   artifact. Shows all events referencing the artifact ID. Same singleton pattern.
+- **`get_artifact_creation_info(art_id)`** — resolves creator HF name and creation year from
+  the `ARTIFACT_CREATED` event. Returns `(creator_name, year_str)` or `('Unknown', '?')`.
+  Used by `herald-gui.lua` ArtifactsPanel detail panel.
 - **`reset_civ_caches()`** — invalidates lazy civ caches (`_entpop_to_civ`) on world unload.
   Called from `herald.cleanup()`.
 

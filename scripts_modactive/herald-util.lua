@@ -301,6 +301,53 @@ function get_entity_race_name(entity)
     return cr.name[0] or '?'
 end
 
+-- Artifact item resolution ----------------------------------------------------
+-- Shared helper: resolves item type (subtype-aware) and material from a DF item.
+-- Returns (type_s, mat_s, is_written). All three may be nil/empty on failure.
+function resolve_item_type_material(item)
+    if not item then return nil, nil, false end
+    local type_s, mat_s
+    local is_written = false
+    local ok_t, itype = pcall(function() return item:getType() end)
+    if not ok_t or not itype then return nil, nil, false end
+    local raw = df.item_type and df.item_type[itype]
+    if not raw then return nil, nil, false end
+    local raw_s = tostring(raw)
+    -- Try subtype def name via static API for granularity.
+    local ok_st, st = pcall(function() return item:getSubtype() end)
+    if ok_st and st and st >= 0 then
+        local ok_sd, subdef = pcall(function()
+            return dfhack.items.getSubtypeDef(itype, st)
+        end)
+        if ok_sd and subdef then
+            local ok_sn, sn = pcall(function() return subdef.name end)
+            if ok_sn and sn and sn ~= '' then type_s = sn end
+        end
+    end
+    -- Classify written works.
+    if raw_s == 'BOOK' then
+        if not type_s then type_s = 'book' end
+        is_written = true
+    elseif raw_s == 'TOOL' and type_s == 'scroll' then
+        is_written = true
+    end
+    -- Fallback to base type name.
+    if not type_s then type_s = raw_s:lower() end
+    -- Material (blank for books/scrolls).
+    if not is_written then
+        local ok_mt, mt = pcall(function() return item:getActualMaterial() end)
+        local ok_mi, mi = pcall(function() return item:getActualMaterialIndex() end)
+        if ok_mt and ok_mi and mt and mt >= 0 then
+            local ok_info, info = pcall(function() return dfhack.matinfo.decode(mt, mi) end)
+            if ok_info and info then
+                local ok_s, s = pcall(function() return info:toString() end)
+                if ok_s and s and s ~= '' then mat_s = s:lower() end
+            end
+        end
+    end
+    return type_s, mat_s, is_written
+end
+
 -- DF struct field access ------------------------------------------------------
 -- DFHack's __index raises an error (not nil) when accessing a field that
 -- doesn't exist on a typed DF struct. Use safe_get for any field that may

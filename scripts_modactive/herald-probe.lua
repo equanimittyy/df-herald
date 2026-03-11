@@ -20,18 +20,18 @@ if not main.DEBUG then
 end
 
 -- ============================================================
--- PROBE: ARTIFACT_CLAIM_FORMED detail
+-- PROBE: ARTIFACT_LOST full field dump
 -- ============================================================
 
 local util = dfhack.reqscript('herald-util')
 local safe_get = util.safe_get
 
-print('=== START PROBE: ARTIFACT_CLAIM_FORMED DETAIL ===')
+print('=== START PROBE: ARTIFACT_LOST DETAIL ===')
 print('')
 
-local CLAIM_TYPE = df.history_event_type['ARTIFACT_CLAIM_FORMED']
-if not CLAIM_TYPE then
-    print('ARTIFACT_CLAIM_FORMED not in enum')
+local LOST_TYPE = df.history_event_type['ARTIFACT_LOST']
+if not LOST_TYPE then
+    print('ARTIFACT_LOST not in enum')
     return
 end
 
@@ -43,15 +43,21 @@ for i = 0, total - 1 do
     local ok, ev = pcall(function() return events[i] end)
     if not ok or not ev then goto next_ev end
     local ok_t, etype = pcall(function() return ev:getType() end)
-    if not ok_t or etype ~= CLAIM_TYPE then goto next_ev end
+    if not ok_t or etype ~= LOST_TYPE then goto next_ev end
 
     count = count + 1
 
-    -- Basic fields
     local art_id = safe_get(ev, 'artifact') or -1
+    local site_id = safe_get(ev, 'site')
+    local subregion = safe_get(ev, 'subregion')
+    local feature_layer = safe_get(ev, 'feature_layer')
+    local yr = safe_get(ev, 'year') or '?'
+
+    -- Try common fields that might exist
     local hf_id = safe_get(ev, 'histfig')
     local entity_id = safe_get(ev, 'entity')
-    local yr = safe_get(ev, 'year') or '?'
+    local last_owner = safe_get(ev, 'last_owner')
+    local last_holder = safe_get(ev, 'last_holder')
 
     -- Artifact name
     local art_name = '?'
@@ -63,55 +69,20 @@ for i = 0, total - 1 do
         end
     end
 
-    -- HF name
-    local hf_name = (hf_id and hf_id >= 0) and util.hf_name(hf_id) or nil
-
-    -- Entity name
-    local ent_name = (entity_id and entity_id >= 0) and util.ent_name(entity_id) or nil
-
-    -- Claim type / reason / circumstance fields
-    local claim_type = safe_get(ev, 'claim_type')
-    local position_profile = safe_get(ev, 'position_profile')
-
-    -- Reason substruct
-    local reason_type, reason_data
-    local ok_r, reason = pcall(function() return ev.reason end)
-    if ok_r and reason then
-        reason_type = safe_get(reason, 'type')
-        reason_data = safe_get(reason, 'data')
-    end
-
-    -- Circumstance substruct
-    local circ_type
-    local ok_c, circ = pcall(function() return ev.circumstance end)
-    if ok_c and circ then
-        circ_type = safe_get(circ, 'type')
-    end
+    -- Site name
+    local site_name = (site_id and site_id >= 0) and util.site_name(site_id) or nil
 
     print(('  [%d] ev.id=%d year=%s art=%d (%s)'):format(
         count, ev.id, tostring(yr), art_id, art_name))
-    print(('       hf=%s (%s)  entity=%s (%s)'):format(
-        tostring(hf_id), hf_name or 'nil',
-        tostring(entity_id), ent_name or 'nil'))
-    print(('       claim_type=%s  position_profile=%s'):format(
-        tostring(claim_type), tostring(position_profile)))
-    print(('       reason.type=%s  circ.type=%s'):format(
-        tostring(reason_type), tostring(circ_type)))
+    print(('       site=%s (%s)  subregion=%s  feature_layer=%s'):format(
+        tostring(site_id), site_name or 'nil',
+        tostring(subregion), tostring(feature_layer)))
+    print(('       histfig=%s  entity=%s  last_owner=%s  last_holder=%s'):format(
+        tostring(hf_id), tostring(entity_id),
+        tostring(last_owner), tostring(last_holder)))
 
-    -- Full printall on reason and circumstance for first 5
+    -- Full printall for first 5
     if count <= 5 then
-        if ok_r and reason then
-            print('       reason printall:')
-            pcall(function() printall(reason) end)
-        end
-        if ok_c and circ then
-            print('       circumstance printall:')
-            pcall(function() printall(circ) end)
-        end
-    end
-
-    -- Full event printall for first 3
-    if count <= 3 then
         print('       full event printall:')
         pcall(function() printall(ev) end)
     end
@@ -125,7 +96,7 @@ for i = 0, total - 1 do
     ::next_ev::
 end
 
-print(('Total ARTIFACT_CLAIM_FORMED events: %d (showing %d)'):format(
+print(('Total ARTIFACT_LOST events: %d (showing %d)'):format(
     count, math.min(count, 20)))
 
 print('')

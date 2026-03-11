@@ -600,6 +600,13 @@ function build_delta()
     local prev_rel = rel_blocks_scanned
     local prev_col = last_cached_collection_idx
 
+    -- Ensure tables exist (may be nil if loaded from an older cache version).
+    if not civ_event_ids then civ_event_ids = {} end
+    if not civ_collection_ids then civ_collection_ids = {} end
+    if not civ_event_counts then civ_event_counts = {} end
+    if not art_event_ids then art_event_ids = {} end
+    if not art_event_counts then art_event_counts = {} end
+
     for i = start_idx, n - 1 do
         process_event(events[i], ev_hist)
         count = count + 1
@@ -614,12 +621,6 @@ function build_delta()
     scan_rel_events(rel_blocks_scanned, rel_last_block_ne)
 
     -- Delta scan collections from last watermark.
-    -- Ensure civ/art tables exist (may be nil if loaded from an older cache version).
-    if not civ_event_ids then civ_event_ids = {} end
-    if not civ_collection_ids then civ_collection_ids = {} end
-    if not civ_event_counts then civ_event_counts = {} end
-    if not art_event_ids then art_event_ids = {} end
-    if not art_event_counts then art_event_counts = {} end
     scan_collections(last_cached_collection_idx, ev_hist)
 
     local any_change = count > 0
@@ -698,7 +699,9 @@ end
 
 function get_all_art_event_counts()
     if not cache_ready or not art_event_counts then return {} end
-    return art_event_counts
+    local copy = {}
+    for k, v in pairs(art_event_counts) do copy[k] = v end
+    return copy
 end
 
 -- Cleanup ----------------------------------------------------------------------

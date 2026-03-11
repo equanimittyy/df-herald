@@ -903,55 +903,16 @@ local function build_artifact_choices()
         if ok_n and n and n ~= '' then name = n end
         if name == '' then goto art_next end
 
-        -- Item type: use subtype def name when available for granularity
-        -- (e.g. "mace" not "weapon", "gauntlet" not "gloves").
+        -- Item type + material via shared helper.
         local type_s = ''
+        local mat_s = ''
         local is_written = false
         local ok_item, item = pcall(function() return art.item end)
         if ok_item and item then
-            local ok_t, itype = pcall(function() return item:getType() end)
-            if ok_t and itype then
-                local raw = df.item_type[itype]
-                if raw then
-                    local raw_s = tostring(raw)
-                    -- Try subtype def name via static API.
-                    local ok_st, st = pcall(function() return item:getSubtype() end)
-                    if ok_st and st and st >= 0 then
-                        local ok_sd, subdef = pcall(function()
-                            return dfhack.items.getSubtypeDef(itype, st)
-                        end)
-                        if ok_sd and subdef then
-                            local ok_sn, sn = pcall(function() return subdef.name end)
-                            if ok_sn and sn and sn ~= '' then
-                                type_s = sn
-                            end
-                        end
-                    end
-                    -- Classify written works.
-                    if raw_s == 'BOOK' then
-                        if type_s == '' then type_s = 'book' end
-                        is_written = true
-                    elseif raw_s == 'TOOL' and type_s == 'scroll' then
-                        is_written = true
-                    end
-                    -- Fallback to base type name.
-                    if type_s == '' then type_s = raw_s:lower() end
-                end
-            end
-        end
-
-        -- Material (blank for books/scrolls - parchment type is noise).
-        local mat_s = ''
-        if not is_written and ok_item and item then
-            local ok_mt, mt = pcall(function() return item:getActualMaterial() end)
-            local ok_mi, mi = pcall(function() return item:getActualMaterialIndex() end)
-            if ok_mt and ok_mi and mt and mt >= 0 then
-                local ok_info, info = pcall(function() return dfhack.matinfo.decode(mt, mi) end)
-                if ok_info and info then
-                    local ok_s, s = pcall(function() return info:toString() end)
-                    if ok_s and s and s ~= '' then mat_s = s:lower() end
-                end
-            end
+            local t, m, w = util.resolve_item_type_material(item)
+            if t then type_s = t end
+            if m then mat_s = m end
+            is_written = w
         end
 
         local ev_count = event_counts[art_id] or 0
@@ -1064,8 +1025,8 @@ function ArtifactsPanel:update_detail(choice)
     end
 
     local art_id = choice.art_id
-    local art = df.artifact_record.find(art_id)
-    if not art then
+    local ok_art, art = pcall(function() return df.artifact_record.find(art_id) end)
+    if not ok_art or not art then
         self.subviews.detail_panel:setChoices({})
         return
     end
@@ -1074,28 +1035,9 @@ function ArtifactsPanel:update_detail(choice)
     local type_s = choice.type_s or ''
     local mat_s = choice.mat_s or ''
 
-    -- Creator HF + creation year: not on artifact_record; resolve from
-    -- ARTIFACT_CREATED event (art.year is the world age, not creation year).
-    local creator_name = 'Unknown'
-    local year_str = '?'
-    local ev_ids = cache.get_art_event_ids(art_id)
-    if ev_ids then
-        local ART_CREATED = df.history_event_type['ARTIFACT_CREATED']
-        for _, ev_id in ipairs(ev_ids) do
-            local ev = df.history_event.find(ev_id)
-            if ev and ART_CREATED and ev:getType() == ART_CREATED then
-                local hfid = util.safe_get(ev, 'creator_hfid')
-                if hfid and hfid >= 0 then
-                    creator_name = util.hf_name(hfid)
-                end
-                local yr = util.safe_get(ev, 'year')
-                if yr and yr >= 0 then
-                    year_str = tostring(yr)
-                end
-                break
-            end
-        end
-    end
+    -- Creator HF + creation year: resolved from ARTIFACT_CREATED event via
+    -- event-history (art.year is the world age, not creation year).
+    local creator_name, year_str = ev_hist.get_artifact_creation_info(art_id)
 
     -- Origin site (confirmed field: art.site).
     local origin_site = 'Unknown'

@@ -212,59 +212,46 @@ local function artifact_name_by_id(art_id)
     if not ok or not art then return nil, nil end
     local ok2, n = pcall(function() return dfhack.translation.translateName(art.name, true) end)
     local name = (ok2 and n and n ~= '') and n or nil
-    -- Resolve item type + material from art.item (subtype-aware).
     local item_desc
     local ok3, item = pcall(function() return art.item end)
     if ok3 and item then
-        local ok4, itype = pcall(function() return item:getType() end)
-        if ok4 and itype then
-            local type_s
-            local is_written = false
-            local raw = df.item_type and df.item_type[itype]
-            if raw then
-                local raw_s = tostring(raw)
-                -- Try subtype def name via static API for granularity.
-                local ok_st, st = pcall(function() return item:getSubtype() end)
-                if ok_st and st and st >= 0 then
-                    local ok_sd, subdef = pcall(function()
-                        return dfhack.items.getSubtypeDef(itype, st)
-                    end)
-                    if ok_sd and subdef then
-                        local ok_sn, sn = pcall(function() return subdef.name end)
-                        if ok_sn and sn and sn ~= '' then type_s = sn end
-                    end
-                end
-                -- Classify written works.
-                if raw_s == 'BOOK' then
-                    if not type_s then type_s = 'book' end
-                    is_written = true
-                elseif raw_s == 'TOOL' and type_s == 'scroll' then
-                    is_written = true
-                end
-                -- Fallback to base type name.
-                if not type_s then type_s = raw_s:lower() end
-            end
-            -- Material (blank for books/scrolls).
-            local mat_s
-            if not is_written then
-                local ok5, mt = pcall(function() return item:getActualMaterial() end)
-                local ok6, mi = pcall(function() return item:getActualMaterialIndex() end)
-                if ok5 and ok6 and mt >= 0 then
-                    local ok7, info = pcall(function() return dfhack.matinfo.decode(mt, mi) end)
-                    if ok7 and info then
-                        local ok8, s = pcall(function() return info:toString() end)
-                        if ok8 and s and s ~= '' then mat_s = s:lower() end
-                    end
-                end
-            end
-            if mat_s and type_s then
-                item_desc = mat_s .. ' ' .. type_s
-            elseif type_s then
-                item_desc = type_s
-            end
+        local type_s, mat_s = util.resolve_item_type_material(item)
+        if mat_s and type_s then
+            item_desc = mat_s .. ' ' .. type_s
+        elseif type_s then
+            item_desc = type_s
         end
     end
     return name, item_desc
+end
+
+-- Exported: resolve creator HF name and creation year from ARTIFACT_CREATED event.
+-- Returns (creator_name, year_str) or ('Unknown', '?') on failure.
+function get_artifact_creation_info(art_id)
+    if not art_id or art_id < 0 then return 'Unknown', '?' end
+    local cache = dfhack.reqscript('herald-cache')
+    local ev_ids = cache.get_art_event_ids(art_id)
+    if not ev_ids then return 'Unknown', '?' end
+    local ART_CREATED = df.history_event_type['ARTIFACT_CREATED']
+    if not ART_CREATED then return 'Unknown', '?' end
+    for _, ev_id in ipairs(ev_ids) do
+        local ok, ev = pcall(function() return df.history_event.find(ev_id) end)
+        if ok and ev then
+            local ok_t, et = pcall(function() return ev:getType() end)
+            if ok_t and et == ART_CREATED then
+                local creator_name = 'Unknown'
+                local hfid = safe_get(ev, 'creator_hfid')
+                if hfid and hfid >= 0 then
+                    creator_name = util.hf_name(hfid)
+                end
+                local year_str = '?'
+                local yr = safe_get(ev, 'year')
+                if yr and yr >= 0 then year_str = tostring(yr) end
+                return creator_name, year_str
+            end
+        end
+    end
+    return 'Unknown', '?'
 end
 
 -- Resolve a structure within a site to its translated building name, or nil.
@@ -1535,9 +1522,28 @@ do
     end)
 
     add('ARTIFACT_LOST', function(ev, _focal)
-        -- Fields: artifact, site (no histfig on this type).
+        -- Fields: artifact, site, subregion_id (no histfig on this type).
         local site_n = site_name_by_id(safe_get(ev, 'site'))
-        local loc    = site_n and (' in ' .. site_n) or ''
+        local loc = ''
+        if site_n then
+            loc = ' in ' .. site_n
+        else
+            -- Fallback: resolve subregion name for wilderness losses.
+            local sr_id = safe_get(ev, 'subregion_id')
+            if sr_id and sr_id >= 0 then
+                local ok_r, region = pcall(function()
+                    return df.global.world.world_data.regions[sr_id]
+                end)
+                if ok_r and region then
+                    local ok_n, rn = pcall(function()
+                        return dfhack.translation.translateName(region.name, true)
+                    end)
+                    if ok_n and rn and rn ~= '' then
+                        loc = ' in ' .. rn
+                    end
+                end
+            end
+        end
         local art_n  = artifact_name_by_id(safe_get(ev, 'artifact'))
         local what   = art_n or 'An artifact'
         return what .. ' was lost' .. loc
