@@ -143,7 +143,8 @@ local util    = dfhack.reqscript('herald-util')
 -- not an event ID. Events are indexed by position (0-based), not by their .id field.
 -- The name is historical. It tracks how far we've scanned so far.
 local last_event_id = -1      -- array index of last processed event; -1 = uninitialised
--- (dfhack.timeout return value is unused; ticks-mode timers auto-cancel on unload)
+local scan_seq = 0            -- generation counter; incremented on init/pause/resume/cleanup
+                              -- stale timer chains silently die when their seq != scan_seq
 enabled = enabled or false    -- top-level var; DFHack enable/disable convention
 
 -- Tracks whether we've done a full world-level init. Survives reqscript reloads.
@@ -374,18 +375,26 @@ end
 -- Main scan loop: processes new history events then runs all world-state polls.
 -- Must reschedule itself at the end; dfhack.timeout fires once only.
 -- Body is pcall-wrapped so the reschedule always fires.
-local function scan_events()
+-- Each invocation captures its generation (scan_seq); if a newer init/pause/resume
+-- has occurred, the stale chain silently dies instead of rescheduling.
+local function scan_events(seq)
+    if seq ~= scan_seq then
+        dprint('scan_events: stale chain (gen=%d, current=%d) - discarding', seq, scan_seq)
+        return
+    end
     if not dfhack.isMapLoaded() then return end
 
     local ok, err = pcall(function()
-        dprint('Loop triggered at tick %d; scanning from event id %d',
-            df.global.cur_year_tick, last_event_id + 1)
-
         -- events is a 0-indexed DF vector; #events gives count, events[i] is positional.
         -- ev:getType() is a virtual method - NEVER use ev.type (doesn't exist on subtypes).
         local events = df.global.world.history.events
+        local pending = (#events - 1) - last_event_id
+        dprint('Loop triggered at tick %d (gen=%d); scanning from idx %d (%d pending)',
+            df.global.cur_year_tick, seq, last_event_id + 1, pending)
+
         load_handlers()
         local scanned = 0
+        local dispatched = 0
         for i = last_event_id + 1, #events - 1 do
             local ok2, ev = pcall(function() return events[i] end)
             if ok2 and ev then
@@ -395,6 +404,7 @@ local function scan_events()
                     if handler_list then
                         for _, handler in ipairs(handler_list) do
                             dprint('Handler fired: event idx=%d type=%s', i, tostring(ev_type))
+                            dispatched = dispatched + 1
                             local ok4, herr = pcall(handler.check_event, ev, dprint)
                             if not ok4 then
                                 dfhack.printerr('[Herald] Handler error at event ' .. i .. ': ' .. tostring(herr))
@@ -407,7 +417,8 @@ local function scan_events()
             last_event_id = i
             scanned = scanned + 1
         end
-        dprint('Loop complete; scanned %d event(s), last_event_id=%d', scanned, last_event_id)
+        dprint('Loop complete; scanned %d event(s), dispatched %d, last_event_id=%d',
+            scanned, dispatched, last_event_id)
 
         util.reset_unit_cache()
         scan_world_state(dprint)
@@ -416,13 +427,19 @@ local function scan_events()
         dfhack.printerr('[Herald] scan_events error: ' .. tostring(err))
     end
 
-    dfhack.timeout(tick_interval, 'ticks', scan_events)
+    -- Reschedule only if this chain is still current
+    if seq == scan_seq then
+        dfhack.timeout(tick_interval, 'ticks', function() scan_events(seq) end)
+    else
+        dprint('scan_events: gen %d expired during scan (current=%d) - not rescheduling', seq, scan_seq)
+    end
 end
 
 -- Watermarks last_event_id to the current end of the events array so only future
 -- events are processed, then loads pinned data and starts the scan timer.
 local function init_scan()
     if enabled then return end  -- guard against double-init
+    scan_seq = scan_seq + 1     -- invalidate any stale timer chains
     -- Load recent first so dprint (which calls announce_info) doesn't push
     -- debug messages into an empty buffer that then gets persisted.
     util.load_recent()
@@ -443,13 +460,14 @@ local function init_scan()
     cache.set_debug(DEBUG)
     dprint('init_scan: event cache loaded (ready=%s)', tostring(cache.cache_ready))
     dprint('init_scan: recent announcements loaded')
-    dfhack.timeout(tick_interval, 'ticks', scan_events)
+    local seq = scan_seq
+    dfhack.timeout(tick_interval, 'ticks', function() scan_events(seq) end)
 end
 
 -- Resets all scan state; called on world unload.
--- 'ticks' timers are auto-cancelled by DFHack on unload.
 local function cleanup()
     dprint('cleanup: world unloaded, resetting state')
+    scan_seq = scan_seq + 1  -- kill any pending timer chain
     last_event_id = -1
     enabled = false
     if all_handlers then
@@ -478,7 +496,8 @@ end
 -- handler state, cache, or last_event_id. SC_MAP_LOADED resumes.
 
 local function pause_scan()
-    dprint('pause_scan: map unloaded during travel, pausing')
+    scan_seq = scan_seq + 1  -- kill any pending timer chain
+    dprint('pause_scan: map unloaded during travel, pausing (gen=%d)', scan_seq)
     enabled = false
     util.reset_unit_cache()
     util.reset_entpop_cache()
@@ -487,8 +506,10 @@ local function pause_scan()
 end
 
 local function resume_scan()
+    if enabled then return end       -- guard against double-resume
     if not dfhack.isMapLoaded() then return end
-    dprint('resume_scan: map reloaded after travel, resuming')
+    scan_seq = scan_seq + 1          -- new generation; kills any leftover timer
+    dprint('resume_scan: map reloaded after travel, resuming (gen=%d)', scan_seq)
     enabled = true
     util.reset_unit_cache()
     if all_handlers then
@@ -497,8 +518,9 @@ local function resume_scan()
         end
     end
     -- herald-event-history needs no resume action; it rebuilds from DF structs on demand.
-    dfhack.timeout(tick_interval, 'ticks', scan_events)
-    dprint('resume_scan: timer restarted, last_event_id=%d', last_event_id)
+    local seq = scan_seq
+    dfhack.timeout(tick_interval, 'ticks', function() scan_events(seq) end)
+    dprint('resume_scan: timer restarted (gen=%d), last_event_id=%d', seq, last_event_id)
 end
 
 -- Lifecycle hooks -------------------------------------------------------------

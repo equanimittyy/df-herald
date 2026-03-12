@@ -13,15 +13,54 @@
 
 | Path | Type |
 |---|---|
-| `df.global.cur_year_tick` | current tick |
+| `df.global.cur_year` | current game year |
+| `df.global.cur_year_tick` | current tick within year |
 | `df.global.plotinfo.civ_id` | player civ |
 | `df.global.world.entities.all` | all `historical_entity` |
 | `df.global.world.history.figures` | all `historical_figure` |
 | `df.global.world.history.events` | all events (indexed by **position**, NOT event ID) |
 | `df.history_event.find(id)` | event by ID (slow; avoid in loops) |
 | `df.global.world.history.relationship_events` | block store (see below) |
+| `df.global.world.history.event_collections.all` | all event collections |
 | `df.global.world.world_data.sites` | all `world_site` |
+| `df.global.world.artifacts.all` | all `artifact_record` |
+| `df.global.world.units.active` | active units on current map |
+| `df.global.world.raws.creatures.all` | creature raw definitions |
 | `df.global.world.entity_populations` | non-HF racial groups |
+
+## DFHack Utility Functions
+
+```
+dfhack.isMapLoaded()                              -- guard before scanning
+dfhack.timeout(ticks, 'ticks', callback)           -- schedule tick-based callbacks
+dfhack.onStateChange[key] = fn                     -- lifecycle hooks (SC_MAP_LOADED, SC_MAP_UNLOADED, SC_WORLD_LOADED, SC_WORLD_UNLOADED)
+dfhack.reqscript('module-name')                    -- load module script (returns env table)
+dfhack.run_script('script-name')                   -- run a Lua script
+dfhack.run_command('command', ...)                  -- execute DFHack console command
+dfhack.translation.translateName(name_struct, true) -- translate language_name to English string
+dfhack.items.getSubtypeDef(itype, subtype_id)      -- get item subtype definition struct
+dfhack.matinfo.decode(mat, mat_idx)                -- decode material; returns obj with :toString()
+dfhack.persistent.saveSiteData(key, data)           -- persist data (survives save/load)
+dfhack.persistent.getSiteData(key, default)         -- load persisted data
+dfhack.textures.loadTileset(path, w, h, flag)       -- load sprite sheet (overlay widgets)
+dfhack.textures.getTexposByHandle(handle)           -- get texture position from handle
+dfhack.pen.parse{tile=texpos, ch=code}             -- create pen for rendering
+dfhack.printerr(msg)                               -- print error to console
+```
+
+**GUI framework:** `require('gui')`, `require('gui.widgets')`, `require('plugins.overlay')`, `require('json')`
+
+## Struct Lookups (`.find()`)
+
+```
+df.historical_figure.find(id)         -- HF by ID
+df.historical_entity.find(id)         -- entity/civ by ID
+df.artifact_record.find(id)           -- artifact by ID
+df.written_content.find(id)           -- written content by ID
+df.world_site.find(id)                -- site by ID (rarely used; prefer world_data.sites)
+df.history_event.find(id)             -- event by ID (slow; avoid in loops)
+df.history_event_collection.find(id)  -- collection by ID
+```
 
 ## Historical Figure
 
@@ -30,6 +69,10 @@ hf = df.historical_figure.find(hf_id)
 hf.id, hf.name (language_name), hf.sex (1=M, 0=F), hf.race (creature race ID)
 hf.died_year, hf.died_seconds  -- both -1 if alive (use herald-util.is_alive)
 hf.entity_links                -- vector of histfig_entity_link
+hf.info.skills.skills           -- off-map: parallel vec of job_skill IDs (ints)
+hf.info.skills.points           -- off-map: parallel vec of cumulative XP (ints)
+hf.info.kills.killed_race       -- parallel vec of creature race IDs
+hf.info.kills.killed_count      -- parallel vec of kill counts per race
 ```
 
 **Entity links:** `link:getType()` returns `histfig_entity_link_type` (MEMBER, POSITION, etc.).
@@ -41,6 +84,16 @@ hf.entity_links                -- vector of histfig_entity_link
 entity = df.historical_entity.find(entity_id)
 entity.id, entity.name (language_name), entity.type (Civilization, SiteGovernment, etc.)
 entity.race, entity.positions, entity.histfig_ids (pcall-guard), entity.entity_raw (may be nil)
+```
+
+## Units
+
+```
+unit = df.global.world.units.active[i]
+unit.id, unit.name, unit.race, unit.caste
+unit.hist_figure_id              -- HF ID (-1 if not a historical figure)
+unit.status.current_soul         -- soul object (active units only; may be nil)
+unit.status.current_soul.skills  -- vector of unit_skill: .id (job_skill enum), .rating (0-20)
 ```
 
 ## Positions
@@ -166,6 +219,37 @@ DFHack hides commands from `ls` via **tag-based exclusion**, not directory struc
 - `armok` — god-mode tools (excluded only when `dfhack.getMortalMode()` is true)
 
 **To hide a script:** add `:tags: unavailable` (or `dev`) to its RST `dfhack-tool` directive. No code changes needed.
+
+## Enums Used
+
+**Event types:** `df.history_event_type.NAME` or `df.history_event_type[int]` for reverse lookup.
+
+**Collection types:** `df.history_event_collection_type['WAR']` (string-indexed).
+
+**Entity link types:** `df.histfig_entity_link_type.MEMBER`, `.FORMER_MEMBER`, `.POSITION`
+
+**HF-HF link types:** `df.histfig_hf_link_type.SPOUSE`, `.LOVER`, `.MASTER`, `.APPRENTICE`, `.DEITY`, `.PRISONER`, `.FORMER_SPOUSE`, `.FORMER_MASTER`, `.FORMER_APPRENTICE`
+
+**Site link types:** `df.histfig_site_link_type.LAIR`, `.HANGOUT`, `.HOME_SITE_BUILDING`, `.HOME_SITE_ABSTRACT_BUILDING`, `.OCCUPATION`
+
+**Entity types:** `df.historical_entity_type.Civilization`, `.SiteGovernment`
+
+**Skills:** `df.job_skill.attrs[id].caption` (display name), `df.skill_rating.Legendary` (= 15)
+
+**Items:** `df.item_type[itype]` (type name string)
+
+**Other:** `df.history_event_reason[id]`, `df.unit_relationship_type[id]`, `df.history_event_hf_simple_battle_event_type`
+
+## Artifacts & Written Content
+
+```
+art = df.artifact_record.find(art_id)
+art.id, art.name (language_name), art.item (the actual item object)
+item:getType(), item:getSubtype(), item:getActualMaterial(), item:getActualMaterialIndex()
+
+wc = df.written_content.find(wc_id)
+wc.title
+```
 
 ## Entity Populations
 
