@@ -11,3 +11,4 @@
 [STEAM_DESCRIPTION:A DFHack mod that scans world history and notifies the player of ongoing, significant world events.]
 [STEAM_TAG:mod]
 [STEAM_TAG:ui]
+[STEAM_FILE_ID:3682900869]
