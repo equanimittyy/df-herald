@@ -6,16 +6,17 @@ is a first of it's kind mod (at least as far as I'm aware) that allows you to ex
 
 [b]Requires DFHack![/b]
 
-
-
 [img]https://i.imgur.com/rJxuHOh.png[/img]
 [list]
 [*] An in-built graphical user interface for you to explore historical figures, civilisations and artifacts
 [*] Event history view to see the entire history of a given historical figure, civilisation or artifact
 [*] Quick access to DFHack's inbuilt journal, so you never have to leave Dwarf Fortress to take notes
 [*] Pin individuals or civilisations to be notified of in-game events in near real-time, including:
--------------------------
+
+---
+
 [b]Individuals:[/b]
+
 - Death
 - Combat kills
 - Position appointments & vacations
@@ -25,15 +26,17 @@ is a first of it's kind mod (at least as far as I'm aware) that allows you to ex
 - Migrations & relocations
 
 [b]Civilisations:[/b]
+
 - Leadership changes
 - Diplomacy (peace, agreements, tribute, wars)
 - Battles & raids
 - Beast rampages
 - Espionage (theft & abduction)
-[b]All these options are toggleable via the UI![/b]
--------------------------
-[/list]
+  [b]All these options are toggleable via the UI![/b]
 
+---
+
+[/list]
 
 [b]Compatible with:[/b]
 [list]
@@ -55,8 +58,6 @@ is a first of it's kind mod (at least as far as I'm aware) that allows you to ex
 [*] [b]Enter[/b] - Pin/Unpin the selected entry
 [*] Type to search and filter lists in real-time
 [/list]
-
-
 
 [img]https://i.imgur.com/YrFazkE.png[/img]
 [b]Q: Will this impact performance?[/b]
@@ -84,7 +85,9 @@ A: Please post in the [url=https://steamcommunity.com/workshop/filedetails/discu
 [b]Changelog:[/b]
 [i]Check your DF mods, and unsub resub if the mod isn't updating to latest[/i]
 v1.1
+
 - Fixed issue with adventurer mode where it would not retain last-scanned event everytime you changed map, making it scan every event since the beginning of time
+- Clamped the event scanning to the resume function so that event_id's aren't stale when reloading a save; adventure mode specific
 
 [hr][/hr]
 
