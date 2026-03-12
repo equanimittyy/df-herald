@@ -82,6 +82,7 @@ A: Please post in the [url=https://steamcommunity.com/workshop/filedetails/discu
 
 [hr][/hr]
 [b]Changelog:[/b]
+[i]Check your DF mods, and unsub resub if the mod isn't updating to latest[/i]
 v1.1
 
 - Fixed issue with adventurer mode where it would not retain last-scanned event everytime you changed map, making it scan every event since the beggining of time
