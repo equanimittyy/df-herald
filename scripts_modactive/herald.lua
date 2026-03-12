@@ -513,6 +513,13 @@ local function resume_scan()
     scan_seq = scan_seq + 1          -- new generation; kills any leftover timer
     dprint('resume_scan: map reloaded after travel, resuming (gen=%d)', scan_seq)
     enabled = true
+    -- Clamp watermark: a save reload (e.g. adventurer death without saving) can
+    -- produce fewer events than last_event_id expects.
+    local max_idx = #df.global.world.history.events - 1
+    if last_event_id > max_idx then
+        dprint('resume_scan: watermark %d exceeds event count %d, clamping', last_event_id, max_idx + 1)
+        last_event_id = max_idx
+    end
     util.reset_unit_cache()
     if all_handlers then
         for _, handler in ipairs(all_handlers) do
