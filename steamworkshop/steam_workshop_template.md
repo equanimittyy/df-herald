@@ -1,4 +1,3 @@
-```bbcode
 [img]https://i.imgur.com/yKFYcYd.png[/img]
 [b][i]A DFHack Dwarf Fortress lua mod[/i][/b]
 
@@ -7,16 +6,17 @@ is a first of it's kind mod (at least as far as I'm aware) that allows you to ex
 
 [b]Requires DFHack![/b]
 
-
-
 [img]https://i.imgur.com/rJxuHOh.png[/img]
 [list]
 [*] An in-built graphical user interface for you to explore historical figures, civilisations and artifacts
 [*] Event history view to see the entire history of a given historical figure, civilisation or artifact
 [*] Quick access to DFHack's inbuilt journal, so you never have to leave Dwarf Fortress to take notes
 [*] Pin individuals or civilisations to be notified of in-game events in near real-time, including:
--------------------------
+
+---
+
 [b]Individuals:[/b]
+
 - Death
 - Combat kills
 - Position appointments & vacations
@@ -26,15 +26,17 @@ is a first of it's kind mod (at least as far as I'm aware) that allows you to ex
 - Migrations & relocations
 
 [b]Civilisations:[/b]
+
 - Leadership changes
 - Diplomacy (peace, agreements, tribute, wars)
 - Battles & raids
 - Beast rampages
 - Espionage (theft & abduction)
-[b]All these options are toggleable via the UI![/b]
--------------------------
-[/list]
+  [b]All these options are toggleable via the UI![/b]
 
+---
+
+[/list]
 
 [b]Compatible with:[/b]
 [list]
@@ -56,8 +58,6 @@ is a first of it's kind mod (at least as far as I'm aware) that allows you to ex
 [*] [b]Enter[/b] - Pin/Unpin the selected entry
 [*] Type to search and filter lists in real-time
 [/list]
-
-
 
 [img]https://i.imgur.com/YrFazkE.png[/img]
 [b]Q: Will this impact performance?[/b]
@@ -81,7 +81,15 @@ Tools such as [url=https://github.com/Kromtec/LegendsViewer-Next]Kromtec's Legen
 [b]Q: I found a bug. What do I do?[/b]
 A: Please post in the [url=https://steamcommunity.com/workshop/filedetails/discussion/3682900869/798964126635297633/]discussions tab[/url] with a description of the issue
 
+[hr][/hr]
+
+[b]Changelog:[/b]
+v1.1
+
+- Fixed issue with adventurer mode where it would not retain last-scanned event everytime you changed map, making it scan every since event from the beggining of time
+
+[hr][/hr]
+
 [i]If you enjoy this mod, please rate it up - it helps others find it![/i]
 
 [i]Please ask for permission before modifying or distributing the mod![/i]
-```
