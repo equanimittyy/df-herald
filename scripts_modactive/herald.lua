@@ -142,10 +142,12 @@ local util    = dfhack.reqscript('herald-util')
 -- NOTE: last_event_id is actually an array INDEX into df.global.world.history.events,
 -- not an event ID. Events are indexed by position (0-based), not by their .id field.
 -- The name is historical. It tracks how far we've scanned so far.
-local last_event_id = -1      -- array index of last processed event; -1 = uninitialised
-local scan_seq = 0            -- generation counter; incremented on init/pause/resume/cleanup
-                              -- stale timer chains silently die when their seq != scan_seq
-enabled = enabled or false    -- top-level var; DFHack enable/disable convention
+-- Non-local (like enabled/world_initialized) so they survive script re-execution;
+-- local vars reset to their initialiser on each re-exec, which would cause
+-- last_event_id=-1 mid-session -> full re-scan from index 0.
+last_event_id = last_event_id or -1   -- array index of last processed event; -1 = uninitialised
+scan_seq = scan_seq or 0              -- generation counter; stale timer chains die when seq != scan_seq
+enabled = enabled or false            -- top-level var; DFHack enable/disable convention
 
 -- Tracks whether we've done a full world-level init. Survives reqscript reloads.
 -- SC_MAP_LOADED with world_initialized=true means adventure-mode map transition
