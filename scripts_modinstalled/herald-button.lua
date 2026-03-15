@@ -84,7 +84,15 @@ HeraldButton.ATTRS{
     frame           = {w=LOGO_COLS, h=LOGO_ROWS},
 }
 
+function HeraldButton:render(dc)
+    if not dfhack.isMapLoaded() then return end
+    if not pcall(dfhack.reqscript, 'herald-util') then return end
+    HeraldButton.super.render(self, dc)
+end
+
 function HeraldButton:onInput(keys)
+    if not dfhack.isMapLoaded() then return false end
+    if not pcall(dfhack.reqscript, 'herald-util') then return false end
     if keys.CUSTOM_ALT_H then
         dfhack.run_command('herald', 'gui')
         return true
@@ -194,10 +202,8 @@ HeraldAlert.ATTRS{
 }
 
 function HeraldAlert:init()
-    self._use_png = false
     local np, hp = load_alert_pens()
     if np then
-        self._use_png = true
         self:addviews{
             AlertButton{
                 frame       = {l=0, t=0, w=ALERT_COLS, h=ALERT_ROWS},
@@ -217,7 +223,8 @@ function HeraldAlert:init()
     end
 end
 
-function HeraldAlert:on_alert_click() -- luacheck: no unused args
+function HeraldAlert:on_alert_click()
+    if not dfhack.isMapLoaded() then return end
     local util = dfhack.reqscript('herald-util')
     util.clear_unread()
     dfhack.run_command('herald', 'gui', 'recent')
