@@ -139,13 +139,10 @@ local widgets = require('gui.widgets')
 local util    = dfhack.reqscript('herald-util')
 
 -- Scan state; reset on each world load.
--- NOTE: last_event_id is actually an array INDEX into df.global.world.history.events,
--- not an event ID. Events are indexed by position (0-based), not by their .id field.
--- The name is historical. It tracks how far we've scanned so far.
 -- Non-local (like enabled/world_initialized) so they survive script re-execution;
 -- local vars reset to their initialiser on each re-exec, which would cause
--- last_event_id=-1 mid-session -> full re-scan from index 0.
-last_event_id = last_event_id or -1   -- array index of last processed event; -1 = uninitialised
+-- last_event_idx=-1 mid-session -> full re-scan from index 0.
+last_event_idx = last_event_idx or -1   -- array index of last processed event; -1 = uninitialised
 scan_seq = scan_seq or 0              -- generation counter; stale timer chains die when seq != scan_seq
 enabled = enabled or false            -- top-level var; DFHack enable/disable convention
 
@@ -390,14 +387,14 @@ local function scan_events(seq)
         -- events is a 0-indexed DF vector; #events gives count, events[i] is positional.
         -- ev:getType() is a virtual method - NEVER use ev.type (doesn't exist on subtypes).
         local events = df.global.world.history.events
-        local pending = (#events - 1) - last_event_id
+        local pending = (#events - 1) - last_event_idx
         dprint('Loop triggered at tick %d (gen=%d); scanning from idx %d (%d pending)',
-            df.global.cur_year_tick, seq, last_event_id + 1, pending)
+            df.global.cur_year_tick, seq, last_event_idx + 1, pending)
 
         load_handlers()
         local scanned = 0
         local dispatched = 0
-        for i = last_event_id + 1, #events - 1 do
+        for i = last_event_idx + 1, #events - 1 do
             local ok2, ev = pcall(function() return events[i] end)
             if ok2 and ev then
                 local ok3, ev_type = pcall(function() return ev:getType() end)
@@ -416,11 +413,12 @@ local function scan_events(seq)
                     end
                 end
             end
-            last_event_id = i
+            last_event_idx = i
             scanned = scanned + 1
         end
-        dprint('Loop complete; scanned %d event(s), dispatched %d, last_event_id=%d',
-            scanned, dispatched, last_event_id)
+        local ok_lid, lid = pcall(function() return events[last_event_idx].id end)
+        dprint('Loop complete; scanned %d event(s), dispatched %d, last_event_idx=%d id=%s',
+            scanned, dispatched, last_event_idx, ok_lid and tostring(lid) or '?')
 
         util.reset_unit_cache()
         scan_world_state(dprint)
@@ -437,7 +435,7 @@ local function scan_events(seq)
     end
 end
 
--- Watermarks last_event_id to the current end of the events array so only future
+-- Watermarks last_event_idx to the current end of the events array so only future
 -- events are processed, then loads pinned data and starts the scan timer.
 local function init_scan()
     if enabled then return end  -- guard against double-init
@@ -445,9 +443,10 @@ local function init_scan()
     -- Load recent first so dprint (which calls announce_info) doesn't push
     -- debug messages into an empty buffer that then gets persisted.
     util.load_recent()
-    last_event_id = #df.global.world.history.events - 1  -- skip all pre-existing history
+    last_event_idx = #df.global.world.history.events - 1  -- skip all pre-existing history
     enabled = true
-    dprint('init_scan: watermark set to event id %d', last_event_id)
+    local ok_id, wm_id = pcall(function() return df.global.world.history.events[last_event_idx].id end)
+    dprint('init_scan: watermark set to idx=%d id=%s', last_event_idx, ok_id and tostring(wm_id) or '?')
     load_handlers()
     local pins = dfhack.reqscript('herald-pins')
     pins.load_pinned()
@@ -470,7 +469,7 @@ end
 local function cleanup()
     dprint('cleanup: world unloaded, resetting state')
     scan_seq = scan_seq + 1  -- kill any pending timer chain
-    last_event_id = -1
+    last_event_idx = -1
     enabled = false
     if all_handlers then
         for _, handler in ipairs(all_handlers) do
@@ -495,7 +494,7 @@ end
 
 -- Adventure-mode map transition: lightweight pause/resume -----------------------
 -- SC_MAP_UNLOADED during adventure travel pauses scanning without resetting
--- handler state, cache, or last_event_id. SC_MAP_LOADED resumes.
+-- handler state, cache, or last_event_idx. SC_MAP_LOADED resumes.
 
 local function pause_scan()
     scan_seq = scan_seq + 1  -- kill any pending timer chain
@@ -514,11 +513,11 @@ local function resume_scan()
     dprint('resume_scan: map reloaded after travel, resuming (gen=%d)', scan_seq)
     enabled = true
     -- Clamp watermark: a save reload (e.g. adventurer death without saving) can
-    -- produce fewer events than last_event_id expects.
+    -- produce fewer events than last_event_idx expects.
     local max_idx = #df.global.world.history.events - 1
-    if last_event_id > max_idx then
-        dprint('resume_scan: watermark %d exceeds event count %d, clamping', last_event_id, max_idx + 1)
-        last_event_id = max_idx
+    if last_event_idx > max_idx then
+        dprint('resume_scan: watermark %d exceeds event count %d, clamping', last_event_idx, max_idx + 1)
+        last_event_idx = max_idx
     end
     util.reset_unit_cache()
     if all_handlers then
@@ -529,7 +528,9 @@ local function resume_scan()
     -- herald-event-history needs no resume action; it rebuilds from DF structs on demand.
     local seq = scan_seq
     dfhack.timeout(tick_interval, 'ticks', function() scan_events(seq) end)
-    dprint('resume_scan: timer restarted (gen=%d), last_event_id=%d', seq, last_event_id)
+    local ok_rid, rid = pcall(function() return df.global.world.history.events[last_event_idx].id end)
+    dprint('resume_scan: timer restarted (gen=%d), last_event_idx=%d id=%s',
+        seq, last_event_idx, ok_rid and tostring(rid) or '?')
 end
 
 -- Lifecycle hooks -------------------------------------------------------------

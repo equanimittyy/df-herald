@@ -28,11 +28,11 @@ function save_pinned()
     for id, settings in pairs(pinned_civ_ids) do
         table.insert(pins, { id = id, settings = settings })
     end
-    dfhack.persistent.saveSiteData(PERSIST_KEY, { pins = pins })
+    dfhack.persistent.saveWorldData(PERSIST_KEY, { pins = pins })
 end
 
 function load_pinned()
-    local data = dfhack.persistent.getSiteData(PERSIST_KEY, {})
+    local data = dfhack.persistent.getWorldData(PERSIST_KEY, {})
     pinned_civ_ids = {}
     if type(data.pins) == 'table' then
         for _, entry in ipairs(data.pins) do
