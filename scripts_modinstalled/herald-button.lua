@@ -22,6 +22,24 @@ local PNG_COLS      = 8   -- total tile columns across the full PNG
 -- SCRIPT_PATH is not set for overlay modules; derive directory from source info.
 local _DIR = debug.getinfo(1, 'S').source:match('^@(.*[/\\])') or ''
 
+-- Cache the herald-util lookup. dfhack.reqscript() re-resolves the script
+-- across all script search paths and stats the file on every call, which is
+-- far too expensive to run from render() on every frame (it was consuming a
+-- double-digit percentage of frame time). Re-check every 5 seconds instead;
+-- the returned env is the live module environment, so field reads on it
+-- (e.g. has_unread) always see current values.
+local util_env = nil
+local util_checked_ms = nil
+local function get_util()
+    local now = dfhack.getTickCount()
+    if not util_checked_ms or now - util_checked_ms > 5000 then
+        util_checked_ms = now
+        local ok, env = pcall(dfhack.reqscript, 'herald-util')
+        util_env = ok and env or nil
+    end
+    return util_env
+end
+
 local logo_state  = 'unloaded'  -- 'unloaded' | 'ok' | 'failed'
 local normal_pens = nil
 local hover_pens  = nil
@@ -86,13 +104,13 @@ HeraldButton.ATTRS{
 
 function HeraldButton:render(dc)
     if not dfhack.isMapLoaded() then return end
-    if not pcall(dfhack.reqscript, 'herald-util') then return end
+    if not get_util() then return end
     HeraldButton.super.render(self, dc)
 end
 
 function HeraldButton:onInput(keys)
     if not dfhack.isMapLoaded() then return false end
-    if not pcall(dfhack.reqscript, 'herald-util') then return false end
+    if not get_util() then return false end
     if keys.CUSTOM_ALT_H then
         dfhack.run_command('herald', 'gui')
         return true
@@ -225,15 +243,16 @@ end
 
 function HeraldAlert:on_alert_click()
     if not dfhack.isMapLoaded() then return end
-    local util = dfhack.reqscript('herald-util')
+    local util = get_util()
+    if not util then return end
     util.clear_unread()
     dfhack.run_command('herald', 'gui', 'recent')
 end
 
 function HeraldAlert:render(dc)
     if not dfhack.isMapLoaded() then return end
-    local ok, util = pcall(dfhack.reqscript, 'herald-util')
-    if not ok or not util.has_unread then return end
+    local util = get_util()
+    if not util or not util.has_unread then return end
     HeraldAlert.super.render(self, dc)
 end
 
