@@ -86,12 +86,20 @@ A: Please post in the [url=https://steamcommunity.com/workshop/filedetails/discu
 [i]Check your DF mods, and unsub resub if the mod isn't updating to latest[/i]
 [code]
 [b]v1.1[/b]
+
 - Fixed issue with adventurer mode where it would not retain last-scanned event everytime you changed map, making it scan every event since the beginning of time
 - Clamped the event scanning to the resume function so that event_id's aren't stale when reloading a save; adventure mode specific
 - Fixed bug where Herald button would appear even when not loaded into a world
 - Changed pinned items save state to be tied to WORLD instead of SITE - fixes disappearing pins in Adventure mode
-(Note: Your pins may disappear in this new hotfix)
-[/code]
+  (Note: Your pins may disappear in this new hotfix)
+  [/code]
+
+[code]
+[b]v1.2[/b]
+
+- Fixed issue with button display logic that would cause performance issues when DF Herald repeatedly tried to look up `herald-util` every frame. It is now cached properly
+  Credit to Snowstar837 for this fix
+  [/code]
 
 [hr][/hr]
 
