@@ -210,6 +210,15 @@ function AlertButton:onInput(keys)
     return AlertButton.super.onInput(self, keys)
 end
 
+-- Overlay only renders and feeds input to visible widgets. Hiding the alert in
+-- render() alone left its click region active, so it swallowed clicks on DF's
+-- top-left alerts even when nothing was shown.
+local function alert_visible()
+    if not dfhack.isMapLoaded() then return false end
+    local util = get_util()
+    return util and util.has_unread
+end
+
 HeraldAlert = defclass(HeraldAlert, overlay.OverlayWidget)
 
 HeraldAlert.ATTRS{
@@ -217,6 +226,7 @@ HeraldAlert.ATTRS{
     default_enabled = true,
     viewscreens     = {'dwarfmode', 'dwarfmode/'},
     frame           = {w=ALERT_COLS, h=ALERT_ROWS},  -- 12x2 tiles = 96x24 px per state; PNG = 192x24 px
+    visible         = alert_visible,
 }
 
 function HeraldAlert:init()
@@ -247,13 +257,6 @@ function HeraldAlert:on_alert_click()
     if not util then return end
     util.clear_unread()
     dfhack.run_command('herald', 'gui', 'recent')
-end
-
-function HeraldAlert:render(dc)
-    if not dfhack.isMapLoaded() then return end
-    local util = get_util()
-    if not util or not util.has_unread then return end
-    HeraldAlert.super.render(self, dc)
 end
 
 -- Dungeonmode alert: positioned underneath the Herald button.
